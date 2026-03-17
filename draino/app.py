@@ -50,12 +50,16 @@ OP_COLOR: dict[str, str] = {
     "pending":      "dim",
 }
 
-# Column keys for the node DataTable
-_COL_NODE    = "col_node"
-_COL_NOVA    = "col_nova"
-_COL_PHASE   = "col_phase"
-_COL_AMP     = "col_amp"
-_COL_VMS     = "col_vms"
+# Column keys — compute table
+_COL_NODE  = "col_node"
+_COL_NOVA  = "col_nova"
+_COL_PHASE = "col_phase"
+_COL_AMP   = "col_amp"
+_COL_VMS   = "col_vms"
+
+# Column keys — other table (scoped to that table; same string names are fine)
+_COL_OTHER_NODE   = "col_node"
+_COL_OTHER_STATUS = "col_status"
 
 
 class DrainoApp(App):
@@ -73,22 +77,47 @@ class DrainoApp(App):
         height: 1fr;
     }
 
-    /* ── Left: node list ── */
+    /* ── Left: two stacked node panels ── */
     #node-panel {
         width: 66;
         min-width: 50;
         layout: vertical;
+    }
+
+    /* Compute nodes — takes all remaining vertical space */
+    #compute-section {
+        height: 1fr;
+        layout: vertical;
         border: solid $primary-darken-2;
     }
-    #node-panel-title {
+    #compute-section-title {
         background: $primary-darken-2;
         color: $text;
         text-align: center;
         padding: 0 1;
         text-style: bold;
     }
-    #node-table {
+    #compute-table {
         height: 1fr;
+        scrollbar-gutter: stable;
+    }
+
+    /* Other nodes — auto-sizes to content, capped at 12 rows */
+    #other-section {
+        height: auto;
+        max-height: 14;
+        layout: vertical;
+        border: solid $primary-darken-2;
+    }
+    #other-section-title {
+        background: $primary-darken-2;
+        color: $text;
+        text-align: center;
+        padding: 0 1;
+        text-style: bold;
+    }
+    #other-table {
+        height: auto;
         scrollbar-gutter: stable;
     }
 
@@ -152,6 +181,8 @@ class DrainoApp(App):
         self.context = context
         self.node_states: dict[str, NodeState] = {}
         self.selected_node: Optional[str] = None
+        # Cached K8s node list so _rebuild_tables() can access cordoned/ready
+        self._last_k8s_nodes: list[dict] = []
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -159,8 +190,14 @@ class DrainoApp(App):
         yield Header(show_clock=True)
         with Horizontal(id="main"):
             with Vertical(id="node-panel"):
-                yield Static("  Compute Nodes", id="node-panel-title")
-                yield DataTable(id="node-table", cursor_type="row")
+                # ── Compute nodes (full detail) ──
+                with Vertical(id="compute-section"):
+                    yield Static("  Compute Nodes", id="compute-section-title")
+                    yield DataTable(id="compute-table", cursor_type="row")
+                # ── Everything else ──
+                with Vertical(id="other-section"):
+                    yield Static("  Other Nodes", id="other-section-title")
+                    yield DataTable(id="other-table", cursor_type="row")
             with Vertical(id="right-panel"):
                 with ScrollableContainer(id="workflow-scroll"):
                     yield Static(
@@ -187,12 +224,16 @@ class DrainoApp(App):
         openstack_ops.configure(cloud=self.cloud)
         k8s_ops.configure(context=self.context)
 
-        table = self.query_one("#node-table", DataTable)
-        table.add_column("Node",      key=_COL_NODE,  width=22)
-        table.add_column("Nova Svc",  key=_COL_NOVA,  width=10)
-        table.add_column("Phase",     key=_COL_PHASE, width=10)
-        table.add_column("AMP",       key=_COL_AMP,   width=5)
-        table.add_column("VMs",       key=_COL_VMS,   width=5)
+        ct = self.query_one("#compute-table", DataTable)
+        ct.add_column("Node",     key=_COL_NODE,  width=22)
+        ct.add_column("Nova Svc", key=_COL_NOVA,  width=10)
+        ct.add_column("Phase",    key=_COL_PHASE, width=10)
+        ct.add_column("AMP",      key=_COL_AMP,   width=5)
+        ct.add_column("VMs",      key=_COL_VMS,   width=5)
+
+        ot = self.query_one("#other-table", DataTable)
+        ot.add_column("Node",   key=_COL_OTHER_NODE,   width=40)
+        ot.add_column("Status", key=_COL_OTHER_STATUS, width=12)
 
         self.action_refresh()
         self.set_interval(15, self._auto_refresh)
@@ -205,7 +246,6 @@ class DrainoApp(App):
 
     def _load_nodes_bg(self) -> None:
         """Load K8s nodes then fetch all OpenStack summaries in a single pass."""
-        # Phase 1: K8s node list (fast) — populate the table immediately
         try:
             nodes = k8s_ops.get_nodes()
         except Exception as exc:
@@ -215,9 +255,9 @@ class DrainoApp(App):
             )
             return
 
-        self.call_from_thread(self._populate_node_table, nodes)
+        # Show K8s nodes immediately; all go to compute-table until we know better
+        self.call_from_thread(self._populate_initial, nodes)
 
-        # Phase 2: three OpenStack API calls cover every hypervisor at once
         def _os_log(msg: str) -> None:
             self.call_from_thread(self._global_log, f"[dim]{msg}[/dim]")
 
@@ -230,22 +270,22 @@ class DrainoApp(App):
             )
             return
 
-        self.call_from_thread(self._apply_all_summaries, nodes, summaries)
+        self.call_from_thread(self._apply_summaries_and_rebuild, nodes, summaries)
 
-    def _apply_all_summaries(self, nodes: list[dict], summaries: dict[str, dict]) -> None:
-        """Distribute bulk OpenStack summary data to each node's state and table row."""
+    def _populate_initial(self, nodes: list[dict]) -> None:
+        """First pass: create NodeState entries and show all nodes in compute-table.
+
+        We don't yet know which are compute vs other, so everything lands here
+        temporarily.  _apply_summaries_and_rebuild() will split them correctly.
+        """
+        self._last_k8s_nodes = nodes
+        ct = self.query_one("#compute-table", DataTable)
+        ct.clear()
+        self.query_one("#other-table", DataTable).clear()
+
         for nd in nodes:
-            name     = nd["name"]
-            hostname = nd.get("hostname", name)
-            self._apply_node_summary(name, summaries.get(hostname, {}))
-
-    def _populate_node_table(self, nodes: list[dict]) -> None:
-        table = self.query_one("#node-table", DataTable)
-        table.clear()
-
-        for nd in nodes:
-            name:     str = nd["name"]
-            hostname: str = nd.get("hostname", name)
+            name:     str  = nd["name"]
+            hostname: str  = nd.get("hostname", name)
 
             if name not in self.node_states:
                 self.node_states[name] = NodeState(
@@ -253,10 +293,13 @@ class DrainoApp(App):
                 )
 
             state = self.node_states[name]
-            table.add_row(
+            state.k8s_ready    = nd.get("ready", True)
+            state.k8s_cordoned = nd.get("cordoned", False)
+
+            ct.add_row(
                 name,
                 self._nova_svc_text(state),
-                self._phase_text(state, nd),
+                self._phase_text(state),
                 self._count_text(state.amphora_count),
                 self._count_text(state.vm_count),
                 key=name,
@@ -265,25 +308,59 @@ class DrainoApp(App):
         if self.selected_node:
             self._refresh_workflow()
 
-    def _apply_node_summary(self, node_name: str, summary: dict) -> None:
-        """Update a node's state and table row with fresh OpenStack summary data."""
-        state = self.node_states.get(node_name)
-        if not state:
-            return
+    def _apply_summaries_and_rebuild(
+        self, nodes: list[dict], summaries: dict[str, dict]
+    ) -> None:
+        """Apply OpenStack data then split nodes across the two tables."""
+        # 1. Update every NodeState with its summary
+        for nd in nodes:
+            name     = nd["name"]
+            hostname = nd.get("hostname", name)
+            summary  = summaries.get(hostname, {})
+            state    = self.node_states.get(name)
+            if not state:
+                continue
+            if state.phase == NodePhase.IDLE:
+                state.is_compute     = summary.get("is_compute", False)
+                state.compute_status = summary.get("compute_status")
+                state.amphora_count  = summary.get("amphora_count")
+                state.vm_count       = summary.get("vm_count")
 
-        # Only overwrite counts if we're not mid-evacuation (worker owns them then)
-        if state.phase == NodePhase.IDLE:
-            state.compute_status = summary.get("compute_status")
-            state.amphora_count  = summary.get("amphora_count")
-            state.vm_count       = summary.get("vm_count")
+        # 2. Rebuild both tables
+        self._rebuild_tables()
 
-        table = self.query_one("#node-table", DataTable)
-        try:
-            table.update_cell(node_name, _COL_NOVA, self._nova_svc_text(state))
-            table.update_cell(node_name, _COL_AMP,  self._count_text(state.amphora_count))
-            table.update_cell(node_name, _COL_VMS,  self._count_text(state.vm_count))
-        except Exception:
-            pass  # row may not exist during concurrent repopulation
+    def _rebuild_tables(self) -> None:
+        """Clear and repopulate compute-table and other-table from current state."""
+        ct = self.query_one("#compute-table", DataTable)
+        ot = self.query_one("#other-table",   DataTable)
+        ct.clear()
+        ot.clear()
+
+        for nd in self._last_k8s_nodes:
+            name  = nd["name"]
+            state = self.node_states.get(name)
+            if not state:
+                continue
+
+            if state.is_compute or state.phase != NodePhase.IDLE:
+                # Always keep active/complete/error nodes in the compute table
+                ct.add_row(
+                    name,
+                    self._nova_svc_text(state),
+                    self._phase_text(state),
+                    self._count_text(state.amphora_count),
+                    self._count_text(state.vm_count),
+                    key=name,
+                )
+            else:
+                ot.add_row(
+                    name,
+                    self._k8s_status_text(state),
+                    key=name,
+                )
+
+        if self.selected_node:
+            self._refresh_workflow()
 
     # ── Text helpers ──────────────────────────────────────────────────────────
 
@@ -299,16 +376,23 @@ class DrainoApp(App):
             return Text.from_markup("[bold red]DOWN[/bold red]")
         return Text.from_markup(f"[dim]{s}[/dim]")
 
-    def _phase_text(self, state: NodeState, nd: dict) -> Text:
+    def _phase_text(self, state: NodeState) -> Text:
         if state.phase != NodePhase.IDLE:
             color = PHASE_COLOR[state.phase]
             label = PHASE_LABEL[state.phase]
             return Text.from_markup(f"[{color}]{label}[/{color}]")
-        if nd.get("cordoned"):
+        if state.k8s_cordoned:
             return Text.from_markup("[dim]CORDONED[/dim]")
-        if not nd.get("ready", True):
+        if not state.k8s_ready:
             return Text.from_markup("[red]NOT READY[/red]")
         return Text.from_markup("[white]IDLE[/white]")
+
+    def _k8s_status_text(self, state: NodeState) -> Text:
+        if state.k8s_cordoned:
+            return Text.from_markup("[dim]Cordoned[/dim]")
+        if not state.k8s_ready:
+            return Text.from_markup("[red]Not Ready[/red]")
+        return Text.from_markup("[green]Ready[/green]")
 
     def _count_text(self, count: Optional[int]) -> Text:
         if count is None:
@@ -338,6 +422,13 @@ class DrainoApp(App):
 
         state = self.node_states.get(self.selected_node)
         if not state:
+            return
+
+        if not state.is_compute:
+            self._global_log(
+                f"[yellow]{self.selected_node} is not a compute node — "
+                f"no OpenStack evacuation needed.[/yellow]"
+            )
             return
 
         if state.phase == NodePhase.RUNNING:
@@ -385,14 +476,22 @@ class DrainoApp(App):
         if not state:
             return
 
-        table = self.query_one("#node-table", DataTable)
-        try:
-            table.update_cell(node_name, _COL_NOVA,  self._nova_svc_text(state))
-            table.update_cell(node_name, _COL_PHASE, self._phase_text(state, {}))
-            table.update_cell(node_name, _COL_AMP,   self._count_text(state.amphora_count))
-            table.update_cell(node_name, _COL_VMS,   self._count_text(state.vm_count))
-        except Exception:
-            pass
+        # Compute nodes live in the compute-table
+        if state.is_compute:
+            ct = self.query_one("#compute-table", DataTable)
+            try:
+                ct.update_cell(node_name, _COL_NOVA,  self._nova_svc_text(state))
+                ct.update_cell(node_name, _COL_PHASE, self._phase_text(state))
+                ct.update_cell(node_name, _COL_AMP,   self._count_text(state.amphora_count))
+                ct.update_cell(node_name, _COL_VMS,   self._count_text(state.vm_count))
+            except Exception:
+                pass
+        else:
+            ot = self.query_one("#other-table", DataTable)
+            try:
+                ot.update_cell(node_name, _COL_OTHER_STATUS, self._k8s_status_text(state))
+            except Exception:
+                pass
 
         if node_name == self.selected_node:
             self._refresh_workflow()
@@ -410,9 +509,26 @@ class DrainoApp(App):
 
     def _render_workflow(self, state: NodeState) -> str:
         lines: list[str] = []
-
         phase_color = PHASE_COLOR[state.phase]
         phase_label = PHASE_LABEL[state.phase]
+
+        lines += [
+            f"[bold]{state.k8s_name}[/bold]   "
+            f"[{phase_color}][ {phase_label} ][/{phase_color}]",
+        ]
+
+        if not state.is_compute:
+            k8s_status = (
+                "[dim]Cordoned[/dim]"  if state.k8s_cordoned else
+                "[red]Not Ready[/red]" if not state.k8s_ready  else
+                "[green]Ready[/green]"
+            )
+            lines += [
+                f"[dim]K8s status: {k8s_status}[/dim]",
+                "",
+                "[dim]Non-compute node — no OpenStack evacuation needed.[/dim]",
+            ]
+            return "\n".join(lines)
 
         nova_svc = {
             "up":       "[green]enabled[/green]",
@@ -421,10 +537,7 @@ class DrainoApp(App):
         }.get(state.compute_status or "", "[dim]unknown[/dim]")
 
         lines += [
-            f"[bold]{state.k8s_name}[/bold]   "
-            f"[{phase_color}][ {phase_label} ][/{phase_color}]",
-            f"[dim]Hypervisor: {state.hypervisor}   "
-            f"Nova compute: {nova_svc}[/dim]",
+            f"[dim]Hypervisor: {state.hypervisor}   Nova compute: {nova_svc}[/dim]",
             "",
         ]
 

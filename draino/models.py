@@ -49,11 +49,16 @@ class NodeState:
     # Draino workflow phase
     phase: NodePhase = NodePhase.IDLE
 
+    # ── K8s node attributes (from get_nodes()) ───────────────────────────
+    k8s_ready:    bool = True
+    k8s_cordoned: bool = False
+
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"
+    is_compute:     bool = False
     compute_status: Optional[str] = None
-    amphora_count: Optional[int] = None
-    vm_count: Optional[int] = None
+    amphora_count:  Optional[int] = None
+    vm_count:       Optional[int] = None
 
     # ── Workflow detail ───────────────────────────────────────────────────
     steps: list[WorkflowStep] = field(default_factory=list)

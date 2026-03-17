@@ -130,6 +130,7 @@ def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
             if s.id in amp_ids or (s.name or "").startswith("amphora-")
         )
         result[host] = {
+            "is_compute":     True,
             "compute_status": service_map.get(host),
             "amphora_count":  amphora_count,
             "vm_count":       len(servers) - amphora_count,
