@@ -23,16 +23,29 @@ def _conn() -> openstack.connection.Connection:
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
 
+def _server_host(server) -> str | None:
+    """Extract the compute host from a Nova server object.
+
+    openstacksdk maps OS-EXT-SRV-ATTR:host to the .host attribute.
+    Try every known alias so we're robust across SDK versions.
+    """
+    return (
+        getattr(server, "host", None)
+        or server.get("OS-EXT-SRV-ATTR:host")
+        or server.get("Host")
+    )
+
+
 def _servers_on_host(conn, hypervisor: str) -> list:
-    """Return all Nova servers whose OS-EXT-SRV-ATTR:host matches *hypervisor*.
+    """Return all Nova servers scheduled on *hypervisor*.
 
     The Nova list-servers `host` query parameter is unreliable across
     deployments, so we fetch all servers (admin, all_projects) and filter
-    client-side on the extended attribute.
+    client-side using the OS-EXT-SRV-ATTR:host extended attribute.
     """
     return [
         s for s in conn.compute.servers(all_projects=True)
-        if (s.get("OS-EXT-SRV-ATTR:host") or getattr(s, "host", None)) == hypervisor
+        if _server_host(s) == hypervisor
     ]
 
 
