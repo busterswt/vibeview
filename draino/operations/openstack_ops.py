@@ -21,31 +21,59 @@ def _conn() -> openstack.connection.Connection:
     return openstack.connect(cloud=_CLOUD)
 
 
+# ── Internal helpers ─────────────────────────────────────────────────────────
+
+def _servers_on_host(conn, hypervisor: str) -> list:
+    """Return all Nova servers whose OS-EXT-SRV-ATTR:host matches *hypervisor*.
+
+    The Nova list-servers `host` query parameter is unreliable across
+    deployments, so we fetch all servers (admin, all_projects) and filter
+    client-side on the extended attribute.
+    """
+    return [
+        s for s in conn.compute.servers(all_projects=True)
+        if (s.get("OS-EXT-SRV-ATTR:host") or getattr(s, "host", None)) == hypervisor
+    ]
+
+
 # ── Node summary (for the node-list panel) ────────────────────────────────────
 
 def get_host_summary(hypervisor: str) -> dict:
     """Return a lightweight summary for the node panel.
 
     Returns a dict with keys:
-      compute_enabled : bool | None
-      amphora_count   : int  | None
-      vm_count        : int  | None   (non-amphora instances)
+      compute_status : str | None   — "up" | "disabled" | "down"
+      amphora_count  : int | None
+      vm_count       : int | None   (non-amphora instances)
     """
     conn = _conn()
 
-    compute_enabled: Optional[bool] = None
-    amphora_count:   Optional[int]  = None
-    vm_count:        Optional[int]  = None
+    compute_status: Optional[str] = None
+    amphora_count:  Optional[int] = None
+    vm_count:       Optional[int] = None
 
+    # ── Compute service status (status = admin enabled/disabled;
+    #                            state  = daemon up/down) ──────────────────
     try:
         services = list(conn.compute.services(host=hypervisor, binary="nova-compute"))
         if services:
-            compute_enabled = services[0].status == "enabled"
+            svc = services[0]
+            svc_state  = (getattr(svc, "state",  "up")       or "up").lower()
+            svc_status = (getattr(svc, "status", "enabled")  or "enabled").lower()
+            if svc_state == "down":
+                compute_status = "down"
+            elif svc_status == "disabled":
+                compute_status = "disabled"
+            else:
+                compute_status = "up"
     except Exception:
         pass
 
+    # ── Instance counts ────────────────────────────────────────────────────
+    # Initialise outside try so the Octavia block can always reference it.
+    servers: list = []
     try:
-        servers = list(conn.compute.servers(all_projects=True, host=hypervisor))
+        servers = _servers_on_host(conn, hypervisor)
         amphora_count = sum(
             1 for s in servers if (s.name or "").startswith("amphora-")
         )
@@ -54,25 +82,26 @@ def get_host_summary(hypervisor: str) -> dict:
         pass
 
     # Refine amphora detection using Octavia if available
-    try:
-        amp_map = {
-            amp.compute_id
-            for amp in conn.load_balancer.amphorae()
-            if amp.compute_id
-        }
-        if amp_map and servers:  # type: ignore[possibly-undefined]
-            amphora_count = sum(
-                1 for s in servers
-                if s.id in amp_map or (s.name or "").startswith("amphora-")
-            )
-            vm_count = len(servers) - amphora_count
-    except Exception:
-        pass  # Octavia may not be available; stick with name-based count
+    if servers:
+        try:
+            amp_ids = {
+                amp.compute_id
+                for amp in conn.load_balancer.amphorae()
+                if amp.compute_id
+            }
+            if amp_ids:
+                amphora_count = sum(
+                    1 for s in servers
+                    if s.id in amp_ids or (s.name or "").startswith("amphora-")
+                )
+                vm_count = len(servers) - amphora_count
+        except Exception:
+            pass  # Octavia unavailable — name-based count is already set
 
     return {
-        "compute_enabled": compute_enabled,
-        "amphora_count":   amphora_count,
-        "vm_count":        vm_count,
+        "compute_status": compute_status,
+        "amphora_count":  amphora_count,
+        "vm_count":       vm_count,
     }
 
 
@@ -99,7 +128,7 @@ def disable_compute_service(hypervisor: str, log: LogFn) -> None:
 def list_servers_on_host(hypervisor: str, log: LogFn) -> list[dict]:
     """List all server instances currently scheduled on a hypervisor."""
     conn = _conn()
-    servers = list(conn.compute.servers(all_projects=True, host=hypervisor))
+    servers = _servers_on_host(conn, hypervisor)
     result = []
     for s in servers:
         name = s.name or s.id
@@ -153,7 +182,7 @@ def get_server_status(server_id: str) -> Optional[str]:
 def count_servers_on_host(hypervisor: str) -> int:
     """Return the number of instances currently on a hypervisor."""
     conn = _conn()
-    return len(list(conn.compute.servers(all_projects=True, host=hypervisor)))
+    return len(_servers_on_host(conn, hypervisor))
 
 
 # ── Octavia / Amphora ─────────────────────────────────────────────────────────

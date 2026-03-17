@@ -273,9 +273,9 @@ class DrainoApp(App):
 
         # Only overwrite counts if we're not mid-evacuation (worker owns them then)
         if state.phase == NodePhase.IDLE:
-            state.compute_enabled = summary.get("compute_enabled")
-            state.amphora_count   = summary.get("amphora_count")
-            state.vm_count        = summary.get("vm_count")
+            state.compute_status = summary.get("compute_status")
+            state.amphora_count  = summary.get("amphora_count")
+            state.vm_count       = summary.get("vm_count")
 
         table = self.query_one("#node-table", DataTable)
         try:
@@ -288,11 +288,16 @@ class DrainoApp(App):
     # ── Text helpers ──────────────────────────────────────────────────────────
 
     def _nova_svc_text(self, state: NodeState) -> Text:
-        if state.compute_enabled is None:
+        s = state.compute_status
+        if s is None:
             return Text.from_markup("[dim]…[/dim]")
-        if state.compute_enabled:
+        if s == "up":
             return Text.from_markup("[green]enabled[/green]")
-        return Text.from_markup("[yellow]disabled[/yellow]")
+        if s == "disabled":
+            return Text.from_markup("[yellow]disabled[/yellow]")
+        if s == "down":
+            return Text.from_markup("[bold red]DOWN[/bold red]")
+        return Text.from_markup(f"[dim]{s}[/dim]")
 
     def _phase_text(self, state: NodeState, nd: dict) -> Text:
         if state.phase != NodePhase.IDLE:
@@ -409,11 +414,11 @@ class DrainoApp(App):
         phase_color = PHASE_COLOR[state.phase]
         phase_label = PHASE_LABEL[state.phase]
 
-        nova_svc = (
-            "[green]enabled[/green]"   if state.compute_enabled is True  else
-            "[yellow]disabled[/yellow]" if state.compute_enabled is False else
-            "[dim]unknown[/dim]"
-        )
+        nova_svc = {
+            "up":       "[green]enabled[/green]",
+            "disabled": "[yellow]disabled[/yellow]",
+            "down":     "[bold red]DOWN[/bold red]",
+        }.get(state.compute_status or "", "[dim]unknown[/dim]")
 
         lines += [
             f"[bold]{state.k8s_name}[/bold]   "

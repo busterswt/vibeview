@@ -50,7 +50,8 @@ class NodeState:
     phase: NodePhase = NodePhase.IDLE
 
     # ── OpenStack summary (populated by background refresh) ──────────────
-    compute_enabled: Optional[bool] = None  # True=enabled, False=disabled, None=unknown
+    # compute_status: None=loading | "up" | "disabled" | "down"
+    compute_status: Optional[str] = None
     amphora_count: Optional[int] = None
     vm_count: Optional[int] = None
 

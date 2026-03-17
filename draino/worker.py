@@ -60,7 +60,7 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     step_set("disable_nova", StepStatus.RUNNING)
     try:
         openstack_ops.disable_compute_service(state.hypervisor, log)
-        state.compute_enabled = False   # reflect immediately in node panel
+        state.compute_status = "disabled"   # reflect immediately in node panel
         step_set("disable_nova", StepStatus.SUCCESS)
     except Exception as exc:
         abort("disable_nova", str(exc))
