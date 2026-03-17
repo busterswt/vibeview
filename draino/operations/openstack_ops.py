@@ -26,14 +26,28 @@ def _conn() -> openstack.connection.Connection:
 def _server_host(server) -> str | None:
     """Extract the compute host from a Nova server object.
 
-    openstacksdk maps OS-EXT-SRV-ATTR:host to the .host attribute.
-    Try every known alias so we're robust across SDK versions.
+    Try every known access pattern across openstacksdk versions:
+      1. SDK-mapped attribute (.host → OS-EXT-SRV-ATTR:host)
+      2. Raw body dict via to_dict() — most reliable
+      3. Dict-style get on the resource object
     """
-    return (
-        getattr(server, "host", None)
-        or server.get("OS-EXT-SRV-ATTR:host")
-        or server.get("Host")
-    )
+    # 1. SDK property (works when openstacksdk defines the alias)
+    h = getattr(server, "host", None)
+    if h:
+        return h
+    # 2. Raw body — always contains the original API response keys
+    try:
+        d = server.to_dict()
+        h = (
+            d.get("OS-EXT-SRV-ATTR:host")
+            or d.get("host")
+            or d.get("Host")
+        )
+        if h:
+            return h
+    except Exception:
+        pass
+    return None
 
 
 def _servers_on_host(conn, hypervisor: str) -> list:
@@ -51,12 +65,17 @@ def _servers_on_host(conn, hypervisor: str) -> list:
 
 # ── Node summary (for the node-list panel) ────────────────────────────────────
 
-def get_all_host_summaries() -> dict[str, dict]:
+def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
     """Fetch summaries for every hypervisor in exactly three API calls.
 
     Returns {hypervisor_hostname: {compute_status, amphora_count, vm_count}}
+    log_cb, if provided, receives diagnostic strings useful for debugging.
     """
     conn = _conn()
+
+    def _log(msg: str) -> None:
+        if log_cb:
+            log_cb(msg)
 
     # 1. Nova compute service statuses — one call for all hosts
     service_map: dict[str, str] = {}
@@ -71,18 +90,29 @@ def get_all_host_summaries() -> dict[str, dict]:
                 service_map[svc_host] = "disabled"
             else:
                 service_map[svc_host] = "up"
-    except Exception:
-        pass
+        _log(f"Nova services found on: {sorted(service_map)}")
+    except Exception as exc:
+        _log(f"Nova services query failed: {exc}")
 
     # 2. All servers, grouped by host — one call for all hosts
     servers_by_host: dict[str, list] = {}
+    total_servers = 0
+    null_host_count = 0
     try:
         for s in conn.compute.servers(all_projects=True):
+            total_servers += 1
             h = _server_host(s)
             if h:
                 servers_by_host.setdefault(h, []).append(s)
-    except Exception:
-        pass
+            else:
+                null_host_count += 1
+        _log(
+            f"Server list: {total_servers} total, "
+            f"{null_host_count} with no host attr, "
+            f"hosts seen: {sorted(servers_by_host)}"
+        )
+    except Exception as exc:
+        _log(f"Server list query failed: {exc}")
 
     # 3. Octavia amphora instance IDs — one call
     amp_ids: set[str] = set()
@@ -92,8 +122,9 @@ def get_all_host_summaries() -> dict[str, dict]:
             for amp in conn.load_balancer.amphorae()
             if amp.compute_id
         }
-    except Exception:
-        pass
+        _log(f"Octavia: {len(amp_ids)} amphora instance(s)")
+    except Exception as exc:
+        _log(f"Octavia query failed (non-fatal): {exc}")
 
     # Build per-host summary from the three collected datasets
     result: dict[str, dict] = {}

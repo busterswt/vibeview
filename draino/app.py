@@ -218,8 +218,11 @@ class DrainoApp(App):
         self.call_from_thread(self._populate_node_table, nodes)
 
         # Phase 2: three OpenStack API calls cover every hypervisor at once
+        def _os_log(msg: str) -> None:
+            self.call_from_thread(self._global_log, f"[dim]{msg}[/dim]")
+
         try:
-            summaries = openstack_ops.get_all_host_summaries()
+            summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log)
         except Exception as exc:
             self.call_from_thread(
                 self._global_log,
