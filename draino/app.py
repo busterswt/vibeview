@@ -331,6 +331,10 @@ class DrainoApp(App):
         # 2. Rebuild both tables
         self._rebuild_tables()
 
+        # 3. If the selected node just became a known compute node, load preflight
+        if self.selected_node:
+            self._trigger_preflight(self.selected_node)
+
     def _rebuild_tables(self) -> None:
         """Clear and repopulate compute-table and other-table from current state."""
         ct = self.query_one("#compute-table", DataTable)
@@ -408,6 +412,7 @@ class DrainoApp(App):
         if event.row_key and event.row_key.value is not None:
             self.selected_node = str(event.row_key.value)
             self._refresh_workflow()
+            self._trigger_preflight(self.selected_node)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-start":
@@ -440,9 +445,11 @@ class DrainoApp(App):
             )
             return
 
-        state.phase      = NodePhase.RUNNING
-        state.instances  = []
-        state.log_buffer = []
+        state.phase               = NodePhase.RUNNING
+        state.instances           = []
+        state.log_buffer          = []
+        state.preflight_instances = []
+        state.preflight_loading   = False
         state.init_steps()
 
         node_name = self.selected_node  # capture for closures
@@ -471,6 +478,38 @@ class DrainoApp(App):
 
     def _auto_refresh(self) -> None:
         self.action_refresh()
+
+    def _trigger_preflight(self, node_name: str) -> None:
+        """Start a background preflight fetch for *node_name* if conditions allow."""
+        state = self.node_states.get(node_name)
+        if not state or not state.is_compute or state.phase != NodePhase.IDLE:
+            return
+        if state.preflight_loading:
+            return
+        state.preflight_loading   = True
+        state.preflight_instances = []
+        self._refresh_workflow()
+        threading.Thread(
+            target=self._load_preflight_bg, args=(node_name,), daemon=True
+        ).start()
+
+    def _load_preflight_bg(self, node_name: str) -> None:
+        state = self.node_states.get(node_name)
+        if not state:
+            return
+        try:
+            state.preflight_instances = openstack_ops.get_instances_preflight(
+                state.hypervisor
+            )
+        except Exception as exc:
+            state.preflight_instances = []
+            self.call_from_thread(
+                self._global_log,
+                f"[dim red]Preflight fetch failed for {node_name}: {exc}[/dim red]",
+            )
+        finally:
+            state.preflight_loading = False
+        self.call_from_thread(self._refresh_workflow)
 
     def _on_state_changed(self, node_name: str) -> None:
         """Called on the main thread whenever the worker mutates node state."""
@@ -544,6 +583,48 @@ class DrainoApp(App):
         ]
 
         if not state.steps:
+            if state.preflight_loading:
+                lines.append("[dim]Fetching instances…[/dim]")
+            else:
+                vms  = [i for i in state.preflight_instances if not i["is_amphora"]]
+                amps = [i for i in state.preflight_instances if     i["is_amphora"]]
+                if vms:
+                    W = 34
+                    lines.append("[bold underline]Instances[/bold underline]")
+                    lines.append("")
+                    lines.append(
+                        f"[dim]  {'Name':<{W}} {'Status':<12} Storage[/dim]"
+                    )
+                    lines.append(f"  [dim]{'─' * (W + 24)}[/dim]")
+                    for inst in vms:
+                        name = (
+                            inst["name"][: W - 2] + ".."
+                            if len(inst["name"]) > W
+                            else inst["name"]
+                        )
+                        storage = (
+                            "[cyan]Volume[/cyan]"
+                            if inst["is_volume_backed"]
+                            else "[dim]Ephemeral[/dim]"
+                        )
+                        lines.append(
+                            f"  [white]{name:<{W}}[/white]"
+                            f"[dim]{inst['status']:<12}[/dim]"
+                            f"{storage}"
+                        )
+                    lines.append("")
+                    if amps:
+                        lines.append(
+                            f"  [dim]+ {len(amps)} Amphora instance(s)[/dim]"
+                        )
+                elif state.preflight_instances:
+                    lines.append(
+                        f"[dim]{len(state.preflight_instances)} Amphora instance(s), "
+                        f"no regular VMs.[/dim]"
+                    )
+                elif state.preflight_instances is not None and not state.preflight_loading:
+                    lines.append("[dim]No instances on this hypervisor.[/dim]")
+            lines.append("")
             lines.append(
                 "[dim]Press [bold]S[/bold] or click "
                 "[bold]Start Evacuation[/bold] to begin.[/dim]"

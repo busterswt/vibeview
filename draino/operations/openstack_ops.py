@@ -226,6 +226,27 @@ def disable_compute_service(hypervisor: str, log: LogFn) -> None:
 
 # ── Servers ───────────────────────────────────────────────────────────────────
 
+def get_instances_preflight(hypervisor: str) -> list[dict]:
+    """Return all instances on *hypervisor* with storage-type metadata.
+
+    Used to preview what will be migrated before the workflow starts.
+    is_volume_backed is True when the server has no image (booted from volume).
+    """
+    conn = _conn()
+    servers = _servers_on_host(conn, hypervisor)
+    result = []
+    for s in servers:
+        name = s.name or s.id
+        result.append({
+            "id":               s.id,
+            "name":             name,
+            "status":           s.status,
+            "is_amphora":       name.startswith("amphora-"),
+            "is_volume_backed": not s.image,  # {} or None → booted from volume
+        })
+    return result
+
+
 def list_servers_on_host(hypervisor: str, log: LogFn) -> list[dict]:
     """List all server instances currently scheduled on a hypervisor."""
     conn = _conn()

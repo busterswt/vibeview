@@ -60,6 +60,10 @@ class NodeState:
     amphora_count:  Optional[int] = None
     vm_count:       Optional[int] = None
 
+    # ── Pre-flight instance preview (populated on node selection) ────────────
+    preflight_instances: list[dict] = field(default_factory=list)
+    preflight_loading:   bool = False
+
     # ── Workflow detail ───────────────────────────────────────────────────
     steps: list[WorkflowStep] = field(default_factory=list)
     instances: list[InstanceInfo] = field(default_factory=list)
