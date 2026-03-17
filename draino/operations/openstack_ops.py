@@ -26,28 +26,14 @@ def _conn() -> openstack.connection.Connection:
 def _server_host(server) -> str | None:
     """Extract the compute host from a Nova server object.
 
-    Try every known access pattern across openstacksdk versions:
-      1. SDK-mapped attribute (.host → OS-EXT-SRV-ATTR:host)
-      2. Raw body dict via to_dict() — most reliable
-      3. Dict-style get on the resource object
+    openstacksdk maps OS-EXT-SRV-ATTR:host to .compute_host in newer
+    releases and .host in older ones. Try all known forms.
     """
-    # 1. SDK property (works when openstacksdk defines the alias)
-    h = getattr(server, "host", None)
-    if h:
-        return h
-    # 2. Raw body — always contains the original API response keys
-    try:
-        d = server.to_dict()
-        h = (
-            d.get("OS-EXT-SRV-ATTR:host")
-            or d.get("host")
-            or d.get("Host")
-        )
-        if h:
-            return h
-    except Exception:
-        pass
-    return None
+    return (
+        getattr(server, "compute_host", None)
+        or getattr(server, "host", None)
+        or server.to_dict().get("OS-EXT-SRV-ATTR:host")
+    )
 
 
 def _servers_on_host(conn, hypervisor: str) -> list:
