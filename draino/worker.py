@@ -101,16 +101,20 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
         step_set("migrate_vms", StepStatus.SUCCESS, "No VMs to migrate")
     else:
         for inst in vms:
+            inst.migration_status = "queued"
+            update_cb()
             try:
-                inst.migration_status = "queued"
-                update_cb()
                 openstack_ops.live_migrate_server(inst.id, log)
                 inst.migration_status = "migrating"
-                update_cb()
-            except Exception as exc:
-                log(f"Could not trigger migration for '{inst.name}': {exc}")
-                inst.migration_status = "failed"
-                update_cb()
+            except Exception as live_exc:
+                log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
+                try:
+                    openstack_ops.cold_migrate_server(inst.id, log)
+                    inst.migration_status = "cold-migrating"
+                except Exception as cold_exc:
+                    log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
+                    inst.migration_status = "failed"
+            update_cb()
 
         deadline = time.time() + MIGRATE_TIMEOUT
         while time.time() < deadline:
@@ -122,23 +126,33 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
                 break
 
             for inst in pending:
-                migs = openstack_ops.get_server_migrations(inst.id)
-                if migs:
-                    latest = migs[0]["status"].lower()
-                    if latest in ("completed", "done", "finished"):
-                        inst.migration_status = "complete"
-                    elif latest in ("error", "failed"):
+                nova_status = openstack_ops.get_server_status(inst.id)
+
+                if nova_status == "VERIFY_RESIZE":
+                    # Cold migration landed — confirm it automatically
+                    inst.migration_status = "confirming"
+                    update_cb()
+                    try:
+                        openstack_ops.confirm_resize_server(inst.id, log)
+                    except Exception as exc:
+                        log(f"Confirm resize failed for '{inst.name}': {exc}")
                         inst.migration_status = "failed"
-                        log(f"Migration failed for '{inst.name}'")
+                elif nova_status == "ACTIVE":
+                    # Check migration records to confirm it actually moved
+                    migs = openstack_ops.get_server_migrations(inst.id)
+                    if migs:
+                        latest = migs[0]["status"].lower()
+                        if latest in ("completed", "done", "finished"):
+                            inst.migration_status = "complete"
+                        elif latest in ("error", "failed"):
+                            inst.migration_status = "failed"
+                            log(f"Migration failed for '{inst.name}'")
+                        # else still in-flight; leave status as-is
                     else:
-                        inst.migration_status = "migrating"
-                else:
-                    nova_status = openstack_ops.get_server_status(inst.id)
-                    if nova_status == "ACTIVE":
                         inst.migration_status = "complete"
-                    elif nova_status == "ERROR":
-                        inst.migration_status = "failed"
-                        log(f"Server '{inst.name}' entered ERROR state")
+                elif nova_status == "ERROR":
+                    inst.migration_status = "failed"
+                    log(f"Server '{inst.name}' entered ERROR state")
 
             done_n   = sum(1 for i in vms if i.migration_status == "complete")
             failed_n = sum(1 for i in vms if i.migration_status == "failed")

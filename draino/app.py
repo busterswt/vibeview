@@ -42,12 +42,14 @@ PHASE_LABEL: dict[NodePhase, str] = {
     NodePhase.ERROR:    "ERROR",
 }
 OP_COLOR: dict[str, str] = {
-    "queued":       "dim",
-    "migrating":    "yellow",
-    "failing_over": "yellow",
-    "complete":     "green",
-    "failed":       "bold red",
-    "pending":      "dim",
+    "queued":         "dim",
+    "migrating":      "yellow",
+    "cold-migrating": "yellow",
+    "confirming":     "yellow",
+    "failing_over":   "yellow",
+    "complete":       "green",
+    "failed":         "bold red",
+    "pending":        "dim",
 }
 
 # Column keys — compute table

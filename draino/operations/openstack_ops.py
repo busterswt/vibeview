@@ -259,6 +259,20 @@ def live_migrate_server(server_id: str, log: LogFn) -> None:
     log(f"Live migration triggered for server {server_id}")
 
 
+def cold_migrate_server(server_id: str, log: LogFn) -> None:
+    """Trigger a cold migration (server will be stopped and moved)."""
+    conn = _conn()
+    conn.compute.migrate_server(server_id)
+    log(f"Cold migration triggered for server {server_id}")
+
+
+def confirm_resize_server(server_id: str, log: LogFn) -> None:
+    """Confirm a completed cold migration, moving it from VERIFY_RESIZE to ACTIVE."""
+    conn = _conn()
+    conn.compute.confirm_resize_server(server_id)
+    log(f"Cold migration confirmed for server {server_id}")
+
+
 def get_server_migrations(server_id: str) -> list[dict]:
     """Return recent migrations for a server, newest first."""
     conn = _conn()
