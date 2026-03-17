@@ -259,6 +259,19 @@ def live_migrate_server(server_id: str, log: LogFn) -> None:
     log(f"Live migration triggered for server {server_id}")
 
 
+def get_server_task_state(server_id: str) -> Optional[str]:
+    """Return the current OS-EXT-STS:task_state for a server, or None on error."""
+    conn = _conn()
+    try:
+        s = conn.compute.get_server(server_id)
+        return (
+            getattr(s, "task_state", None)
+            or s.to_dict().get("OS-EXT-STS:task_state")
+        )
+    except Exception:
+        return None
+
+
 def cold_migrate_server(server_id: str, log: LogFn) -> None:
     """Trigger a cold migration (server will be stopped and moved)."""
     conn = _conn()

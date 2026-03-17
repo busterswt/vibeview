@@ -107,13 +107,25 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
                 openstack_ops.live_migrate_server(inst.id, log)
                 inst.migration_status = "migrating"
             except Exception as live_exc:
-                log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
-                try:
-                    openstack_ops.cold_migrate_server(inst.id, log)
-                    inst.migration_status = "cold-migrating"
-                except Exception as cold_exc:
-                    log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
-                    inst.migration_status = "failed"
+                # A 504 timeout means Nova accepted the request but the HTTP
+                # response timed out — the instance may already be migrating.
+                # Check task_state before attempting a cold fallback; issuing
+                # cold migrate against an already-migrating instance gets a 409.
+                task_state = openstack_ops.get_server_task_state(inst.id) or ""
+                if "migrat" in task_state.lower():
+                    log(
+                        f"Live migration for '{inst.name}' timed out but instance "
+                        f"is already in task_state '{task_state}' — continuing to poll"
+                    )
+                    inst.migration_status = "migrating"
+                else:
+                    log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
+                    try:
+                        openstack_ops.cold_migrate_server(inst.id, log)
+                        inst.migration_status = "cold-migrating"
+                    except Exception as cold_exc:
+                        log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
+                        inst.migration_status = "failed"
             update_cb()
 
         deadline = time.time() + MIGRATE_TIMEOUT
