@@ -101,6 +101,15 @@ def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
     try:
         for s in conn.compute.servers(all_projects=True):
             total_servers += 1
+            # On the first server, log all available keys so mismatches are visible
+            if total_servers == 1:
+                try:
+                    d = s.to_dict()
+                    host_keys = [k for k in d if "host" in k.lower()]
+                    _log(f"Sample server host-related keys: {host_keys}")
+                    _log(f"Sample server host values: { {k: d[k] for k in host_keys} }")
+                except Exception as exc:
+                    _log(f"Could not inspect server dict: {exc}")
             h = _server_host(s)
             if h:
                 servers_by_host.setdefault(h, []).append(s)
