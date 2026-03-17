@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "draino"
+version = "0.1.0"
+description = "TUI for draining OpenStack hypervisors and Kubernetes nodes before a reboot"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.52.0",
+    "kubernetes>=28.1.0",
+    "openstacksdk>=2.0.0",
+]
+
+[project.scripts]
+draino = "draino.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["draino"]
+
+[project.optional-dependencies]
+dev = ["textual-dev"]
