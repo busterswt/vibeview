@@ -51,6 +51,67 @@ def _servers_on_host(conn, hypervisor: str) -> list:
 
 # ── Node summary (for the node-list panel) ────────────────────────────────────
 
+def get_all_host_summaries() -> dict[str, dict]:
+    """Fetch summaries for every hypervisor in exactly three API calls.
+
+    Returns {hypervisor_hostname: {compute_status, amphora_count, vm_count}}
+    """
+    conn = _conn()
+
+    # 1. Nova compute service statuses — one call for all hosts
+    service_map: dict[str, str] = {}
+    try:
+        for svc in conn.compute.services(binary="nova-compute"):
+            svc_host   = getattr(svc, "host", None) or ""
+            svc_state  = (getattr(svc, "state",  "up")      or "up").lower()
+            svc_status = (getattr(svc, "status", "enabled") or "enabled").lower()
+            if svc_state == "down":
+                service_map[svc_host] = "down"
+            elif svc_status == "disabled":
+                service_map[svc_host] = "disabled"
+            else:
+                service_map[svc_host] = "up"
+    except Exception:
+        pass
+
+    # 2. All servers, grouped by host — one call for all hosts
+    servers_by_host: dict[str, list] = {}
+    try:
+        for s in conn.compute.servers(all_projects=True):
+            h = _server_host(s)
+            if h:
+                servers_by_host.setdefault(h, []).append(s)
+    except Exception:
+        pass
+
+    # 3. Octavia amphora instance IDs — one call
+    amp_ids: set[str] = set()
+    try:
+        amp_ids = {
+            amp.compute_id
+            for amp in conn.load_balancer.amphorae()
+            if amp.compute_id
+        }
+    except Exception:
+        pass
+
+    # Build per-host summary from the three collected datasets
+    result: dict[str, dict] = {}
+    for host in set(service_map) | set(servers_by_host):
+        servers = servers_by_host.get(host, [])
+        amphora_count = sum(
+            1 for s in servers
+            if s.id in amp_ids or (s.name or "").startswith("amphora-")
+        )
+        result[host] = {
+            "compute_status": service_map.get(host),
+            "amphora_count":  amphora_count,
+            "vm_count":       len(servers) - amphora_count,
+        }
+
+    return result
+
+
 def get_host_summary(hypervisor: str) -> dict:
     """Return a lightweight summary for the node panel.
 

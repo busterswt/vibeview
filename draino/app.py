@@ -204,7 +204,8 @@ class DrainoApp(App):
         threading.Thread(target=self._load_nodes_bg, daemon=True).start()
 
     def _load_nodes_bg(self) -> None:
-        """Phase 1: load K8s nodes, populate table, then enrich with OpenStack data."""
+        """Load K8s nodes then fetch all OpenStack summaries in a single pass."""
+        # Phase 1: K8s node list (fast) — populate the table immediately
         try:
             nodes = k8s_ops.get_nodes()
         except Exception as exc:
@@ -216,28 +217,24 @@ class DrainoApp(App):
 
         self.call_from_thread(self._populate_node_table, nodes)
 
-        # Phase 2: fetch OpenStack summary for each node in the background.
-        # Each node gets its own thread so slow hypervisors don't block others.
-        for nd in nodes:
-            name     = nd["name"]
-            hostname = nd.get("hostname", name)
-            threading.Thread(
-                target=self._fetch_node_summary_bg,
-                args=(name, hostname),
-                daemon=True,
-            ).start()
-
-    def _fetch_node_summary_bg(self, node_name: str, hypervisor: str) -> None:
-        """Fetch the OpenStack host summary for a single node and update the row."""
+        # Phase 2: three OpenStack API calls cover every hypervisor at once
         try:
-            summary = openstack_ops.get_host_summary(hypervisor)
+            summaries = openstack_ops.get_all_host_summaries()
         except Exception as exc:
             self.call_from_thread(
                 self._global_log,
-                f"[dim red]OpenStack summary failed for {node_name}: {exc}[/dim red]",
+                f"[dim red]OpenStack summary failed: {exc}[/dim red]",
             )
             return
-        self.call_from_thread(self._apply_node_summary, node_name, summary)
+
+        self.call_from_thread(self._apply_all_summaries, nodes, summaries)
+
+    def _apply_all_summaries(self, nodes: list[dict], summaries: dict[str, dict]) -> None:
+        """Distribute bulk OpenStack summary data to each node's state and table row."""
+        for nd in nodes:
+            name     = nd["name"]
+            hostname = nd.get("hostname", name)
+            self._apply_node_summary(name, summaries.get(hostname, {}))
 
     def _populate_node_table(self, nodes: list[dict]) -> None:
         table = self.query_one("#node-table", DataTable)
