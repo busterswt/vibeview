@@ -172,6 +172,7 @@ class DrainoApp(App):
 
     BINDINGS = [
         ("s",  "start",   "Start Evacuation"),
+        ("u",  "undrain", "Undrain Node"),
         ("r",  "refresh", "Refresh Nodes"),
         ("q",  "quit",    "Quit"),
         ("f5", "refresh", "Refresh"),
@@ -221,6 +222,7 @@ class DrainoApp(App):
                     )
         with Horizontal(id="action-bar"):
             yield Button("▶  Start Evacuation", id="btn-start",   variant="primary")
+            yield Button("↺  Undrain Node",      id="btn-undrain", variant="warning")
             yield Button("⟳  Refresh Nodes",    id="btn-refresh", variant="default")
         yield Footer()
 
@@ -460,6 +462,8 @@ class DrainoApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-start":
             self.action_start()
+        elif event.button.id == "btn-undrain":
+            self.action_undrain()
         elif event.button.id == "btn-refresh":
             self.action_refresh()
 
@@ -516,6 +520,69 @@ class DrainoApp(App):
             f"[bold]Starting evacuation of [cyan]{node_name}[/cyan]…[/bold]"
         )
         self._refresh_workflow()
+
+    def action_undrain(self) -> None:
+        if not self.selected_node:
+            self._global_log("[yellow]No node selected.[/yellow]")
+            return
+
+        state = self.node_states.get(self.selected_node)
+        if not state:
+            return
+
+        if state.phase == NodePhase.RUNNING:
+            self._global_log(
+                f"[yellow]Evacuation in progress for "
+                f"[bold]{self.selected_node}[/bold] — cannot undrain now.[/yellow]"
+            )
+            return
+
+        node_name = self.selected_node
+
+        def _run() -> None:
+            s = self.node_states.get(node_name)
+            if not s:
+                return
+
+            def log(msg: str) -> None:
+                self.call_from_thread(
+                    self._global_log,
+                    f"[dim cyan]{node_name}[/dim cyan]  {msg}",
+                )
+
+            if s.is_compute:
+                try:
+                    openstack_ops.enable_compute_service(s.hypervisor, log)
+                    s.compute_status = "up"
+                except Exception as exc:
+                    self.call_from_thread(
+                        self._global_log,
+                        f"[bold red]Failed to enable nova on {node_name}:[/bold red] {exc}",
+                    )
+                    return
+
+            try:
+                k8s_ops.uncordon_node(s.k8s_name, log)
+                s.k8s_cordoned = False
+            except Exception as exc:
+                self.call_from_thread(
+                    self._global_log,
+                    f"[bold red]Failed to uncordon {node_name}:[/bold red] {exc}",
+                )
+                return
+
+            s.phase     = NodePhase.IDLE
+            s.steps     = []
+            s.instances = []
+            self.call_from_thread(self._rebuild_tables)
+            self.call_from_thread(
+                self._global_log,
+                f"[bold green]✓ '{node_name}' undrained — "
+                f"nova enabled and node uncordoned.[/bold green]",
+            )
+
+        threading.Thread(target=_run, daemon=True).start()
+        self._global_log(f"[bold]Undraining [cyan]{node_name}[/cyan]…[/bold]")
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 

@@ -224,6 +224,21 @@ def disable_compute_service(hypervisor: str, log: LogFn) -> None:
     log(f"Nova compute service disabled on '{hypervisor}'")
 
 
+def enable_compute_service(hypervisor: str, log: LogFn) -> None:
+    """Enable the nova-compute service on a hypervisor host."""
+    conn = _conn()
+    services = list(conn.compute.services(host=hypervisor, binary="nova-compute"))
+    if not services:
+        raise RuntimeError(f"No nova-compute service found for host '{hypervisor}'")
+    for svc in services:
+        conn.compute.enable_service(
+            svc.id,
+            host=hypervisor,
+            binary="nova-compute",
+        )
+    log(f"Nova compute service enabled on '{hypervisor}'")
+
+
 # ── Servers ───────────────────────────────────────────────────────────────────
 
 def get_instances_preflight(hypervisor: str) -> list[dict]:

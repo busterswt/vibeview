@@ -64,6 +64,14 @@ def cordon_node(name: str, log: LogFn) -> None:
     log(f"Node '{name}' cordoned successfully")
 
 
+def uncordon_node(name: str, log: LogFn) -> None:
+    """Mark a node schedulable."""
+    _load_config()
+    v1 = client.CoreV1Api()
+    v1.patch_node(name, {"spec": {"unschedulable": False}})
+    log(f"Node '{name}' uncordoned successfully")
+
+
 def drain_node(name: str, log: LogFn, timeout: int = 300) -> None:
     """Evict all non-DaemonSet pods from a node and wait for termination."""
     _load_config()
