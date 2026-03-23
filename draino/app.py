@@ -175,6 +175,7 @@ class DrainoApp(App):
     BINDINGS = [
         ("s",  "start",   "Start Evacuation"),
         ("u",  "undrain", "Undrain Node"),
+        ("p",  "pods",    "Pods"),
         ("r",  "refresh", "Refresh Nodes"),
         ("q",  "quit",    "Quit"),
         ("f5", "refresh", "Refresh"),
@@ -192,6 +193,7 @@ class DrainoApp(App):
         self.selected_node: Optional[str] = None
         # Cached K8s node list so _rebuild_tables() can access cordoned/ready
         self._last_k8s_nodes: list[dict] = []
+        self._show_pods: bool = False
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -225,6 +227,7 @@ class DrainoApp(App):
         with Horizontal(id="action-bar"):
             yield Button("▶  Start Evacuation", id="btn-start",   variant="primary")
             yield Button("↺  Undrain Node",      id="btn-undrain", variant="warning")
+            yield Button("⬡  Pods",              id="btn-pods",    variant="default")
             yield Button("⟳  Refresh Nodes",    id="btn-refresh", variant="default")
         yield Footer()
 
@@ -251,6 +254,7 @@ class DrainoApp(App):
 
         self.action_refresh()
         self.set_interval(15, self._auto_refresh)
+        self.set_interval(5,  self._auto_refresh_pods)
 
     # ── Node loading ──────────────────────────────────────────────────────────
 
@@ -458,14 +462,19 @@ class DrainoApp(App):
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key and event.row_key.value is not None:
             self.selected_node = str(event.row_key.value)
-            self._refresh_workflow()
-            self._trigger_preflight(self.selected_node)
+            if self._show_pods:
+                self._start_pods_fetch(self.selected_node)
+            else:
+                self._refresh_workflow()
+                self._trigger_preflight(self.selected_node)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-start":
             self.action_start()
         elif event.button.id == "btn-undrain":
             self.action_undrain()
+        elif event.button.id == "btn-pods":
+            self.action_pods()
         elif event.button.id == "btn-refresh":
             self.action_refresh()
 
@@ -598,10 +607,99 @@ class DrainoApp(App):
         self._refresh_workflow()
         threading.Thread(target=_run, daemon=True).start()
 
+    def action_pods(self) -> None:
+        self._show_pods = not self._show_pods
+        btn = self.query_one("#btn-pods", Button)
+        if self._show_pods:
+            btn.label = "✕  Close Pods"
+            if self.selected_node:
+                self._start_pods_fetch(self.selected_node)
+            else:
+                self.query_one("#workflow-content", Static).update(
+                    "[dim]Select a node to view its pods.[/dim]"
+                )
+        else:
+            btn.label = "⬡  Pods"
+            self._refresh_workflow()
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _auto_refresh(self) -> None:
         self.action_refresh()
+
+    def _auto_refresh_pods(self) -> None:
+        if self._show_pods and self.selected_node:
+            threading.Thread(
+                target=self._load_pods_bg,
+                args=(self.selected_node,),
+                daemon=True,
+            ).start()
+
+    def _start_pods_fetch(self, node_name: str) -> None:
+        self.query_one("#workflow-content", Static).update(
+            f"[bold]{node_name}[/bold]   [cyan][ PODS ][/cyan]\n\n[dim]Fetching pods…[/dim]"
+        )
+        threading.Thread(
+            target=self._load_pods_bg, args=(node_name,), daemon=True
+        ).start()
+
+    def _load_pods_bg(self, node_name: str) -> None:
+        try:
+            pods = k8s_ops.get_pods_on_node(node_name)
+        except Exception as exc:
+            self.call_from_thread(
+                self._global_log,
+                f"[dim red]Pod fetch failed for {node_name}: {exc}[/dim red]",
+            )
+            return
+        self.call_from_thread(self._update_pods_view, node_name, pods)
+
+    def _update_pods_view(self, node_name: str, pods: list[dict]) -> None:
+        if not self._show_pods or self.selected_node != node_name:
+            return
+        self.query_one("#workflow-content", Static).update(
+            self._render_pods(node_name, pods)
+        )
+
+    def _render_pods(self, node_name: str, pods: list[dict]) -> str:
+        lines: list[str] = [
+            f"[bold]{node_name}[/bold]   [cyan][ PODS ][/cyan]",
+            "",
+        ]
+        if not pods:
+            lines.append("[dim]No pods scheduled on this node.[/dim]")
+            return "\n".join(lines)
+
+        NS, NM = 18, 36
+        lines.append(
+            f"[dim]  {'Namespace':<{NS}} {'Name':<{NM}} "
+            f"{'Ready':<6} {'Status':<12} {'Restarts':<10} Age[/dim]"
+        )
+        lines.append(f"  [dim]{'─' * (NS + NM + 6 + 12 + 10 + 8)}[/dim]")
+
+        for pod in sorted(pods, key=lambda p: (p["namespace"], p["name"])):
+            ns    = pod["namespace"]
+            nm    = pod["name"]
+            if len(ns) > NS:
+                ns = ns[: NS - 2] + ".."
+            if len(nm) > NM:
+                nm = nm[: NM - 2] + ".."
+            ready   = f"{pod['ready_count']}/{pod['total_count']}"
+            phase   = pod["phase"]
+            age     = self._format_uptime(pod["created_at"]) if pod["created_at"] else "?"
+            pc      = "green" if phase == "Running" else "yellow" if phase == "Pending" else "red"
+            rc      = "green" if pod["ready_count"] == pod["total_count"] else "yellow"
+            lines.append(
+                f"  [dim]{ns:<{NS}}[/dim]"
+                f"[white]{nm:<{NM}}[/white]"
+                f"[{rc}]{ready:<6}[/{rc}]"
+                f"[{pc}]{phase:<12}[/{pc}]"
+                f"[dim]{pod['restarts']:<10}[/dim]"
+                f"[cyan]{age}[/cyan]"
+            )
+
+        lines += ["", f"[dim]{len(pods)} pod(s)   auto-refreshing every 5s[/dim]"]
+        return "\n".join(lines)
 
     def _trigger_preflight(self, node_name: str) -> None:
         """Start a background preflight fetch for *node_name* if conditions allow."""
@@ -662,6 +760,8 @@ class DrainoApp(App):
             self._refresh_workflow()
 
     def _refresh_workflow(self) -> None:
+        if self._show_pods:
+            return
         view = self.query_one("#workflow-content", Static)
         if not self.selected_node:
             view.update("[dim]Select a node from the list to view its status.[/dim]")

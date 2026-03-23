@@ -64,6 +64,38 @@ def cordon_node(name: str, log: LogFn) -> None:
     log(f"Node '{name}' cordoned successfully")
 
 
+def get_pods_on_node(node_name: str) -> list[dict]:
+    """Return a list of pod info dicts for all pods scheduled on *node_name*."""
+    _load_config()
+    v1 = client.CoreV1Api()
+    raw = v1.list_pod_for_all_namespaces(
+        field_selector=f"spec.nodeName={node_name}"
+    )
+    result: list[dict] = []
+    for pod in raw.items:
+        ready_count = 0
+        total_count = 0
+        restarts = 0
+        if pod.status.container_statuses:
+            for cs in pod.status.container_statuses:
+                total_count += 1
+                if cs.ready:
+                    ready_count += 1
+                restarts += cs.restart_count or 0
+        elif pod.spec.containers:
+            total_count = len(pod.spec.containers)
+        result.append({
+            "namespace":   pod.metadata.namespace,
+            "name":        pod.metadata.name,
+            "phase":       pod.status.phase or "Unknown",
+            "ready_count": ready_count,
+            "total_count": total_count,
+            "restarts":    restarts,
+            "created_at":  pod.metadata.creation_timestamp,
+        })
+    return result
+
+
 def uncordon_node(name: str, log: LogFn) -> None:
     """Mark a node schedulable."""
     _load_config()
