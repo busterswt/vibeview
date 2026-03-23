@@ -587,7 +587,6 @@ class DrainoApp(App):
                 return
 
             state.phase = NodePhase.IDLE
-            state.steps = []
             self.call_from_thread(self._rebuild_tables)
             self.call_from_thread(
                 self._global_log,
@@ -776,6 +775,11 @@ class DrainoApp(App):
             detail_str = f"  [dim]{step.detail}[/dim]" if step.detail else ""
             lines.append(
                 f"  [{color}]{icon}  {step.label}[/{color}]{detail_str}"
+            )
+        if state.phase == NodePhase.IDLE:
+            lines.append(
+                "[dim]Press [bold]S[/bold] or click "
+                "[bold]Start Evacuation[/bold] to begin.[/dim]"
             )
         lines.append("")
 
