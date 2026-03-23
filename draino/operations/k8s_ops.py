@@ -35,15 +35,22 @@ def get_nodes() -> list[dict]:
         hostname: str = node.metadata.labels.get("kubernetes.io/hostname", name)
         unschedulable: bool = bool(node.spec.unschedulable)
         ready = False
+        ready_since = None
         for cond in node.status.conditions or []:
             if cond.type == "Ready":
                 ready = cond.status == "True"
+                if ready:
+                    ready_since = cond.last_transition_time
+        node_info = node.status.node_info
+        kernel_version: str | None = node_info.kernel_version if node_info else None
         result.append(
             {
                 "name": name,
                 "hostname": hostname,
                 "cordoned": unschedulable,
                 "ready": ready,
+                "ready_since": ready_since,
+                "kernel_version": kernel_version,
             }
         )
     return result

@@ -53,15 +53,19 @@ OP_COLOR: dict[str, str] = {
 }
 
 # Column keys — compute table
-_COL_NODE  = "col_node"
-_COL_NOVA  = "col_nova"
-_COL_PHASE = "col_phase"
-_COL_AMP   = "col_amp"
-_COL_VMS   = "col_vms"
+_COL_NODE   = "col_node"
+_COL_NOVA   = "col_nova"
+_COL_PHASE  = "col_phase"
+_COL_AMP    = "col_amp"
+_COL_VMS    = "col_vms"
+_COL_UPTIME = "col_uptime"
+_COL_KERNEL = "col_kernel"
 
 # Column keys — other table (scoped to that table; same string names are fine)
 _COL_OTHER_NODE   = "col_node"
 _COL_OTHER_STATUS = "col_status"
+_COL_OTHER_UPTIME = "col_uptime"
+_COL_OTHER_KERNEL = "col_kernel"
 
 
 class DrainoApp(App):
@@ -81,8 +85,8 @@ class DrainoApp(App):
 
     /* ── Left: two stacked node panels ── */
     #node-panel {
-        width: 66;
-        min-width: 50;
+        width: 96;
+        min-width: 70;
         layout: vertical;
     }
 
@@ -227,15 +231,19 @@ class DrainoApp(App):
         k8s_ops.configure(context=self.context)
 
         ct = self.query_one("#compute-table", DataTable)
-        ct.add_column("Node",     key=_COL_NODE,  width=22)
-        ct.add_column("Nova Svc", key=_COL_NOVA,  width=10)
-        ct.add_column("Phase",    key=_COL_PHASE, width=10)
-        ct.add_column("AMP",      key=_COL_AMP,   width=5)
-        ct.add_column("VMs",      key=_COL_VMS,   width=5)
+        ct.add_column("Node",     key=_COL_NODE,   width=22)
+        ct.add_column("Nova Svc", key=_COL_NOVA,   width=10)
+        ct.add_column("Phase",    key=_COL_PHASE,  width=10)
+        ct.add_column("AMP",      key=_COL_AMP,    width=5)
+        ct.add_column("VMs",      key=_COL_VMS,    width=5)
+        ct.add_column("Uptime",   key=_COL_UPTIME, width=9)
+        ct.add_column("Kernel",   key=_COL_KERNEL, width=22)
 
         ot = self.query_one("#other-table", DataTable)
-        ot.add_column("Node",   key=_COL_OTHER_NODE,   width=40)
+        ot.add_column("Node",   key=_COL_OTHER_NODE,   width=28)
         ot.add_column("Status", key=_COL_OTHER_STATUS, width=12)
+        ot.add_column("Uptime", key=_COL_OTHER_UPTIME, width=9)
+        ot.add_column("Kernel", key=_COL_OTHER_KERNEL, width=22)
 
         self.action_refresh()
         self.set_interval(15, self._auto_refresh)
@@ -297,6 +305,10 @@ class DrainoApp(App):
             state = self.node_states[name]
             state.k8s_ready    = nd.get("ready", True)
             state.k8s_cordoned = nd.get("cordoned", False)
+            state.kernel_version = nd.get("kernel_version")
+            ready_since = nd.get("ready_since")
+            if ready_since is not None:
+                state.uptime = self._format_uptime(ready_since)
 
             ct.add_row(
                 name,
@@ -304,6 +316,8 @@ class DrainoApp(App):
                 self._phase_text(state),
                 self._count_text(state.amphora_count),
                 self._count_text(state.vm_count),
+                self._uptime_text(state),
+                self._kernel_text(state),
                 key=name,
             )
 
@@ -356,12 +370,16 @@ class DrainoApp(App):
                     self._phase_text(state),
                     self._count_text(state.amphora_count),
                     self._count_text(state.vm_count),
+                    self._uptime_text(state),
+                    self._kernel_text(state),
                     key=name,
                 )
             else:
                 ot.add_row(
                     name,
                     self._k8s_status_text(state),
+                    self._uptime_text(state),
+                    self._kernel_text(state),
                     key=name,
                 )
 
@@ -405,6 +423,31 @@ class DrainoApp(App):
             return Text.from_markup("[dim]…[/dim]")
         color = "cyan" if count > 0 else "dim"
         return Text.from_markup(f"[{color}]{count}[/{color}]")
+
+    def _uptime_text(self, state: NodeState) -> Text:
+        if state.uptime is None:
+            return Text.from_markup("[dim]…[/dim]")
+        return Text(state.uptime, style="cyan")
+
+    def _kernel_text(self, state: NodeState) -> Text:
+        if state.kernel_version is None:
+            return Text.from_markup("[dim]…[/dim]")
+        return Text(state.kernel_version, style="dim")
+
+    @staticmethod
+    def _format_uptime(since) -> str:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        delta = now - since
+        total = int(delta.total_seconds())
+        days  = total // 86400
+        hours = (total % 86400) // 3600
+        mins  = (total % 3600) // 60
+        if days > 0:
+            return f"{days}d {hours}h"
+        if hours > 0:
+            return f"{hours}h {mins}m"
+        return f"{mins}m"
 
     # ── Event handlers ────────────────────────────────────────────────────────
 
