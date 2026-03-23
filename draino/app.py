@@ -30,16 +30,18 @@ STEP_COLOR: dict[StepStatus, str] = {
     StepStatus.SKIPPED: "dim",
 }
 PHASE_COLOR: dict[NodePhase, str] = {
-    NodePhase.IDLE:     "white",
-    NodePhase.RUNNING:  "yellow",
-    NodePhase.COMPLETE: "bright_green",
-    NodePhase.ERROR:    "bright_red",
+    NodePhase.IDLE:       "white",
+    NodePhase.RUNNING:    "yellow",
+    NodePhase.COMPLETE:   "bright_green",
+    NodePhase.ERROR:      "bright_red",
+    NodePhase.UNDRAINING: "cyan",
 }
 PHASE_LABEL: dict[NodePhase, str] = {
-    NodePhase.IDLE:     "IDLE",
-    NodePhase.RUNNING:  "RUNNING",
-    NodePhase.COMPLETE: "COMPLETE",
-    NodePhase.ERROR:    "ERROR",
+    NodePhase.IDLE:       "IDLE",
+    NodePhase.RUNNING:    "RUNNING",
+    NodePhase.COMPLETE:   "COMPLETE",
+    NodePhase.ERROR:      "ERROR",
+    NodePhase.UNDRAINING: "UNDRAINING",
 }
 OP_COLOR: dict[str, str] = {
     "queued":         "dim",
@@ -537,43 +539,55 @@ class DrainoApp(App):
             )
             return
 
+        state.phase = NodePhase.UNDRAINING
+        state.init_undrain_steps(state.is_compute)
+        self._rebuild_tables()
+
         node_name = self.selected_node
 
+        def update_cb() -> None:
+            self.call_from_thread(self._on_state_changed, node_name)
+
+        def log(msg: str) -> None:
+            self.call_from_thread(
+                self._global_log,
+                f"[dim cyan]{node_name}[/dim cyan]  {msg}",
+            )
+
+        def step_set(key: str, status: StepStatus, detail: str = "") -> None:
+            step = state.get_step(key)
+            if step:
+                step.status = status
+                if detail:
+                    step.detail = detail
+            update_cb()
+
         def _run() -> None:
-            s = self.node_states.get(node_name)
-            if not s:
-                return
-
-            def log(msg: str) -> None:
-                self.call_from_thread(
-                    self._global_log,
-                    f"[dim cyan]{node_name}[/dim cyan]  {msg}",
-                )
-
-            if s.is_compute:
+            if state.is_compute:
+                step_set("enable_nova", StepStatus.RUNNING)
                 try:
-                    openstack_ops.enable_compute_service(s.hypervisor, log)
-                    s.compute_status = "up"
+                    openstack_ops.enable_compute_service(state.hypervisor, log)
+                    state.compute_status = "up"
+                    step_set("enable_nova", StepStatus.SUCCESS)
                 except Exception as exc:
-                    self.call_from_thread(
-                        self._global_log,
-                        f"[bold red]Failed to enable nova on {node_name}:[/bold red] {exc}",
-                    )
+                    step_set("enable_nova", StepStatus.FAILED, str(exc))
+                    state.phase = NodePhase.ERROR
+                    update_cb()
                     return
 
+            step_set("uncordon", StepStatus.RUNNING)
             try:
-                k8s_ops.uncordon_node(s.k8s_name, log)
-                s.k8s_cordoned = False
+                k8s_ops.uncordon_node(state.k8s_name, log)
+                state.k8s_cordoned = False
+                step_set("uncordon", StepStatus.SUCCESS)
             except Exception as exc:
-                self.call_from_thread(
-                    self._global_log,
-                    f"[bold red]Failed to uncordon {node_name}:[/bold red] {exc}",
-                )
+                step_set("uncordon", StepStatus.FAILED, str(exc))
+                state.phase = NodePhase.ERROR
+                update_cb()
                 return
 
-            s.phase     = NodePhase.IDLE
-            s.steps     = []
-            s.instances = []
+            state.phase = NodePhase.IDLE
+            state.steps = []
             self.call_from_thread(self._rebuild_tables)
             self.call_from_thread(
                 self._global_log,
@@ -581,8 +595,9 @@ class DrainoApp(App):
                 f"nova enabled and node uncordoned.[/bold green]",
             )
 
-        threading.Thread(target=_run, daemon=True).start()
         self._global_log(f"[bold]Undraining [cyan]{node_name}[/cyan]…[/bold]")
+        self._refresh_workflow()
+        threading.Thread(target=_run, daemon=True).start()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -668,7 +683,7 @@ class DrainoApp(App):
             f"[{phase_color}][ {phase_label} ][/{phase_color}]",
         ]
 
-        if not state.is_compute:
+        if not state.is_compute and state.phase != NodePhase.UNDRAINING:
             k8s_status = (
                 "[dim]Cordoned[/dim]"  if state.k8s_cordoned else
                 "[red]Not Ready[/red]" if not state.k8s_ready  else
@@ -679,6 +694,12 @@ class DrainoApp(App):
                 "",
                 "[dim]Non-compute node — no OpenStack evacuation needed.[/dim]",
             ]
+            if state.k8s_cordoned:
+                lines += [
+                    "",
+                    "[dim]Press [bold]U[/bold] or click "
+                    "[bold]Undrain Node[/bold] to uncordon.[/dim]",
+                ]
             return "\n".join(lines)
 
         nova_svc = {
@@ -739,6 +760,11 @@ class DrainoApp(App):
                 "[dim]Press [bold]S[/bold] or click "
                 "[bold]Start Evacuation[/bold] to begin.[/dim]"
             )
+            if state.k8s_cordoned or state.compute_status == "disabled":
+                lines.append(
+                    "[dim]Press [bold]U[/bold] or click "
+                    "[bold]Undrain Node[/bold] to re-enable.[/dim]"
+                )
             return "\n".join(lines)
 
         # ── Workflow steps ──

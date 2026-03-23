@@ -16,10 +16,11 @@ class StepStatus(Enum):
 
 
 class NodePhase(Enum):
-    IDLE     = auto()
-    RUNNING  = auto()
-    COMPLETE = auto()
-    ERROR    = auto()
+    IDLE       = auto()
+    RUNNING    = auto()
+    COMPLETE   = auto()
+    ERROR      = auto()
+    UNDRAINING = auto()
 
 
 @dataclass
@@ -90,3 +91,10 @@ class NodeState:
             WorkflowStep("await_empty",    "Wait for hypervisor to empty"),
             WorkflowStep("drain_k8s",      "Drain K8s node (evict pods)"),
         ]
+
+    def init_undrain_steps(self, is_compute: bool) -> None:
+        steps = []
+        if is_compute:
+            steps.append(WorkflowStep("enable_nova", "Enable Nova compute service"))
+        steps.append(WorkflowStep("uncordon", "Uncordon K8s node"))
+        self.steps = steps
