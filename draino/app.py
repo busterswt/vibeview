@@ -541,7 +541,7 @@ class DrainoApp(App):
 
         state.phase = NodePhase.UNDRAINING
         state.init_undrain_steps(state.is_compute)
-        self._rebuild_tables()
+        self._on_state_changed(self.selected_node)
 
         node_name = self.selected_node
 
@@ -587,7 +587,7 @@ class DrainoApp(App):
                 return
 
             state.phase = NodePhase.IDLE
-            self.call_from_thread(self._rebuild_tables)
+            self.call_from_thread(self._on_state_changed, node_name)
             self.call_from_thread(
                 self._global_log,
                 f"[bold green]✓ '{node_name}' undrained — "
