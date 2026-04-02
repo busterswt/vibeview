@@ -293,6 +293,7 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     state.phase = NodePhase.REBOOTING
     state.reboot_start    = time.time()
     state.reboot_downtime = None
+    state.etcd_healthy    = False   # definitely not serving etcd during reboot
     state.init_reboot_steps()
     update_cb()
 
@@ -400,6 +401,7 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
 
     dt = int(state.reboot_downtime)
     step_set("await_online", StepStatus.SUCCESS, f"Online — downtime {dt}s")
-    state.phase = NodePhase.IDLE
+    state.phase        = NodePhase.IDLE
+    state.etcd_healthy = None   # needs re-verification on next selection
     log(f"✓ '{state.k8s_name}' back online — total downtime: {dt}s")
     update_cb()
