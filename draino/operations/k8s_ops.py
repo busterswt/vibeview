@@ -56,6 +56,25 @@ def get_nodes() -> list[dict]:
     return result
 
 
+def get_etcd_node_names() -> set[str]:
+    """Return the set of node names in the etcd role.
+
+    Detects nodes labelled by kubespray with node-role.kubernetes.io/etcd.
+    """
+    _load_config()
+    v1 = client.CoreV1Api()
+    result: set[str] = set()
+    try:
+        nodes = v1.list_node(
+            label_selector="node-role.kubernetes.io/etcd"
+        )
+        for node in nodes.items:
+            result.add(node.metadata.name)
+    except Exception:
+        pass
+    return result
+
+
 def cordon_node(name: str, log: LogFn) -> None:
     """Mark a node unschedulable."""
     _load_config()

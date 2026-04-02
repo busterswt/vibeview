@@ -59,6 +59,9 @@ class NodeState:
     kernel_version: Optional[str] = None
     uptime:         Optional[str] = None
 
+    # ── Node roles ────────────────────────────────────────────────────────
+    is_etcd:        bool = False   # True if an etcd static pod runs on this node
+
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"
     is_compute:     bool = False

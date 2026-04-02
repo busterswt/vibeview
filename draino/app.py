@@ -248,6 +248,7 @@ class DrainoApp(App):
         # Cached K8s node list so _rebuild_tables() can access cordoned/ready
         self._last_k8s_nodes: list[dict] = []
         self._show_pods: bool = False
+        self._etcd_node_names: set[str] = set()
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -344,7 +345,9 @@ class DrainoApp(App):
             )
             return
 
-        self.call_from_thread(self._apply_summaries_and_rebuild, nodes, summaries)
+        etcd_names = k8s_ops.get_etcd_node_names()
+
+        self.call_from_thread(self._apply_summaries_and_rebuild, nodes, summaries, etcd_names)
 
     def _populate_initial(self, nodes: list[dict]) -> None:
         """First pass: create NodeState entries and show all nodes in compute-table.
@@ -375,7 +378,7 @@ class DrainoApp(App):
                 state.uptime = self._format_uptime(ready_since)
 
             ct.add_row(
-                name,
+                self._node_name_text(name, state),
                 self._nova_svc_text(state),
                 self._phase_text(state),
                 self._count_text(state.amphora_count),
@@ -389,9 +392,15 @@ class DrainoApp(App):
             self._refresh_workflow()
 
     def _apply_summaries_and_rebuild(
-        self, nodes: list[dict], summaries: dict[str, dict]
+        self,
+        nodes:      list[dict],
+        summaries:  dict[str, dict],
+        etcd_names: set[str] | None = None,
     ) -> None:
         """Apply OpenStack data then split nodes across the two tables."""
+        if etcd_names is not None:
+            self._etcd_node_names = etcd_names
+
         # 1. Update every NodeState with its summary
         for nd in nodes:
             name     = nd["name"]
@@ -400,6 +409,7 @@ class DrainoApp(App):
             state    = self.node_states.get(name)
             if not state:
                 continue
+            state.is_etcd = name in self._etcd_node_names
             if state.phase == NodePhase.IDLE:
                 state.is_compute     = summary.get("is_compute", False)
                 state.compute_status = summary.get("compute_status")
@@ -428,7 +438,7 @@ class DrainoApp(App):
 
             if state.is_compute:
                 ct.add_row(
-                    name,
+                    self._node_name_text(name, state),
                     self._nova_svc_text(state),
                     self._phase_text(state),
                     self._count_text(state.amphora_count),
@@ -439,7 +449,7 @@ class DrainoApp(App):
                 )
             else:
                 ot.add_row(
-                    name,
+                    self._node_name_text(name, state),
                     self._k8s_status_text(state),
                     self._uptime_text(state),
                     self._kernel_text(state),
@@ -450,6 +460,13 @@ class DrainoApp(App):
             self._refresh_workflow()
 
     # ── Text helpers ──────────────────────────────────────────────────────────
+
+    def _node_name_text(self, name: str, state: NodeState) -> Text:
+        t = Text(name)
+        if state.is_etcd:
+            t.append("  ")
+            t.append("etcd", style="bold red")
+        return t
 
     def _nova_svc_text(self, state: NodeState) -> Text:
         s = state.compute_status
@@ -1044,10 +1061,39 @@ class DrainoApp(App):
         phase_color = PHASE_COLOR[state.phase]
         phase_label = PHASE_LABEL[state.phase]
 
+        etcd_badge = "  [bold red]etcd[/bold red]" if state.is_etcd else ""
         lines += [
-            f"[bold]{state.k8s_name}[/bold]   "
+            f"[bold]{state.k8s_name}[/bold]{etcd_badge}   "
             f"[{phase_color}][ {phase_label} ][/{phase_color}]",
         ]
+
+        # ── etcd quorum warning ───────────────────────────────────────────
+        if state.is_etcd:
+            etcd_states  = [s for s in self.node_states.values() if s.is_etcd]
+            etcd_total   = len(etcd_states)
+            busy_phases  = {NodePhase.RUNNING, NodePhase.REBOOTING, NodePhase.UNDRAINING}
+            etcd_busy    = sum(1 for s in etcd_states if s.phase in busy_phases)
+            # etcd quorum requires a majority; safe to take down floor((N-1)/2) nodes
+            safe_down    = (etcd_total - 1) // 2
+            # Would taking THIS node down (if not already busy) exceed the safe limit?
+            this_adds    = 0 if state.phase in busy_phases else 1
+            at_risk      = (etcd_busy + this_adds) > safe_down
+
+            if at_risk:
+                lines += [
+                    "",
+                    f"[bold red]⚠  ETCD QUORUM RISK  —  "
+                    f"{etcd_busy + this_adds}/{etcd_total} nodes would be offline "
+                    f"(safe limit: {safe_down})[/bold red]",
+                ]
+            else:
+                lines += [
+                    "",
+                    f"[yellow]⚠  etcd node  —  "
+                    f"{etcd_busy}/{etcd_total} currently active, "
+                    f"{safe_down} safe to take down[/yellow]",
+                ]
+            lines.append("")
 
         if not state.is_compute and state.phase not in (NodePhase.UNDRAINING, NodePhase.REBOOTING):
             k8s_status = (
