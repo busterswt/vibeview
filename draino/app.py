@@ -227,7 +227,7 @@ class DrainoApp(App):
 
     BINDINGS = [
         ("s",       "start",   "Start Evacuation"),
-        ("u",       "undrain", "Undrain Node"),
+        ("u",       "drain_or_undrain", "Drain / Undrain"),
         ("p",       "pods",    "Pods"),
         ("r",       "refresh", "Refresh Nodes"),
         ("ctrl+r",  "reboot",  "Reboot Node"),
@@ -529,7 +529,7 @@ class DrainoApp(App):
         if event.button.id == "btn-start":
             self.action_start()
         elif event.button.id == "btn-undrain":
-            self.action_undrain()
+            self.action_drain_or_undrain()
         elif event.button.id == "btn-pods":
             self.action_pods()
         elif event.button.id == "btn-refresh":
@@ -590,6 +590,93 @@ class DrainoApp(App):
             f"[bold]Starting evacuation of [cyan]{node_name}[/cyan]…[/bold]"
         )
         self._refresh_workflow()
+
+    def action_drain_or_undrain(self) -> None:
+        """Route to drain_quick or undrain depending on current node state."""
+        state = self.node_states.get(self.selected_node) if self.selected_node else None
+        node_is_drained = state and (
+            state.k8s_cordoned or state.compute_status == "disabled"
+        )
+        if node_is_drained:
+            self.action_undrain()
+        else:
+            self.action_drain_quick()
+
+    def action_drain_quick(self) -> None:
+        """Cordon node and disable Nova compute service (no VM migration)."""
+        if not self.selected_node:
+            self._global_log("[yellow]No node selected.[/yellow]")
+            return
+
+        state = self.node_states.get(self.selected_node)
+        if not state:
+            return
+
+        if state.phase == NodePhase.RUNNING:
+            self._global_log(
+                f"[yellow]Evacuation already in progress for "
+                f"[bold]{self.selected_node}[/bold][/yellow]"
+            )
+            return
+
+        state.phase = NodePhase.RUNNING
+        state.init_quick_drain_steps(state.is_compute)
+        self._on_state_changed(self.selected_node)
+
+        node_name = self.selected_node
+
+        def update_cb() -> None:
+            self.call_from_thread(self._on_state_changed, node_name)
+
+        def log(msg: str) -> None:
+            self.call_from_thread(
+                self._global_log,
+                f"[dim cyan]{node_name}[/dim cyan]  {msg}",
+            )
+
+        def step_set(key: str, status: StepStatus, detail: str = "") -> None:
+            step = state.get_step(key)
+            if step:
+                step.status = status
+                if detail:
+                    step.detail = detail
+            update_cb()
+
+        def _run() -> None:
+            step_set("cordon", StepStatus.RUNNING)
+            try:
+                k8s_ops.cordon_node(state.k8s_name, log)
+                state.k8s_cordoned = True
+                step_set("cordon", StepStatus.SUCCESS)
+            except Exception as exc:
+                step_set("cordon", StepStatus.FAILED, str(exc))
+                state.phase = NodePhase.ERROR
+                update_cb()
+                return
+
+            if state.is_compute:
+                step_set("disable_nova", StepStatus.RUNNING)
+                try:
+                    openstack_ops.disable_compute_service(state.hypervisor, log)
+                    state.compute_status = "disabled"
+                    step_set("disable_nova", StepStatus.SUCCESS)
+                except Exception as exc:
+                    step_set("disable_nova", StepStatus.FAILED, str(exc))
+                    state.phase = NodePhase.ERROR
+                    update_cb()
+                    return
+
+            state.phase = NodePhase.IDLE
+            self.call_from_thread(self._on_state_changed, node_name)
+            suffix = " and nova disabled" if state.is_compute else ""
+            self.call_from_thread(
+                self._global_log,
+                f"[bold green]✓ '{node_name}' drained — cordoned{suffix}.[/bold green]",
+            )
+
+        self._global_log(f"[bold]Draining [cyan]{node_name}[/cyan]…[/bold]")
+        self._refresh_workflow()
+        threading.Thread(target=_run, daemon=True).start()
 
     def action_undrain(self) -> None:
         if not self.selected_node:
@@ -756,15 +843,23 @@ class DrainoApp(App):
             start_btn.label    = "▶  Start Evacuation"
             start_btn.disabled = False
 
-        # ── Undrain button ────────────────────────────────────────────────
+        # ── Drain / Undrain button ────────────────────────────────────────
+        # Show "Undrain Node" when the node is cordoned or nova-disabled,
+        # otherwise show "Drain Node" (quick prep: cordon + disable nova).
+        node_is_drained = state and (
+            state.k8s_cordoned or state.compute_status == "disabled"
+        )
         if phase == NodePhase.UNDRAINING:
             undrain_btn.label    = "↺  Undraining…"
             undrain_btn.disabled = True
         elif phase in (NodePhase.RUNNING, NodePhase.REBOOTING):
-            undrain_btn.label    = "↺  Undrain Node"
+            undrain_btn.label    = "↺  Undrain Node" if node_is_drained else "▽  Drain Node"
             undrain_btn.disabled = True
-        else:
+        elif node_is_drained:
             undrain_btn.label    = "↺  Undrain Node"
+            undrain_btn.disabled = False
+        else:
+            undrain_btn.label    = "▽  Drain Node"
             undrain_btn.disabled = False
 
         # ── Reboot button ─────────────────────────────────────────────────

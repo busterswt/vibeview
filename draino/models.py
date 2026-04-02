@@ -97,6 +97,12 @@ class NodeState:
             WorkflowStep("drain_k8s",      "Drain K8s node (evict pods)"),
         ]
 
+    def init_quick_drain_steps(self, is_compute: bool) -> None:
+        steps = [WorkflowStep("cordon", "Cordon K8s node")]
+        if is_compute:
+            steps.append(WorkflowStep("disable_nova", "Disable Nova compute service"))
+        self.steps = steps
+
     def init_undrain_steps(self, is_compute: bool) -> None:
         steps = []
         if is_compute:
