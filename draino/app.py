@@ -68,6 +68,7 @@ _COL_KERNEL = "col_kernel"
 
 # Column keys — other table (scoped to that table; same string names are fine)
 _COL_OTHER_NODE   = "col_node"
+_COL_OTHER_ROLE   = "col_role"
 _COL_OTHER_STATUS = "col_status"
 _COL_OTHER_UPTIME = "col_uptime"
 _COL_OTHER_KERNEL = "col_kernel"
@@ -304,6 +305,7 @@ class DrainoApp(App):
 
         ot = self.query_one("#other-table", DataTable)
         ot.add_column("Node",   key=_COL_OTHER_NODE,   width=28)
+        ot.add_column("Role",   key=_COL_OTHER_ROLE,   width=6)
         ot.add_column("Status", key=_COL_OTHER_STATUS, width=12)
         ot.add_column("Uptime", key=_COL_OTHER_UPTIME, width=9)
         ot.add_column("Kernel", key=_COL_OTHER_KERNEL, width=22)
@@ -450,6 +452,7 @@ class DrainoApp(App):
             else:
                 ot.add_row(
                     self._node_name_text(name, state),
+                    self._role_text(state),
                     self._k8s_status_text(state),
                     self._uptime_text(state),
                     self._kernel_text(state),
@@ -462,11 +465,12 @@ class DrainoApp(App):
     # ── Text helpers ──────────────────────────────────────────────────────────
 
     def _node_name_text(self, name: str, state: NodeState) -> Text:
-        t = Text(name)
+        return Text(name)
+
+    def _role_text(self, state: NodeState) -> Text:
         if state.is_etcd:
-            t.append("  ")
-            t.append("etcd", style="bold red")
-        return t
+            return Text.from_markup("[bold red]etcd[/bold red]")
+        return Text("")
 
     def _nova_svc_text(self, state: NodeState) -> Text:
         s = state.compute_status
@@ -535,6 +539,11 @@ class DrainoApp(App):
         if event.row_key and event.row_key.value is not None:
             self.selected_node = str(event.row_key.value)
             self._update_buttons()
+            state = self.node_states.get(self.selected_node)
+            if state and state.is_etcd:
+                threading.Thread(
+                    target=self._check_etcd_health_bg, daemon=True
+                ).start()
             if self._show_pods:
                 self._start_pods_fetch(self.selected_node)
             else:
@@ -817,6 +826,16 @@ class DrainoApp(App):
 
         node_name = self.selected_node
 
+        if state.is_etcd:
+            # Run SSH health checks first; block if quorum would be at risk.
+            self._global_log("[dim]Checking etcd quorum before reboot…[/dim]")
+            threading.Thread(
+                target=self._etcd_reboot_preflight,
+                args=(node_name,),
+                daemon=True,
+            ).start()
+            return
+
         def _on_confirmed(confirmed: bool) -> None:
             if not confirmed:
                 self._global_log("[dim]Reboot cancelled.[/dim]")
@@ -824,6 +843,45 @@ class DrainoApp(App):
             self._do_reboot(node_name)
 
         self.push_screen(ConfirmRebootScreen(node_name), _on_confirmed)
+
+    def _check_etcd_health_bg(self) -> None:
+        """SSH-check etcd service on all etcd nodes and refresh the workflow view."""
+        for state in list(self.node_states.values()):
+            if state.is_etcd:
+                state.etcd_healthy = k8s_ops.check_etcd_service(state.hypervisor)
+        self.call_from_thread(self._refresh_workflow)
+
+    def _etcd_reboot_preflight(self, node_name: str) -> None:
+        """Check etcd quorum health via SSH; push confirm dialog or block."""
+        etcd_states    = [s for s in self.node_states.values() if s.is_etcd]
+        etcd_total     = len(etcd_states)
+        quorum_needed  = (etcd_total // 2) + 1
+
+        for s in etcd_states:
+            s.etcd_healthy = k8s_ops.check_etcd_service(s.hypervisor)
+
+        self.call_from_thread(self._refresh_workflow)
+
+        healthy_count  = sum(1 for s in etcd_states if s.etcd_healthy is True)
+        this_state     = self.node_states.get(node_name)
+        this_healthy   = this_state is not None and this_state.etcd_healthy is True
+        remaining      = healthy_count - (1 if this_healthy else 0)
+
+        if remaining < quorum_needed:
+            self.call_from_thread(
+                self._global_log,
+                f"[bold red]✗ Reboot blocked — {healthy_count}/{etcd_total} etcd nodes healthy; "
+                f"rebooting would leave {remaining} (quorum requires {quorum_needed})[/bold red]",
+            )
+            return
+
+        def _on_confirmed(confirmed: bool) -> None:
+            if not confirmed:
+                self._global_log("[dim]Reboot cancelled.[/dim]")
+                return
+            self._do_reboot(node_name)
+
+        self.call_from_thread(self.push_screen, ConfirmRebootScreen(node_name), _on_confirmed)
 
     def _do_reboot(self, node_name: str) -> None:
         state = self.node_states.get(node_name)
@@ -1069,31 +1127,47 @@ class DrainoApp(App):
 
         # ── etcd quorum warning ───────────────────────────────────────────
         if state.is_etcd:
-            etcd_states  = [s for s in self.node_states.values() if s.is_etcd]
-            etcd_total   = len(etcd_states)
-            busy_phases  = {NodePhase.RUNNING, NodePhase.REBOOTING, NodePhase.UNDRAINING}
-            etcd_busy    = sum(1 for s in etcd_states if s.phase in busy_phases)
-            # etcd quorum requires a majority; safe to take down floor((N-1)/2) nodes
-            safe_down    = (etcd_total - 1) // 2
-            # Would taking THIS node down (if not already busy) exceed the safe limit?
-            this_adds    = 0 if state.phase in busy_phases else 1
-            at_risk      = (etcd_busy + this_adds) > safe_down
+            etcd_states   = [s for s in self.node_states.values() if s.is_etcd]
+            etcd_total    = len(etcd_states)
+            quorum_needed = (etcd_total // 2) + 1
+            safe_down     = etcd_total - quorum_needed
 
-            if at_risk:
+            checked = [s for s in etcd_states if s.etcd_healthy is not None]
+            if not checked:
+                # Health not yet known — show a prompt to trigger the check
                 lines += [
                     "",
-                    f"[bold red]⚠  ETCD QUORUM RISK  —  "
-                    f"{etcd_busy + this_adds}/{etcd_total} nodes would be offline "
-                    f"(safe limit: {safe_down})[/bold red]",
+                    "[dim yellow]⚠  etcd node — health unknown "
+                    "(will be checked before reboot)[/dim yellow]",
+                    "",
                 ]
             else:
-                lines += [
-                    "",
-                    f"[yellow]⚠  etcd node  —  "
-                    f"{etcd_busy}/{etcd_total} currently active, "
-                    f"{safe_down} safe to take down[/yellow]",
-                ]
-            lines.append("")
+                healthy   = sum(1 for s in etcd_states if s.etcd_healthy is True)
+                unknown   = sum(1 for s in etcd_states if s.etcd_healthy is None)
+                # Would rebooting THIS node break quorum?
+                remaining = healthy - (1 if state.etcd_healthy is True else 0)
+                at_risk   = remaining < quorum_needed
+
+                health_parts = [f"{s.k8s_name} {'✓' if s.etcd_healthy else ('?' if s.etcd_healthy is None else '✗')}"
+                                for s in etcd_states]
+
+                if at_risk:
+                    lines += [
+                        "",
+                        f"[bold red]⚠  ETCD QUORUM RISK — {healthy}/{etcd_total} healthy, "
+                        f"reboot would leave {remaining} (need {quorum_needed})[/bold red]",
+                        f"[dim red]   {' · '.join(health_parts)}[/dim red]",
+                        "",
+                    ]
+                else:
+                    suffix = f"  [dim]({unknown} unchecked)[/dim]" if unknown else ""
+                    lines += [
+                        "",
+                        f"[yellow]⚠  etcd — {healthy}/{etcd_total} healthy, "
+                        f"safe to work on {safe_down} at a time[/yellow]{suffix}",
+                        f"[dim]   {' · '.join(health_parts)}[/dim]",
+                        "",
+                    ]
 
         if not state.is_compute and state.phase not in (NodePhase.UNDRAINING, NodePhase.REBOOTING):
             k8s_status = (

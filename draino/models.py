@@ -60,7 +60,8 @@ class NodeState:
     uptime:         Optional[str] = None
 
     # ── Node roles ────────────────────────────────────────────────────────
-    is_etcd:        bool = False   # True if an etcd static pod runs on this node
+    is_etcd:        bool = False            # True if node carries the etcd role label
+    etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
 
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"

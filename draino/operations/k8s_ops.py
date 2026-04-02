@@ -1,8 +1,9 @@
 """Kubernetes operations: cordon, drain."""
 from __future__ import annotations
 
+import subprocess
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
@@ -54,6 +55,31 @@ def get_nodes() -> list[dict]:
             }
         )
     return result
+
+
+def check_etcd_service(hostname: str) -> Optional[bool]:
+    """SSH to *hostname* and check whether the etcd systemd service is active.
+
+    Returns True if active, False if inactive/failed, None if the check
+    could not be completed (SSH unreachable, timeout, etc.).
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=5",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no",
+                hostname,
+                "systemctl", "is-active", "etcd",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip() == "active"
+    except Exception:
+        return None
 
 
 def get_etcd_node_names() -> set[str]:
