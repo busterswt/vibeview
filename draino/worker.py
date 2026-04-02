@@ -425,3 +425,121 @@ def run_reboot(
     if audit_cb:
         audit_cb("completed", f"downtime={dt}s")
     update_cb()
+
+
+def run_drain_quick(
+    state: NodeState,
+    update_cb: UpdateFn,
+    log_cb: LogFn,
+    audit_cb: Optional[AuditCb] = None,
+) -> None:
+    """Cordon, optionally disable Nova, then drain pods.  Runs in a daemon thread."""
+
+    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
+        step = state.get_step(key)
+        if step:
+            step.status = status
+            if detail:
+                step.detail = detail
+        update_cb()
+
+    def log(msg: str) -> None:
+        state.add_log(msg)
+        log_cb(msg)
+        update_cb()
+
+    def abort(key: str, reason: str) -> None:
+        step_set(key, StepStatus.FAILED, reason)
+        state.phase = NodePhase.ERROR
+        log(f"Drain aborted: {reason}")
+        if audit_cb:
+            audit_cb("failed", f"step={key} reason={reason}")
+        update_cb()
+
+    step_set("cordon", StepStatus.RUNNING)
+    try:
+        k8s_ops.cordon_node(state.k8s_name, log)
+        state.k8s_cordoned = True
+        step_set("cordon", StepStatus.SUCCESS)
+    except Exception as exc:
+        abort("cordon", str(exc))
+        return
+
+    if state.is_compute:
+        step_set("disable_nova", StepStatus.RUNNING)
+        try:
+            openstack_ops.disable_compute_service(state.hypervisor, log)
+            state.compute_status = "disabled"
+            step_set("disable_nova", StepStatus.SUCCESS)
+        except Exception as exc:
+            abort("disable_nova", str(exc))
+            return
+
+    step_set("drain_k8s", StepStatus.RUNNING)
+    try:
+        k8s_ops.drain_node(state.k8s_name, log)
+        step_set("drain_k8s", StepStatus.SUCCESS)
+    except Exception as exc:
+        abort("drain_k8s", str(exc))
+        return
+
+    state.phase = NodePhase.IDLE
+    log(f"✓ '{state.k8s_name}' drained — cordoned, nova disabled, pods evicted")
+    if audit_cb:
+        audit_cb("completed", "cordoned, nova disabled, pods evicted")
+    update_cb()
+
+
+def run_undrain(
+    state: NodeState,
+    update_cb: UpdateFn,
+    log_cb: LogFn,
+    audit_cb: Optional[AuditCb] = None,
+) -> None:
+    """Enable Nova (if compute) then uncordon.  Runs in a daemon thread."""
+
+    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
+        step = state.get_step(key)
+        if step:
+            step.status = status
+            if detail:
+                step.detail = detail
+        update_cb()
+
+    def log(msg: str) -> None:
+        state.add_log(msg)
+        log_cb(msg)
+        update_cb()
+
+    def abort(key: str, reason: str) -> None:
+        step_set(key, StepStatus.FAILED, reason)
+        state.phase = NodePhase.ERROR
+        log(f"Undrain aborted: {reason}")
+        if audit_cb:
+            audit_cb("failed", f"step={key} reason={reason}")
+        update_cb()
+
+    if state.is_compute:
+        step_set("enable_nova", StepStatus.RUNNING)
+        try:
+            openstack_ops.enable_compute_service(state.hypervisor, log)
+            state.compute_status = "up"
+            step_set("enable_nova", StepStatus.SUCCESS)
+        except Exception as exc:
+            abort("enable_nova", str(exc))
+            return
+
+    step_set("uncordon", StepStatus.RUNNING)
+    try:
+        k8s_ops.uncordon_node(state.k8s_name, log)
+        state.k8s_cordoned = False
+        step_set("uncordon", StepStatus.SUCCESS)
+    except Exception as exc:
+        abort("uncordon", str(exc))
+        return
+
+    state.phase = NodePhase.IDLE
+    log(f"✓ '{state.k8s_name}' undrained — nova enabled, node uncordoned")
+    if audit_cb:
+        audit_cb("completed", "nova enabled, node uncordoned")
+    update_cb()
