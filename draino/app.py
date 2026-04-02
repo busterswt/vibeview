@@ -10,6 +10,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, RichLog, Static
 
+from .audit import AuditLogger
 from .models import NodePhase, NodeState, StepStatus
 from .operations import k8s_ops, openstack_ops
 from . import worker
@@ -236,8 +237,9 @@ class DrainoApp(App):
 
     def __init__(
         self,
-        cloud:   Optional[str] = None,
-        context: Optional[str] = None,
+        cloud:      Optional[str] = None,
+        context:    Optional[str] = None,
+        audit_log:  Optional[str] = None,
     ) -> None:
         super().__init__()
         self.cloud   = cloud
@@ -248,6 +250,15 @@ class DrainoApp(App):
         self._last_k8s_nodes: list[dict] = []
         self._show_pods: bool = False
         self._etcd_node_names: set[str] = set()
+        self._audit = AuditLogger(path=audit_log)
+
+    # ── Audit helper ─────────────────────────────────────────────────────────
+
+    def _make_audit_cb(self, action: str, node_name: str):
+        """Return a (event, detail) -> None callback bound to action+node."""
+        def cb(event: str, detail: str = "") -> None:
+            self._audit.log(action, node_name, event, detail)
+        return cb
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -291,6 +302,7 @@ class DrainoApp(App):
     def on_mount(self) -> None:
         openstack_ops.configure(cloud=self.cloud)
         k8s_ops.configure(context=self.context)
+        self._audit.log("session", "-", "started", f"audit_log={self._audit.path}")
 
         ct = self.query_one("#compute-table", DataTable)
         ct.add_column("Node",     key=_COL_NODE,   width=22)
@@ -603,9 +615,11 @@ class DrainoApp(App):
                 f"[dim cyan]{node_name}[/dim cyan]  {msg}",
             )
 
+        audit_cb = self._make_audit_cb("evacuation", node_name)
+        audit_cb("started")
         threading.Thread(
             target=worker.run_workflow,
-            args=(state, update_cb, log_cb),
+            args=(state, update_cb, log_cb, audit_cb),
             daemon=True,
         ).start()
 
@@ -647,6 +661,8 @@ class DrainoApp(App):
         self._on_state_changed(self.selected_node)
 
         node_name = self.selected_node
+        audit_cb  = self._make_audit_cb("drain_quick", node_name)
+        audit_cb("started")
 
         def update_cb() -> None:
             self.call_from_thread(self._on_state_changed, node_name)
@@ -674,6 +690,7 @@ class DrainoApp(App):
             except Exception as exc:
                 step_set("cordon", StepStatus.FAILED, str(exc))
                 state.phase = NodePhase.ERROR
+                audit_cb("failed", f"step=cordon reason={exc}")
                 update_cb()
                 return
 
@@ -686,6 +703,7 @@ class DrainoApp(App):
                 except Exception as exc:
                     step_set("disable_nova", StepStatus.FAILED, str(exc))
                     state.phase = NodePhase.ERROR
+                    audit_cb("failed", f"step=disable_nova reason={exc}")
                     update_cb()
                     return
 
@@ -696,10 +714,12 @@ class DrainoApp(App):
             except Exception as exc:
                 step_set("drain_k8s", StepStatus.FAILED, str(exc))
                 state.phase = NodePhase.ERROR
+                audit_cb("failed", f"step=drain_k8s reason={exc}")
                 update_cb()
                 return
 
             state.phase = NodePhase.IDLE
+            audit_cb("completed", "cordoned, nova disabled, pods evicted")
             self.call_from_thread(self._on_state_changed, node_name)
             self.call_from_thread(
                 self._global_log,
@@ -731,6 +751,8 @@ class DrainoApp(App):
         self._on_state_changed(self.selected_node)
 
         node_name = self.selected_node
+        audit_cb  = self._make_audit_cb("undrain", node_name)
+        audit_cb("started")
 
         def update_cb() -> None:
             self.call_from_thread(self._on_state_changed, node_name)
@@ -759,6 +781,7 @@ class DrainoApp(App):
                 except Exception as exc:
                     step_set("enable_nova", StepStatus.FAILED, str(exc))
                     state.phase = NodePhase.ERROR
+                    audit_cb("failed", f"step=enable_nova reason={exc}")
                     update_cb()
                     return
 
@@ -770,10 +793,12 @@ class DrainoApp(App):
             except Exception as exc:
                 step_set("uncordon", StepStatus.FAILED, str(exc))
                 state.phase = NodePhase.ERROR
+                audit_cb("failed", f"step=uncordon reason={exc}")
                 update_cb()
                 return
 
             state.phase = NodePhase.IDLE
+            audit_cb("completed", "nova enabled, node uncordoned")
             self.call_from_thread(self._on_state_changed, node_name)
             self.call_from_thread(
                 self._global_log,
@@ -837,6 +862,7 @@ class DrainoApp(App):
         def _on_confirmed(confirmed: bool) -> None:
             if not confirmed:
                 self._global_log("[dim]Reboot cancelled.[/dim]")
+                self._audit.log("reboot", node_name, "cancelled")
                 return
             self._do_reboot(node_name)
 
@@ -866,16 +892,21 @@ class DrainoApp(App):
         remaining      = healthy_count - (1 if this_healthy else 0)
 
         if remaining < quorum_needed:
+            detail = (
+                f"{healthy_count}/{etcd_total} healthy, "
+                f"rebooting would leave {remaining} (quorum={quorum_needed})"
+            )
+            self._audit.log("reboot", node_name, "blocked", detail)
             self.call_from_thread(
                 self._global_log,
-                f"[bold red]✗ Reboot blocked — {healthy_count}/{etcd_total} etcd nodes healthy; "
-                f"rebooting would leave {remaining} (quorum requires {quorum_needed})[/bold red]",
+                f"[bold red]✗ Reboot blocked — {detail}[/bold red]",
             )
             return
 
         def _on_confirmed(confirmed: bool) -> None:
             if not confirmed:
                 self._global_log("[dim]Reboot cancelled.[/dim]")
+                self._audit.log("reboot", node_name, "cancelled")
                 return
             self._do_reboot(node_name)
 
@@ -885,6 +916,9 @@ class DrainoApp(App):
         state = self.node_states.get(node_name)
         if not state:
             return
+
+        audit_cb = self._make_audit_cb("reboot", node_name)
+        audit_cb("started", f"hypervisor={state.hypervisor}")
 
         def update_cb() -> None:
             self.call_from_thread(self._on_state_changed, node_name)
@@ -900,7 +934,7 @@ class DrainoApp(App):
         )
         threading.Thread(
             target=worker.run_reboot,
-            args=(state, update_cb, log_cb),
+            args=(state, update_cb, log_cb, audit_cb),
             daemon=True,
         ).start()
         self._refresh_workflow()

@@ -21,11 +21,17 @@ def main() -> None:
         default=None,
         help="Kubernetes context name from kubeconfig (default: current context)",
     )
+    parser.add_argument(
+        "--audit-log",
+        metavar="PATH",
+        default=None,
+        help="Path for the compliance audit log (default: ~/.draino/audit.log)",
+    )
     args = parser.parse_args()
 
     from .app import DrainoApp
 
-    DrainoApp(cloud=args.cloud, context=args.context).run()
+    DrainoApp(cloud=args.cloud, context=args.context, audit_log=args.audit_log).run()
 
 
 if __name__ == "__main__":

@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 from .models import InstanceInfo, NodePhase, NodeState, StepStatus
 from .operations import k8s_ops, openstack_ops
 
-UpdateFn = Callable[[], None]
-LogFn    = Callable[[str], None]
+UpdateFn  = Callable[[], None]
+LogFn     = Callable[[str], None]
+AuditCb   = Callable[[str, str], None]  # (event, detail)
 
 POLL_INTERVAL  = 15    # seconds between migration / drain status polls
 MIGRATE_TIMEOUT = 1800  # hard limit for all live migrations (seconds)
@@ -19,11 +20,17 @@ REBOOT_OFFLINE_TIMEOUT = 300   # seconds to wait for node to go NotReady
 REBOOT_ONLINE_TIMEOUT  = 600   # seconds to wait for node to return Ready
 
 
-def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
+def run_workflow(
+    state: NodeState,
+    update_cb: UpdateFn,
+    log_cb: LogFn,
+    audit_cb: Optional[AuditCb] = None,
+) -> None:
     """Execute the full evacuation workflow.  Designed to run in a daemon thread.
 
     *update_cb* is called (via call_from_thread) whenever state changes.
     *log_cb* receives plain-text log strings for the global event log.
+    *audit_cb*, if provided, is called as audit_cb(event, detail) on terminal outcomes.
     """
 
     def step_set(key: str, status: StepStatus, detail: str = "") -> None:
@@ -43,6 +50,8 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
         step_set(key, StepStatus.FAILED, reason)
         state.phase = NodePhase.ERROR
         log(f"Evacuation aborted: {reason}")
+        if audit_cb:
+            audit_cb("failed", f"step={key} reason={reason}")
         update_cb()
 
     # ── Initialise ────────────────────────────────────────────────────────
@@ -265,10 +274,17 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     # ── Done ──────────────────────────────────────────────────────────────
     state.phase = NodePhase.COMPLETE
     log(f"✓ '{state.k8s_name}' fully evacuated — ready for reboot!")
+    if audit_cb:
+        audit_cb("completed", "hypervisor empty, K8s node drained")
     update_cb()
 
 
-def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
+def run_reboot(
+    state: NodeState,
+    update_cb: UpdateFn,
+    log_cb: LogFn,
+    audit_cb: Optional[AuditCb] = None,
+) -> None:
     """Issue a reboot via SSH and track downtime.  Runs in a daemon thread."""
 
     def step_set(key: str, status: StepStatus, detail: str = "") -> None:
@@ -288,6 +304,8 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
         step_set(key, StepStatus.FAILED, reason)
         state.phase = NodePhase.ERROR
         log(f"Reboot aborted: {reason}")
+        if audit_cb:
+            audit_cb("failed", f"step={key} reason={reason}")
         update_cb()
 
     state.phase = NodePhase.REBOOTING
@@ -404,4 +422,6 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     state.phase        = NodePhase.IDLE
     state.etcd_healthy = None   # needs re-verification on next selection
     log(f"✓ '{state.k8s_name}' back online — total downtime: {dt}s")
+    if audit_cb:
+        audit_cb("completed", f"downtime={dt}s")
     update_cb()
