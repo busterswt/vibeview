@@ -1,6 +1,7 @@
-"""Background workflow runner.  Executes entirely in a worker thread."""
+"""Background workflow runners.  Execute entirely in worker threads."""
 from __future__ import annotations
 
+import subprocess
 import time
 from typing import Callable
 
@@ -13,6 +14,9 @@ LogFn    = Callable[[str], None]
 POLL_INTERVAL  = 15    # seconds between migration / drain status polls
 MIGRATE_TIMEOUT = 1800  # hard limit for all live migrations (seconds)
 EMPTY_TIMEOUT   = 900   # hard limit for hypervisor-empty wait (seconds)
+
+REBOOT_OFFLINE_TIMEOUT = 300   # seconds to wait for node to go NotReady
+REBOOT_ONLINE_TIMEOUT  = 600   # seconds to wait for node to return Ready
 
 
 def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
@@ -261,4 +265,134 @@ def run_workflow(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     # ── Done ──────────────────────────────────────────────────────────────
     state.phase = NodePhase.COMPLETE
     log(f"✓ '{state.k8s_name}' fully evacuated — ready for reboot!")
+    update_cb()
+
+
+def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
+    """Issue a reboot via SSH and track downtime.  Runs in a daemon thread."""
+
+    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
+        step = state.get_step(key)
+        if step:
+            step.status = status
+            if detail:
+                step.detail = detail
+        update_cb()
+
+    def log(msg: str) -> None:
+        state.add_log(msg)
+        log_cb(msg)
+        update_cb()
+
+    def abort(key: str, reason: str) -> None:
+        step_set(key, StepStatus.FAILED, reason)
+        state.phase = NodePhase.ERROR
+        log(f"Reboot aborted: {reason}")
+        update_cb()
+
+    state.phase = NodePhase.REBOOTING
+    state.reboot_start    = time.time()
+    state.reboot_downtime = None
+    state.init_reboot_steps()
+    update_cb()
+
+    # ── Step 1: SSH reboot ────────────────────────────────────────────────
+    step_set("ssh_reboot", StepStatus.RUNNING)
+    try:
+        subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=10",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no",
+                state.hypervisor,
+                "sudo", "reboot",
+            ],
+            timeout=15,
+            capture_output=True,
+        )
+    except subprocess.TimeoutExpired:
+        # SSH drops when the node reboots — this is expected and counts as success.
+        pass
+    except Exception as exc:
+        abort("ssh_reboot", str(exc))
+        return
+
+    log(f"Reboot command sent to '{state.hypervisor}'")
+    step_set("ssh_reboot", StepStatus.SUCCESS)
+
+    # ── Step 2: Wait for node to go offline ───────────────────────────────
+    step_set("await_offline", StepStatus.RUNNING)
+    deadline     = time.time() + REBOOT_OFFLINE_TIMEOUT
+    went_offline = False
+
+    while time.time() < deadline:
+        try:
+            nodes = k8s_ops.get_nodes()
+            for nd in nodes:
+                if nd["name"] == state.k8s_name and not nd["ready"]:
+                    went_offline = True
+                    break
+        except Exception:
+            pass
+
+        elapsed = int(time.time() - state.reboot_start)
+        step = state.get_step("await_offline")
+        if step:
+            step.detail = f"{elapsed}s elapsed"
+        update_cb()
+
+        if went_offline:
+            break
+        time.sleep(5)
+
+    if not went_offline:
+        abort("await_offline", "Timeout — node did not go offline")
+        return
+    step_set("await_offline", StepStatus.SUCCESS, "Node offline")
+
+    # ── Step 3: Wait for node to return online ────────────────────────────
+    step_set("await_online", StepStatus.RUNNING)
+    deadline   = time.time() + REBOOT_ONLINE_TIMEOUT
+    came_back  = False
+
+    while time.time() < deadline:
+        try:
+            nodes = k8s_ops.get_nodes()
+            for nd in nodes:
+                if nd["name"] != state.k8s_name or not nd["ready"]:
+                    continue
+                # Confirm the Ready transition happened AFTER the reboot was issued
+                ready_since = nd.get("ready_since")
+                if ready_since is not None:
+                    ts = (
+                        ready_since.timestamp()
+                        if hasattr(ready_since, "timestamp")
+                        else float(ready_since)
+                    )
+                    if ts > state.reboot_start:
+                        state.reboot_downtime = time.time() - state.reboot_start
+                        came_back = True
+                        break
+        except Exception:
+            pass
+
+        if came_back:
+            break
+
+        elapsed = int(time.time() - state.reboot_start)
+        step = state.get_step("await_online")
+        if step:
+            step.detail = f"{elapsed}s elapsed"
+        update_cb()
+        time.sleep(5)
+
+    if not came_back:
+        abort("await_online", "Timeout — node did not return online")
+        return
+
+    dt = int(state.reboot_downtime)
+    step_set("await_online", StepStatus.SUCCESS, f"Online — downtime {dt}s")
+    state.phase = NodePhase.IDLE
+    log(f"✓ '{state.k8s_name}' back online — total downtime: {dt}s")
     update_cb()

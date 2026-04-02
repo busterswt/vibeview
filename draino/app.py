@@ -7,7 +7,8 @@ from typing import Optional
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
-from textual.widgets import Button, DataTable, Footer, Header, RichLog, Static
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, RichLog, Static
 
 from .models import NodePhase, NodeState, StepStatus
 from .operations import k8s_ops, openstack_ops
@@ -35,6 +36,7 @@ PHASE_COLOR: dict[NodePhase, str] = {
     NodePhase.COMPLETE:   "bright_green",
     NodePhase.ERROR:      "bright_red",
     NodePhase.UNDRAINING: "cyan",
+    NodePhase.REBOOTING:  "bold magenta",
 }
 PHASE_LABEL: dict[NodePhase, str] = {
     NodePhase.IDLE:       "IDLE",
@@ -42,6 +44,7 @@ PHASE_LABEL: dict[NodePhase, str] = {
     NodePhase.COMPLETE:   "COMPLETE",
     NodePhase.ERROR:      "ERROR",
     NodePhase.UNDRAINING: "UNDRAINING",
+    NodePhase.REBOOTING:  "REBOOTING",
 }
 OP_COLOR: dict[str, str] = {
     "queued":         "dim",
@@ -68,6 +71,56 @@ _COL_OTHER_NODE   = "col_node"
 _COL_OTHER_STATUS = "col_status"
 _COL_OTHER_UPTIME = "col_uptime"
 _COL_OTHER_KERNEL = "col_kernel"
+
+
+class ConfirmRebootScreen(ModalScreen):
+    """Modal that requires the user to type YES before rebooting a node."""
+
+    CSS = """
+    ConfirmRebootScreen {
+        align: center middle;
+    }
+    #reboot-dialog {
+        padding: 1 2;
+        background: $surface;
+        border: thick $error;
+        width: 54;
+        height: auto;
+    }
+    #reboot-dialog Label {
+        margin: 0 0 1 0;
+    }
+    #reboot-input {
+        width: 100%;
+    }
+    """
+
+    def __init__(self, node_name: str) -> None:
+        super().__init__()
+        self._node_name = node_name
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="reboot-dialog"):
+            yield Label(f"[bold red]⚠  REBOOT NODE[/bold red]")
+            yield Label(f"[bold]{self._node_name}[/bold]")
+            yield Label("")
+            yield Label(
+                "This will SSH into the node and issue [bold]sudo reboot[/bold].\n"
+                "Downtime will be measured until K8s reports the node Ready again."
+            )
+            yield Label("")
+            yield Label("Type [bold]YES[/bold] and press Enter to confirm:")
+            yield Input(placeholder="YES", id="reboot-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#reboot-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip() == "YES")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(False)
 
 
 class DrainoApp(App):
@@ -173,12 +226,13 @@ class DrainoApp(App):
     """
 
     BINDINGS = [
-        ("s",  "start",   "Start Evacuation"),
-        ("u",  "undrain", "Undrain Node"),
-        ("p",  "pods",    "Pods"),
-        ("r",  "refresh", "Refresh Nodes"),
-        ("q",  "quit",    "Quit"),
-        ("f5", "refresh", "Refresh"),
+        ("s",       "start",   "Start Evacuation"),
+        ("u",       "undrain", "Undrain Node"),
+        ("p",       "pods",    "Pods"),
+        ("r",       "refresh", "Refresh Nodes"),
+        ("ctrl+r",  "reboot",  "Reboot Node"),
+        ("q",       "quit",    "Quit"),
+        ("f5",      "refresh", "Refresh"),
     ]
 
     def __init__(
@@ -229,6 +283,7 @@ class DrainoApp(App):
             yield Button("↺  Undrain Node",      id="btn-undrain", variant="warning")
             yield Button("⬡  Pods",              id="btn-pods",    variant="default")
             yield Button("⟳  Refresh Nodes",    id="btn-refresh", variant="default")
+            yield Button("⏻  Reboot Node",       id="btn-reboot",  variant="error")
         yield Footer()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -255,6 +310,7 @@ class DrainoApp(App):
         self.action_refresh()
         self.set_interval(15, self._auto_refresh)
         self.set_interval(5,  self._auto_refresh_pods)
+        self.set_interval(1,  self._tick_rebooting)
 
     # ── Node loading ──────────────────────────────────────────────────────────
 
@@ -477,6 +533,8 @@ class DrainoApp(App):
             self.action_pods()
         elif event.button.id == "btn-refresh":
             self.action_refresh()
+        elif event.button.id == "btn-reboot":
+            self.action_reboot()
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -622,7 +680,72 @@ class DrainoApp(App):
             btn.label = "⬡  Pods"
             self._refresh_workflow()
 
+    def action_reboot(self) -> None:
+        if not self.selected_node:
+            self._global_log("[yellow]No node selected.[/yellow]")
+            return
+
+        state = self.node_states.get(self.selected_node)
+        if not state:
+            return
+
+        if state.phase == NodePhase.REBOOTING:
+            self._global_log(
+                f"[yellow]Reboot already in progress for "
+                f"[bold]{self.selected_node}[/bold][/yellow]"
+            )
+            return
+
+        if state.phase == NodePhase.RUNNING:
+            self._global_log(
+                "[yellow]Evacuation in progress — complete it before rebooting.[/yellow]"
+            )
+            return
+
+        node_name = self.selected_node
+
+        def _on_confirmed(confirmed: bool) -> None:
+            if not confirmed:
+                self._global_log("[dim]Reboot cancelled.[/dim]")
+                return
+            self._do_reboot(node_name)
+
+        self.push_screen(ConfirmRebootScreen(node_name), _on_confirmed)
+
+    def _do_reboot(self, node_name: str) -> None:
+        state = self.node_states.get(node_name)
+        if not state:
+            return
+
+        def update_cb() -> None:
+            self.call_from_thread(self._on_state_changed, node_name)
+
+        def log_cb(msg: str) -> None:
+            self.call_from_thread(
+                self._global_log,
+                f"[dim magenta]{node_name}[/dim magenta]  {msg}",
+            )
+
+        self._global_log(
+            f"[bold magenta]Rebooting [cyan]{node_name}[/cyan]…[/bold magenta]"
+        )
+        threading.Thread(
+            target=worker.run_reboot,
+            args=(state, update_cb, log_cb),
+            daemon=True,
+        ).start()
+        self._refresh_workflow()
+
     # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _tick_rebooting(self) -> None:
+        """Refresh the workflow view every second while any node is rebooting."""
+        if (
+            self.selected_node
+            and self.node_states.get(self.selected_node, None) is not None
+            and self.node_states[self.selected_node].phase == NodePhase.REBOOTING
+        ):
+            self._refresh_workflow()
 
     def _auto_refresh(self) -> None:
         self.action_refresh()
@@ -782,7 +905,7 @@ class DrainoApp(App):
             f"[{phase_color}][ {phase_label} ][/{phase_color}]",
         ]
 
-        if not state.is_compute and state.phase != NodePhase.UNDRAINING:
+        if not state.is_compute and state.phase not in (NodePhase.UNDRAINING, NodePhase.REBOOTING):
             k8s_status = (
                 "[dim]Cordoned[/dim]"  if state.k8s_cordoned else
                 "[red]Not Ready[/red]" if not state.k8s_ready  else
@@ -866,6 +989,15 @@ class DrainoApp(App):
                 )
             return "\n".join(lines)
 
+        # ── Live downtime counter (during reboot) ──
+        if state.phase == NodePhase.REBOOTING and state.reboot_start is not None:
+            import time as _time
+            elapsed = int(_time.time() - state.reboot_start)
+            lines += [
+                f"[bold magenta]⏱  Downtime: {elapsed}s[/bold magenta]",
+                "",
+            ]
+
         # ── Workflow steps ──
         lines.append("[bold underline]Workflow Steps[/bold underline]")
         lines.append("")
@@ -877,10 +1009,17 @@ class DrainoApp(App):
                 f"  [{color}]{icon}  {step.label}[/{color}]{detail_str}"
             )
         if state.phase == NodePhase.IDLE:
-            lines.append(
-                "[dim]Press [bold]S[/bold] or click "
-                "[bold]Start Evacuation[/bold] to begin.[/dim]"
-            )
+            if state.reboot_downtime is not None:
+                dt = int(state.reboot_downtime)
+                lines += [
+                    "",
+                    f"[bold green]✓ Reboot complete — total downtime: {dt}s[/bold green]",
+                ]
+            else:
+                lines.append(
+                    "[dim]Press [bold]S[/bold] or click "
+                    "[bold]Start Evacuation[/bold] to begin.[/dim]"
+                )
         lines.append("")
 
         # ── Instance table ──

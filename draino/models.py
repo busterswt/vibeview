@@ -21,6 +21,7 @@ class NodePhase(Enum):
     COMPLETE   = auto()
     ERROR      = auto()
     UNDRAINING = auto()
+    REBOOTING  = auto()
 
 
 @dataclass
@@ -69,6 +70,10 @@ class NodeState:
     preflight_instances: list[dict] = field(default_factory=list)
     preflight_loading:   bool = False
 
+    # ── Reboot tracking ───────────────────────────────────────────────────
+    reboot_start:    Optional[float] = None   # Unix timestamp when reboot issued
+    reboot_downtime: Optional[float] = None   # Seconds of downtime (set on recovery)
+
     # ── Workflow detail ───────────────────────────────────────────────────
     steps: list[WorkflowStep] = field(default_factory=list)
     instances: list[InstanceInfo] = field(default_factory=list)
@@ -98,3 +103,10 @@ class NodeState:
             steps.append(WorkflowStep("enable_nova", "Enable Nova compute service"))
         steps.append(WorkflowStep("uncordon", "Uncordon K8s node"))
         self.steps = steps
+
+    def init_reboot_steps(self) -> None:
+        self.steps = [
+            WorkflowStep("ssh_reboot",    "Issue reboot command via SSH"),
+            WorkflowStep("await_offline", "Wait for node to go offline"),
+            WorkflowStep("await_online",  "Wait for node to come back online"),
+        ]
