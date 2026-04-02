@@ -85,7 +85,7 @@ class ConfirmRebootScreen(ModalScreen):
         padding: 1 2;
         background: $surface;
         border: thick $error;
-        width: 54;
+        width: 72;
         height: auto;
     }
     #reboot-dialog Label {
@@ -105,10 +105,8 @@ class ConfirmRebootScreen(ModalScreen):
             yield Label(f"[bold red]⚠  REBOOT NODE[/bold red]")
             yield Label(f"[bold]{self._node_name}[/bold]")
             yield Label("")
-            yield Label(
-                "This will SSH into the node and issue [bold]sudo reboot[/bold].\n"
-                "Downtime will be measured until K8s reports the node Ready again."
-            )
+            yield Label("This will SSH into the node and issue [bold]sudo reboot[/bold].")
+            yield Label("Downtime will be measured until K8s reports the node Ready again.")
             yield Label("")
             yield Label("Type [bold]YES[/bold] and press Enter to confirm:")
             yield Input(placeholder="YES", id="reboot-input")
