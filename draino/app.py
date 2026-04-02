@@ -426,8 +426,7 @@ class DrainoApp(App):
             if not state:
                 continue
 
-            if state.is_compute or state.phase != NodePhase.IDLE:
-                # Always keep active/complete/error nodes in the compute table
+            if state.is_compute:
                 ct.add_row(
                     name,
                     self._nova_svc_text(state),
