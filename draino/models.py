@@ -101,6 +101,7 @@ class NodeState:
         steps = [WorkflowStep("cordon", "Cordon K8s node")]
         if is_compute:
             steps.append(WorkflowStep("disable_nova", "Disable Nova compute service"))
+        steps.append(WorkflowStep("drain_k8s", "Drain K8s node (evict pods)"))
         self.steps = steps
 
     def init_undrain_steps(self, is_compute: bool) -> None:

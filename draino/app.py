@@ -666,12 +666,21 @@ class DrainoApp(App):
                     update_cb()
                     return
 
+            step_set("drain_k8s", StepStatus.RUNNING)
+            try:
+                k8s_ops.drain_node(state.k8s_name, log)
+                step_set("drain_k8s", StepStatus.SUCCESS)
+            except Exception as exc:
+                step_set("drain_k8s", StepStatus.FAILED, str(exc))
+                state.phase = NodePhase.ERROR
+                update_cb()
+                return
+
             state.phase = NodePhase.IDLE
             self.call_from_thread(self._on_state_changed, node_name)
-            suffix = " and nova disabled" if state.is_compute else ""
             self.call_from_thread(
                 self._global_log,
-                f"[bold green]✓ '{node_name}' drained — cordoned{suffix}.[/bold green]",
+                f"[bold green]✓ '{node_name}' drained — cordoned, nova disabled, pods evicted.[/bold green]",
             )
 
         self._global_log(f"[bold]Draining [cyan]{node_name}[/cyan]…[/bold]")
