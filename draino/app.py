@@ -518,6 +518,7 @@ class DrainoApp(App):
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key and event.row_key.value is not None:
             self.selected_node = str(event.row_key.value)
+            self._update_buttons()
             if self._show_pods:
                 self._start_pods_fetch(self.selected_node)
             else:
@@ -738,6 +739,45 @@ class DrainoApp(App):
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
+    def _update_buttons(self) -> None:
+        """Update action bar button labels and state to reflect the selected node."""
+        state = self.node_states.get(self.selected_node) if self.selected_node else None
+        phase = state.phase if state else None
+
+        start_btn   = self.query_one("#btn-start",   Button)
+        undrain_btn = self.query_one("#btn-undrain", Button)
+        reboot_btn  = self.query_one("#btn-reboot",  Button)
+
+        # ── Start / Evacuation button ─────────────────────────────────────
+        if phase == NodePhase.RUNNING:
+            start_btn.label    = "▶  Evacuating…"
+            start_btn.disabled = True
+        else:
+            start_btn.label    = "▶  Start Evacuation"
+            start_btn.disabled = False
+
+        # ── Undrain button ────────────────────────────────────────────────
+        if phase == NodePhase.UNDRAINING:
+            undrain_btn.label    = "↺  Undraining…"
+            undrain_btn.disabled = True
+        elif phase in (NodePhase.RUNNING, NodePhase.REBOOTING):
+            undrain_btn.label    = "↺  Undrain Node"
+            undrain_btn.disabled = True
+        else:
+            undrain_btn.label    = "↺  Undrain Node"
+            undrain_btn.disabled = False
+
+        # ── Reboot button ─────────────────────────────────────────────────
+        if phase == NodePhase.REBOOTING:
+            reboot_btn.label    = "⏻  Rebooting…"
+            reboot_btn.disabled = True
+        elif phase in (NodePhase.RUNNING, NodePhase.UNDRAINING):
+            reboot_btn.label    = "⏻  Reboot Node"
+            reboot_btn.disabled = True
+        else:
+            reboot_btn.label    = "⏻  Reboot Node"
+            reboot_btn.disabled = False
+
     def _tick_rebooting(self) -> None:
         """Refresh the workflow view every second while any node is rebooting."""
         if (
@@ -880,6 +920,7 @@ class DrainoApp(App):
                 pass
 
         if node_name == self.selected_node:
+            self._update_buttons()
             self._refresh_workflow()
 
     def _refresh_workflow(self) -> None:

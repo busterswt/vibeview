@@ -296,6 +296,17 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     state.init_reboot_steps()
     update_cb()
 
+    # Capture pre-reboot ready_since so we can detect any change (avoids
+    # clock-skew issues with timestamp comparisons).
+    baseline_ready_since = None
+    try:
+        for nd in k8s_ops.get_nodes():
+            if nd["name"] == state.k8s_name:
+                baseline_ready_since = nd.get("ready_since")
+                break
+    except Exception:
+        pass
+
     # ── Step 1: SSH reboot ────────────────────────────────────────────────
     step_set("ssh_reboot", StepStatus.RUNNING)
     try:
@@ -321,15 +332,17 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
     log(f"Reboot command sent to '{state.hypervisor}'")
     step_set("ssh_reboot", StepStatus.SUCCESS)
 
-    # ── Step 2: Wait for node to go offline ───────────────────────────────
+    # ── Step 2: Wait for node to go offline (best-effort) ─────────────────
+    # Fast reboots may never register NotReady in K8s (kubelet reconnects
+    # before the node-monitor grace period fires).  We try for 120 s and
+    # skip gracefully rather than aborting, then proceed to await_online.
     step_set("await_offline", StepStatus.RUNNING)
-    deadline     = time.time() + REBOOT_OFFLINE_TIMEOUT
-    went_offline = False
+    offline_deadline = time.time() + 120
+    went_offline     = False
 
-    while time.time() < deadline:
+    while time.time() < offline_deadline:
         try:
-            nodes = k8s_ops.get_nodes()
-            for nd in nodes:
+            for nd in k8s_ops.get_nodes():
                 if nd["name"] == state.k8s_name and not nd["ready"]:
                     went_offline = True
                     break
@@ -346,34 +359,28 @@ def run_reboot(state: NodeState, update_cb: UpdateFn, log_cb: LogFn) -> None:
             break
         time.sleep(5)
 
-    if not went_offline:
-        abort("await_offline", "Timeout — node did not go offline")
-        return
-    step_set("await_offline", StepStatus.SUCCESS, "Node offline")
+    if went_offline:
+        step_set("await_offline", StepStatus.SUCCESS, "Node offline")
+    else:
+        step_set("await_offline", StepStatus.SKIPPED, "Not detected — proceeding")
 
     # ── Step 3: Wait for node to return online ────────────────────────────
+    # Detect recovery by watching for ready_since to change from the
+    # baseline captured before the reboot.  This is clock-skew safe.
     step_set("await_online", StepStatus.RUNNING)
     deadline   = time.time() + REBOOT_ONLINE_TIMEOUT
     came_back  = False
 
     while time.time() < deadline:
         try:
-            nodes = k8s_ops.get_nodes()
-            for nd in nodes:
+            for nd in k8s_ops.get_nodes():
                 if nd["name"] != state.k8s_name or not nd["ready"]:
                     continue
-                # Confirm the Ready transition happened AFTER the reboot was issued
                 ready_since = nd.get("ready_since")
-                if ready_since is not None:
-                    ts = (
-                        ready_since.timestamp()
-                        if hasattr(ready_since, "timestamp")
-                        else float(ready_since)
-                    )
-                    if ts > state.reboot_start:
-                        state.reboot_downtime = time.time() - state.reboot_start
-                        came_back = True
-                        break
+                if ready_since is not None and ready_since != baseline_ready_since:
+                    state.reboot_downtime = time.time() - state.reboot_start
+                    came_back = True
+                    break
         except Exception:
             pass
 
