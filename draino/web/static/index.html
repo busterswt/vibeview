@@ -54,8 +54,8 @@
 
   /* ── Left panel ── */
   #node-panel {
-    width: 560px;
-    min-width: 360px;
+    width: 740px;
+    min-width: 480px;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border);
@@ -318,9 +318,9 @@
       <div class="table-scroll">
         <table id="compute-table">
           <thead><tr>
-            <th style="width:150px">Node</th>
+            <th style="width:190px">Node</th>
             <th style="width:80px">Nova Svc</th>
-            <th style="width:90px">Phase</th>
+            <th style="width:95px">Phase</th>
             <th style="width:40px">AMP</th>
             <th style="width:40px">VMs</th>
             <th style="width:70px">Uptime</th>
@@ -336,7 +336,7 @@
       <div class="table-scroll">
         <table id="other-table">
           <thead><tr>
-            <th style="width:170px">Node</th>
+            <th style="width:210px">Node</th>
             <th style="width:50px">Role</th>
             <th style="width:90px">Status</th>
             <th style="width:70px">Uptime</th>
@@ -667,9 +667,9 @@ function rebuildTables() {
       const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
       ct.insertAdjacentHTML("beforeend", `
         <tr class="${sel}" onclick="selectNode('${escAttr(name)}')">
-          <td style="width:150px">${escHtml(name)}${etcdBadge}</td>
+          <td style="width:190px">${escHtml(name)}${etcdBadge}</td>
           <td style="width:80px">${novaHtml(nd.compute_status)}</td>
-          <td style="width:90px">${phaseHtml(nd)}</td>
+          <td style="width:95px">${phaseHtml(nd)}</td>
           <td style="width:40px">${countHtml(nd.amphora_count)}</td>
           <td style="width:40px">${countHtml(nd.vm_count)}</td>
           <td style="width:70px"><span class="dim">${nd.uptime || "…"}</span></td>
@@ -680,7 +680,7 @@ function rebuildTables() {
       const role = nd.is_etcd ? `<span class="tag-etcd">etcd</span>` : "";
       ot.insertAdjacentHTML("beforeend", `
         <tr class="${sel}" onclick="selectNode('${escAttr(name)}')">
-          <td style="width:170px">${escHtml(name)}${etcd}</td>
+          <td style="width:210px">${escHtml(name)}${etcd}</td>
           <td style="width:50px">${role}</td>
           <td style="width:90px">${statusHtml(nd)}</td>
           <td style="width:70px"><span class="dim">${nd.uptime || "…"}</span></td>
@@ -782,7 +782,9 @@ function renderWorkflow() {
 
   // ── Non-compute short path ──
   if (!nd.is_compute && nd.phase !== "undraining" && nd.phase !== "rebooting") {
-    h += `<div class="wf-meta">K8s status: ${statusHtml(nd)}</div>
+    const uptime = nd.uptime ? ` &nbsp;|&nbsp; Uptime: <span style="color:var(--cyan)">${escHtml(nd.uptime)}</span>` : "";
+    const kernel = nd.kernel_version ? ` &nbsp;|&nbsp; <span style="color:var(--dim)">${escHtml(nd.kernel_version)}</span>` : "";
+    h += `<div class="wf-meta">K8s status: ${statusHtml(nd)}${uptime}${kernel}</div>
       <div class="dim">Non-compute node — no OpenStack evacuation needed.</div>`;
     if (nd.k8s_cordoned)
       h += `<div class="idle-hint">Click <b>Undrain Node</b> to uncordon.</div>`;
@@ -791,7 +793,9 @@ function renderWorkflow() {
 
   // ── Compute meta ──
   if (nd.is_compute) {
-    h += `<div class="wf-meta">Hypervisor: ${escHtml(nd.hypervisor)} &nbsp;|&nbsp; Nova compute: ${novaHtml(nd.compute_status)}</div>`;
+    const uptime = nd.uptime ? ` &nbsp;|&nbsp; Uptime: <span style="color:var(--cyan)">${escHtml(nd.uptime)}</span>` : "";
+    const kernel = nd.kernel_version ? ` &nbsp;|&nbsp; <span style="color:var(--dim)">${escHtml(nd.kernel_version)}</span>` : "";
+    h += `<div class="wf-meta">Hypervisor: ${escHtml(nd.hypervisor)} &nbsp;|&nbsp; Nova compute: ${novaHtml(nd.compute_status)}${uptime}${kernel}</div>`;
   }
 
   // ── Live downtime counter ──
