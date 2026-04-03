@@ -342,13 +342,21 @@ def render_workflow(state: NodeState, etcd_peers: list[NodeState]) -> str:
 
 # ── Pods panel renderer ───────────────────────────────────────────────────────
 
-def render_pods(node_name: str, pods: list[dict]) -> str:
+def render_pods(
+    node_name: str,
+    pods: list[dict],
+    hide_succeeded: bool = True,
+) -> str:
     """Return Rich markup string for the pods detail panel."""
     lines: list[str] = [
         f"[bold]{node_name}[/bold]   [cyan][ PODS ][/cyan]",
         "",
     ]
-    if not pods:
+
+    succeeded = [p for p in pods if p.get("phase") == "Succeeded"]
+    visible   = pods if not hide_succeeded else [p for p in pods if p.get("phase") != "Succeeded"]
+
+    if not visible and not succeeded:
         lines.append("[dim]No pods scheduled on this node.[/dim]")
         return "\n".join(lines)
 
@@ -359,7 +367,7 @@ def render_pods(node_name: str, pods: list[dict]) -> str:
     )
     lines.append(f"  [dim]{'─' * (NS + NM + 6 + 12 + 10 + 8)}[/dim]")
 
-    for pod in sorted(pods, key=lambda p: (p["namespace"], p["name"])):
+    for pod in sorted(visible, key=lambda p: (p["namespace"], p["name"])):
         ns  = pod["namespace"]
         nm  = pod["name"]
         if len(ns) > NS:
@@ -380,5 +388,18 @@ def render_pods(node_name: str, pods: list[dict]) -> str:
             f"[cyan]{age}[/cyan]"
         )
 
-    lines += ["", f"[dim]{len(pods)} pod(s)   auto-refreshing every 5s[/dim]"]
+    lines.append("")
+    if hide_succeeded and succeeded:
+        lines.append(
+            f"[dim]{len(visible)} pod(s)   "
+            f"{len(succeeded)} Succeeded hidden — press [bold]H[/bold] to show[/dim]"
+        )
+    elif not hide_succeeded and succeeded:
+        lines.append(
+            f"[dim]{len(visible)} pod(s) ({len(succeeded)} Succeeded)   "
+            f"press [bold]H[/bold] to hide[/dim]"
+        )
+    else:
+        lines.append(f"[dim]{len(visible)} pod(s)   auto-refreshing every 5s[/dim]")
+
     return "\n".join(lines)

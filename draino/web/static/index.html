@@ -403,11 +403,13 @@
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 
-let nodes        = {};          // name → NodeDict (from server)
-let selectedNode = null;
-let pendingReboot = null;
-let showPods     = false;
-let ws           = null;
+let nodes          = {};          // name → NodeDict (from server)
+let selectedNode   = null;
+let pendingReboot  = null;
+let showPods       = false;
+let hideSucceeded  = true;       // hide Succeeded pods by default
+let lastPodsCache  = null;       // {node, pods[]} — cached for toggle without re-fetch
+let ws             = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket
@@ -511,26 +513,33 @@ function onRebootBlocked(msg) {
 function onPods(msg) {
   // Only render if pods view is still active for this node.
   if (!showPods || selectedNode !== msg.node) return;
-  const el = document.getElementById("workflow-content");
-  const pods = msg.pods || [];
+  lastPodsCache = { node: msg.node, pods: msg.pods || [] };
+  renderPodsList(msg.node, msg.pods || []);
+}
 
-  if (pods.length === 1 && pods[0].error) {
+function renderPodsList(nodeName, allPods) {
+  const el = document.getElementById("workflow-content");
+
+  if (allPods.length === 1 && allPods[0].error) {
     el.innerHTML = `<div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-        ${escHtml(msg.node)} <span style="color:var(--cyan)">[ PODS ]</span>
+        ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
       </div>
-      <div style="color:var(--red)">${escHtml(pods[0].error)}</div>`;
+      <div style="color:var(--red)">${escHtml(allPods[0].error)}</div>`;
     return;
   }
 
-  if (!pods.length) {
+  const succeeded = allPods.filter(p => p.phase === "Succeeded");
+  const visible   = hideSucceeded ? allPods.filter(p => p.phase !== "Succeeded") : allPods;
+
+  if (!allPods.length) {
     el.innerHTML = `<div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-        ${escHtml(msg.node)} <span style="color:var(--cyan)">[ PODS ]</span>
+        ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
       </div>
       <div class="dim">No pods scheduled on this node.</div>`;
     return;
   }
 
-  const sorted = [...pods].sort((a, b) =>
+  const sorted = [...visible].sort((a, b) =>
     (a.namespace + a.name).localeCompare(b.namespace + b.name)
   );
 
@@ -542,6 +551,7 @@ function onPods(msg) {
     const readyCls = p.ready_count === p.total_count ? "var(--green)" : "var(--yellow)";
     const phaseCls = phase === "Running"   ? "var(--green)"
                    : phase === "Pending"   ? "var(--yellow)"
+                   : phase === "Succeeded" ? "var(--dim)"
                    : "var(--red)";
     rows += `<tr>
       <td style="color:var(--dim);padding:3px 6px;font-size:12px">${escHtml(p.namespace)}</td>
@@ -553,9 +563,24 @@ function onPods(msg) {
     </tr>`;
   }
 
+  // Footer: count + toggle link
+  let footer = `${visible.length} pod(s)`;
+  let toggleLink = "";
+  if (succeeded.length) {
+    if (hideSucceeded) {
+      footer += ` &nbsp;·&nbsp; ${succeeded.length} Succeeded hidden`;
+      toggleLink = `<a href="#" onclick="toggleSucceeded();return false"
+        style="color:var(--cyan);text-decoration:none;margin-left:8px">show</a>`;
+    } else {
+      footer += ` (${succeeded.length} Succeeded)`;
+      toggleLink = `<a href="#" onclick="toggleSucceeded();return false"
+        style="color:var(--cyan);text-decoration:none;margin-left:8px">hide</a>`;
+    }
+  }
+
   el.innerHTML = `
     <div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-      ${escHtml(msg.node)} <span style="color:var(--cyan)">[ PODS ]</span>
+      ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
     </div>
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="color:var(--dim);font-size:11px;border-bottom:1px solid var(--border)">
@@ -568,7 +593,14 @@ function onPods(msg) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="dim" style="margin-top:12px">${pods.length} pod(s)</div>`;
+    <div class="dim" style="margin-top:12px">${footer}${toggleLink}</div>`;
+}
+
+function toggleSucceeded() {
+  hideSucceeded = !hideSucceeded;
+  if (lastPodsCache && showPods && selectedNode === lastPodsCache.node) {
+    renderPodsList(lastPodsCache.node, lastPodsCache.pods);
+  }
 }
 
 function podAge(iso) {
@@ -907,6 +939,7 @@ function actionPods() {
     }
   } else {
     btn.textContent = "⬡  Pods";
+    lastPodsCache = null;
     renderWorkflow();
   }
 }

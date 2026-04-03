@@ -134,13 +134,14 @@ class DrainoApp(App):
     """
 
     BINDINGS = [
-        ("s",       "start",             "Start Evacuation"),
-        ("u",       "drain_or_undrain",  "Drain / Undrain"),
-        ("p",       "pods",              "Pods"),
-        ("r",       "refresh",           "Refresh Nodes"),
-        ("ctrl+r",  "reboot",            "Reboot Node"),
-        ("q",       "quit",              "Quit"),
-        ("f5",      "refresh",           "Refresh"),
+        ("s",       "start",              "Start Evacuation"),
+        ("u",       "drain_or_undrain",   "Drain / Undrain"),
+        ("p",       "pods",               "Pods"),
+        ("h",       "toggle_succeeded",   "Show/Hide Succeeded"),
+        ("r",       "refresh",            "Refresh Nodes"),
+        ("ctrl+r",  "reboot",             "Reboot Node"),
+        ("q",       "quit",               "Quit"),
+        ("f5",      "refresh",            "Refresh"),
     ]
 
     def __init__(
@@ -156,6 +157,8 @@ class DrainoApp(App):
         self.selected_node: Optional[str] = None
         self._last_k8s_nodes: list[dict] = []
         self._show_pods: bool = False
+        self._hide_succeeded: bool = True
+        self._cached_pods: list[dict] = []
         self._etcd_node_names: set[str] = set()
         self._audit = AuditLogger(path=audit_log)
 
@@ -556,6 +559,7 @@ class DrainoApp(App):
                 )
         else:
             btn.label = "⬡  Pods"
+            self._cached_pods = []
             self._refresh_workflow()
 
     def action_reboot(self) -> None:
@@ -761,9 +765,24 @@ class DrainoApp(App):
     def _update_pods_view(self, node_name: str, pods: list[dict]) -> None:
         if not self._show_pods or self.selected_node != node_name:
             return
+        self._cached_pods = pods
         self.query_one("#workflow-content", Static).update(
-            render.render_pods(node_name, pods)
+            render.render_pods(node_name, pods, hide_succeeded=self._hide_succeeded)
         )
+
+    def action_toggle_succeeded(self) -> None:
+        """Toggle visibility of Succeeded pods (H key, only active in pods view)."""
+        if not self._show_pods:
+            return
+        self._hide_succeeded = not self._hide_succeeded
+        if self.selected_node and self._cached_pods:
+            self.query_one("#workflow-content", Static).update(
+                render.render_pods(
+                    self.selected_node,
+                    self._cached_pods,
+                    hide_succeeded=self._hide_succeeded,
+                )
+            )
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
