@@ -21,3 +21,4 @@ packages = ["draino"]
 
 [project.optional-dependencies]
 dev = ["textual-dev"]
+web = ["fastapi>=0.110.0", "uvicorn[standard]>=0.27.0"]
