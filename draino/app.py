@@ -578,9 +578,9 @@ class DrainoApp(App):
             )
             return
 
-        if state.phase == NodePhase.RUNNING:
+        if state.phase in (NodePhase.RUNNING, NodePhase.UNDRAINING):
             self._global_log(
-                "[yellow]Evacuation in progress — complete it before rebooting.[/yellow]"
+                "[yellow]Cannot reboot while an operation is in progress.[/yellow]"
             )
             return
 
