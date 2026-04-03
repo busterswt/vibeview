@@ -729,7 +729,12 @@ function selectNode(name) {
 
   const nd = nodes[name];
   if (nd) {
-    if (nd.is_etcd) send({ action: "check_etcd" });
+    if (nd.is_etcd) {
+      // Only run the SSH check if health is not yet known for any etcd peer
+      const peers = Object.values(nodes).filter(n => n.is_etcd);
+      const anyUnknown = peers.some(n => n.etcd_healthy === null || n.etcd_healthy === undefined);
+      if (anyUnknown) send({ action: "check_etcd" });
+    }
     if (nd.is_compute && nd.phase === "idle") send({ action: "get_preflight", node: name });
   }
   renderWorkflow();
