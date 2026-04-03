@@ -203,6 +203,8 @@
     color: var(--red);
   }
   .etcd-nodes { color: var(--dim); font-size: 11px; margin-top: 4px; }
+  .etcd-spinner { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   .steps-title { font-weight: bold; text-decoration: underline; margin-bottom: 8px; font-size: 13px; }
   .step-row    { display: flex; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 13px; }
@@ -698,11 +700,15 @@ function updateNodeRow(name) {
   if (!row) { rebuildTables(); return; }
 
   if (nd.is_compute) {
+    const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
+    row.cells[0].innerHTML = escHtml(nd.k8s_name) + etcdBadge;
     row.cells[1].innerHTML = novaHtml(nd.compute_status);
     row.cells[2].innerHTML = phaseHtml(nd);
     row.cells[3].innerHTML = countHtml(nd.amphora_count);
     row.cells[4].innerHTML = countHtml(nd.vm_count);
   } else {
+    const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
+    row.cells[0].innerHTML = escHtml(nd.k8s_name) + etcdBadge;
     row.cells[2].innerHTML = statusHtml(nd);
   }
 }
@@ -760,7 +766,12 @@ function renderWorkflow() {
     const safeDn = total - quorum;
     const checked = peers.filter(n => n.etcd_healthy !== null && n.etcd_healthy !== undefined);
 
-    if (!checked.length) {
+    const anyChecking = peers.some(n => n.etcd_checking);
+    if (anyChecking) {
+      h += `<div class="etcd-warning">
+        <span class="etcd-spinner">⟳</span> Checking etcd health…
+      </div>`;
+    } else if (!checked.length) {
       h += `<div class="etcd-warning">
         ⚠  etcd node — health unknown (will be checked before reboot)
       </div>`;

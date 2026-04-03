@@ -60,6 +60,7 @@ def _serialise(state: NodeState) -> dict:
         "uptime":              state.uptime,
         "is_etcd":             state.is_etcd,
         "etcd_healthy":        state.etcd_healthy,
+        "etcd_checking":       state.etcd_checking,
         "is_compute":          state.is_compute,
         "compute_status":      state.compute_status,
         "amphora_count":       state.amphora_count,
@@ -265,10 +266,15 @@ class DrainoServer:
         threading.Thread(target=self._etcd_check_bg, daemon=True).start()
 
     def _etcd_check_bg(self) -> None:
-        for state in list(self.node_states.values()):
-            if state.is_etcd:
-                state.etcd_healthy = k8s_ops.check_etcd_service(state.hypervisor)
-                self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
+        etcd_states = [s for s in self.node_states.values() if s.is_etcd]
+        # Mark all etcd nodes as "checking" first so the UI can show a spinner
+        for state in etcd_states:
+            state.etcd_checking = True
+            self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
+        for state in etcd_states:
+            state.etcd_healthy  = k8s_ops.check_etcd_service(state.hypervisor)
+            state.etcd_checking = False
+            self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
 
     # ── Actions ───────────────────────────────────────────────────────────────
 

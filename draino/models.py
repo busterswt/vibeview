@@ -62,6 +62,7 @@ class NodeState:
     # ── Node roles ────────────────────────────────────────────────────────
     is_etcd:        bool = False            # True if node carries the etcd role label
     etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
+    etcd_checking:  bool = False           # True while SSH health check is in flight
 
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"
