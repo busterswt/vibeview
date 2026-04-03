@@ -290,7 +290,7 @@ class DrainoApp(App):
                 state.uptime = render.format_uptime(ready_since)
 
             ct.add_row(
-                render.node_name_text(name),
+                render.node_name_text(name, state),
                 render.nova_svc_text(state),
                 render.phase_text(state),
                 render.count_text(state.amphora_count),
@@ -347,7 +347,7 @@ class DrainoApp(App):
 
             if state.is_compute:
                 ct.add_row(
-                    render.node_name_text(name),
+                    render.node_name_text(name, state),
                     render.nova_svc_text(state),
                     render.phase_text(state),
                     render.count_text(state.amphora_count),
@@ -358,7 +358,7 @@ class DrainoApp(App):
                 )
             else:
                 ot.add_row(
-                    render.node_name_text(name),
+                    render.node_name_text(name, state),
                     render.role_text(state),
                     render.k8s_status_text(state),
                     render.uptime_text(state),

@@ -664,9 +664,10 @@ function rebuildTables() {
   for (const [name, nd] of Object.entries(nodes)) {
     const sel = name === selectedNode ? "selected" : "";
     if (nd.is_compute) {
+      const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
       ct.insertAdjacentHTML("beforeend", `
         <tr class="${sel}" onclick="selectNode('${escAttr(name)}')">
-          <td style="width:150px">${escHtml(name)}</td>
+          <td style="width:150px">${escHtml(name)}${etcdBadge}</td>
           <td style="width:80px">${novaHtml(nd.compute_status)}</td>
           <td style="width:90px">${phaseHtml(nd)}</td>
           <td style="width:40px">${countHtml(nd.amphora_count)}</td>

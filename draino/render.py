@@ -74,7 +74,11 @@ def format_uptime(since) -> str:
 
 # ── Table cell helpers ────────────────────────────────────────────────────────
 
-def node_name_text(name: str) -> Text:
+def node_name_text(name: str, state: Optional["NodeState"] = None) -> Text:
+    if state is not None and state.is_etcd:
+        t = Text(name)
+        t.append("  etcd", style="bold red")
+        return t
     return Text(name)
 
 
