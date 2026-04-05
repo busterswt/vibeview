@@ -152,8 +152,6 @@ body {
   background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
 }
 
-.auth-title { font-size: 18px; font-weight: 700; color: var(--header); }
-.auth-sub { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.6; }
 .auth-kicker {
   font-size: 10px;
   font-weight: 700;
@@ -161,6 +159,19 @@ body {
   text-transform: uppercase;
   color: var(--blue);
 }
+.auth-brand {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--header);
+  line-height: 1.1;
+}
+.auth-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 10px;
+}
+.auth-sub { font-size: 12px; color: var(--dim); margin-top: 4px; line-height: 1.6; max-width: 760px; }
 
 .auth-grid {
   display: grid;
@@ -321,9 +332,10 @@ body {
   <div id="overlay">
   <div class="auth-shell">
     <div class="auth-head">
+      <div class="auth-brand">Draino</div>
       <div class="auth-kicker">Flushing Cloud Infrastructure Since 2026</div>
       <div class="auth-title">Authenticate Access</div>
-      <div class="auth-sub">Lubricates the pipes to keep maintenances pain free. Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.</div>
+      <div class="auth-sub">Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.</div>
     </div>
 
       <div class="auth-grid">
