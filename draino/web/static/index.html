@@ -1540,10 +1540,20 @@ function wsSetStatus(mode) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function onFullState(msg) {
+  const shouldAutoSelect = !selectedNode || !msg.nodes[selectedNode];
   nodes = msg.nodes;
   if (wsStatusMode !== 'live') wsSetStatus('live');
   rebuildSidebar();
-  renderInfraDetail();
+  if (shouldAutoSelect) {
+    const firstNode = document.querySelector('.tree-item');
+    if (firstNode?.dataset.node) {
+      selectNode(firstNode.dataset.node);
+    } else {
+      renderInfraDetail();
+    }
+  } else {
+    renderInfraDetail();
+  }
   // Pre-fetch node details for all nodes in the background so hardware/K8s
   // info is ready by the time the user clicks any node.
   prefetchAllNodeDetails();
