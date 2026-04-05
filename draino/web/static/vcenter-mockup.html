@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenStack Control Plane — vCenter-style UI Mockup</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   VMware vCenter color palette + global reset
+   ───────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --vc-navy:      #1b2a3c;
+  --vc-blue:      #0072c6;
+  --vc-blue-lt:   #1e88e5;
+  --vc-blue-bg:   #e3f2fd;
+  --vc-header:    #1a2332;
+  --vc-sidebar:   #f4f6f8;
+  --vc-border:    #d1d9e0;
+  --vc-selected:  #bbdefb;
+  --vc-hover:     #e8f4fd;
+  --vc-text:      #1a2332;
+  --vc-dim:       #607d8b;
+  --vc-white:     #ffffff;
+  --green:        #2e7d32;
+  --green-lt:     #4caf50;
+  --yellow:       #f57f17;
+  --red:          #c62828;
+  --red-lt:       #ef5350;
+  --gray-bg:      #f0f2f5;
+  --tag-bg:       #e1f5fe;
+  --tab-active:   #0072c6;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--vc-text);
+  background: var(--gray-bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Top chrome ── */
+#top-bar {
+  background: var(--vc-header);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  flex-shrink: 0;
+  border-bottom: 2px solid var(--vc-blue);
+}
+.logo { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 14px; }
+.logo .brand-icon {
+  width: 22px; height: 22px; background: var(--vc-blue);
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: white; font-weight: 900;
+}
+.logo .subtitle { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5; text-decoration: none; padding: 4px 10px;
+  border-radius: 3px; font-size: 12px;
+}
+.top-nav a:hover { color: white; background: rgba(255,255,255,0.08); }
+.top-nav a.active { color: white; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.top-right .search {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  color: white; padding: 4px 10px; border-radius: 3px; font-size: 12px; width: 200px;
+}
+.top-right .search::placeholder { color: #78909c; }
+.user-badge { color: #b0bec5; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.user-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--vc-blue); color: white; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── Secondary nav / breadcrumb ── */
+#breadcrumb-bar {
+  background: var(--vc-white);
+  border-bottom: 1px solid var(--vc-border);
+  padding: 0 12px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vc-dim);
+  flex-shrink: 0;
+}
+.breadcrumb-link { color: var(--vc-blue); cursor: pointer; }
+.breadcrumb-link:hover { text-decoration: underline; }
+.bc-sep { color: #b0bec5; }
+.bc-current { color: var(--vc-text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+.btn {
+  padding: 3px 10px; border: 1px solid var(--vc-border); background: white;
+  border-radius: 3px; cursor: pointer; font-size: 12px; color: var(--vc-text);
+  display: flex; align-items: center; gap: 4px;
+}
+.btn:hover { background: var(--vc-hover); border-color: var(--vc-blue-lt); }
+.btn.primary { background: var(--vc-blue); color: white; border-color: var(--vc-blue); }
+.btn.primary:hover { background: var(--vc-blue-lt); }
+.btn.danger { color: var(--red); border-color: #ef9a9a; }
+.btn.danger:hover { background: #ffebee; }
+
+/* ── Main body: sidebar + content ── */
+#body { display: flex; flex: 1; overflow: hidden; }
+
+/* ── LEFT: Inventory tree ── */
+#sidebar {
+  width: 260px;
+  min-width: 200px;
+  background: var(--vc-sidebar);
+  border-right: 1px solid var(--vc-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-header {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vc-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--vc-border);
+  background: white;
+}
+.tree { overflow-y: auto; flex: 1; padding: 4px 0; }
+.tree-item {
+  padding: 5px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-item:hover { background: var(--vc-hover); }
+.tree-item.selected {
+  background: var(--vc-selected);
+  border-left-color: var(--vc-blue);
+  color: var(--vc-blue);
+  font-weight: 500;
+}
+.tree-item .expand { width: 14px; text-align: center; color: var(--vc-dim); font-size: 10px; flex-shrink: 0; }
+.tree-item .ico { font-size: 14px; flex-shrink: 0; }
+.tree-indent-1 { padding-left: 20px; }
+.tree-indent-2 { padding-left: 34px; }
+.tree-indent-3 { padding-left: 48px; }
+.tree-badge {
+  margin-left: auto; background: var(--vc-blue-bg); color: var(--vc-blue);
+  font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0;
+}
+.tree-badge.warn { background: #fff8e1; color: #e65100; }
+.tree-badge.err  { background: #ffebee; color: var(--red); }
+
+/* ── RIGHT: Content area ── */
+#content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Object header */
+#obj-header {
+  background: white;
+  border-bottom: 1px solid var(--vc-border);
+  padding: 10px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.obj-icon {
+  width: 40px; height: 40px; background: #e3f2fd; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  flex-shrink: 0;
+}
+.obj-meta h2 { font-size: 16px; font-weight: 600; color: var(--vc-text); }
+.obj-meta .obj-sub { font-size: 12px; color: var(--vc-dim); margin-top: 2px; }
+.obj-badges { display: flex; gap: 6px; margin-top: 6px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+}
+.badge.green { background: #e8f5e9; color: var(--green); }
+.badge.yellow { background: #fff8e1; color: var(--yellow); }
+.badge.red { background: #ffebee; color: var(--red); }
+.badge.blue { background: var(--vc-blue-bg); color: var(--vc-blue); }
+.badge.gray { background: #f5f5f5; color: #607d8b; }
+.obj-actions { margin-left: auto; display: flex; gap: 6px; align-items: flex-start; }
+
+/* Tabs */
+#tabs-bar {
+  background: white;
+  border-bottom: 1px solid var(--vc-border);
+  padding: 0 16px;
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 8px 14px; cursor: pointer; font-size: 12px; color: var(--vc-dim);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--vc-blue); }
+.tab.active { color: var(--vc-blue); border-bottom-color: var(--vc-blue); font-weight: 500; }
+
+/* Tab content */
+#tab-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+/* ── Summary tab ── */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.card {
+  background: white; border: 1px solid var(--vc-border); border-radius: 4px;
+  overflow: hidden;
+}
+.card-header {
+  background: var(--gray-bg); padding: 7px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--vc-dim); border-bottom: 1px solid var(--vc-border);
+}
+.card-body { padding: 12px; }
+.metric-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0; border-bottom: 1px solid #f0f2f5; font-size: 12px;
+}
+.metric-row:last-child { border-bottom: none; }
+.metric-label { color: var(--vc-dim); }
+.metric-value { font-weight: 600; color: var(--vc-text); }
+.metric-value.green { color: var(--green); }
+.metric-value.red { color: var(--red); }
+.metric-value.yellow { color: var(--yellow); }
+
+.progress-bar-wrap { margin-top: 8px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--vc-dim); margin-bottom: 4px; }
+.progress-bg { background: #e0e0e0; border-radius: 3px; height: 8px; }
+.progress-fill { height: 8px; border-radius: 3px; background: var(--vc-blue); }
+.progress-fill.warn { background: #ff9800; }
+.progress-fill.danger { background: var(--red-lt); }
+
+.vc-concept-map {
+  background: #fffde7; border: 1px solid #fff176; border-radius: 4px;
+  padding: 8px 12px; margin-bottom: 12px;
+  font-size: 11px; color: #5d4037;
+}
+.vc-concept-map strong { color: #3e2723; }
+.vc-map-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 4px 8px; align-items: center; }
+.vc-map-arrow { color: #90a4ae; text-align: center; }
+.vc-map-from { font-weight: 600; }
+.vc-map-to { color: var(--vc-blue); font-weight: 600; }
+
+/* ── Instances / Objects tab ── */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0 10px;
+}
+.toolbar-filter {
+  padding: 4px 10px; border: 1px solid var(--vc-border); border-radius: 3px;
+  font-size: 12px; color: var(--vc-text);
+}
+.data-table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; }
+.data-table thead th {
+  background: var(--gray-bg); padding: 7px 10px; text-align: left;
+  font-size: 11px; font-weight: 600; color: var(--vc-dim);
+  border-bottom: 1px solid var(--vc-border); text-transform: uppercase; letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.data-table thead th.sortable { cursor: pointer; }
+.data-table thead th.sortable:hover { color: var(--vc-blue); }
+.data-table tbody tr { border-bottom: 1px solid #f0f2f5; cursor: pointer; }
+.data-table tbody tr:hover { background: var(--vc-hover); }
+.data-table tbody tr.selected { background: var(--vc-selected); }
+.data-table td { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
+.data-table td .cell-ico { font-size: 13px; margin-right: 4px; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px;
+}
+.status-dot.green  { background: var(--green-lt); }
+.status-dot.yellow { background: #ffc107; }
+.status-dot.red    { background: var(--red-lt); }
+.status-dot.gray   { background: #bdbdbd; }
+.flavor-tag {
+  background: #e8eaf6; color: #3949ab; padding: 1px 6px;
+  border-radius: 10px; font-size: 10px; font-weight: 500;
+}
+.az-tag {
+  background: #e0f2f1; color: #00695c; padding: 1px 6px;
+  border-radius: 10px; font-size: 10px; font-weight: 500;
+}
+
+/* ── Monitor tab ── */
+.monitor-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.sparkline-card { background: white; border: 1px solid var(--vc-border); border-radius: 4px; padding: 12px; }
+.sparkline-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--vc-dim); letter-spacing: 0.4px; }
+.sparkline-value { font-size: 22px; font-weight: 700; color: var(--vc-text); margin: 4px 0; }
+.sparkline-sub { font-size: 11px; color: var(--vc-dim); }
+.sparkline-svg { margin-top: 8px; }
+.event-list { background: white; border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; }
+.event-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid #f0f2f5; font-size: 12px;
+}
+.event-item:last-child { border-bottom: none; }
+.event-ico { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.event-body { flex: 1; }
+.event-time { color: var(--vc-dim); font-size: 11px; }
+.event-msg { color: var(--vc-text); }
+.event-type { font-size: 10px; padding: 1px 5px; border-radius: 8px; font-weight: 500; margin-left: 4px; }
+.event-type.info    { background: var(--vc-blue-bg); color: var(--vc-blue); }
+.event-type.warning { background: #fff8e1; color: #e65100; }
+.event-type.task    { background: #f3e5f5; color: #6a1b9a; }
+
+/* ── Recent Tasks bottom panel ── */
+#tasks-panel {
+  height: 120px;
+  border-top: 1px solid var(--vc-border);
+  background: white;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tasks-header {
+  background: var(--gray-bg); padding: 4px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--vc-dim); border-bottom: 1px solid var(--vc-border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.task-table { width: 100%; border-collapse: collapse; }
+.task-table thead th {
+  background: white; padding: 4px 10px; text-align: left;
+  font-size: 10px; font-weight: 600; color: var(--vc-dim); text-transform: uppercase;
+  border-bottom: 1px solid #f0f2f5;
+}
+.task-table td { padding: 4px 10px; font-size: 11px; }
+.task-table tr:hover { background: var(--vc-hover); }
+.progress-inline { display: flex; align-items: center; gap: 6px; }
+.progress-inline .bar { width: 80px; height: 6px; background: #e0e0e0; border-radius: 3px; }
+.progress-inline .fill { height: 6px; border-radius: 3px; background: var(--vc-blue); }
+.task-status { display: flex; align-items: center; gap: 4px; }
+.spinner { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cfd8dc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #90a4ae; }
+
+/* Tooltip-style concept hint */
+.hint {
+  display: inline-block; background: #fff9c4; color: #5d4037;
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid #fff176; margin-left: 4px; font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ TOP BAR ════════════════════════════════════════ -->
+<div id="top-bar">
+  <div class="logo">
+    <div class="brand-icon">OS</div>
+    <div>
+      <div>OpenStack Control Plane</div>
+      <div class="subtitle">region-us-east-1 · powered by draino</div>
+    </div>
+  </div>
+  <nav class="top-nav">
+    <a href="#" class="active">Infrastructure</a>
+    <a href="#">Networking</a>
+    <a href="#">Storage</a>
+    <a href="#">Identity</a>
+    <a href="#">Orchestration</a>
+    <a href="#">Monitor</a>
+  </nav>
+  <div class="top-right">
+    <input class="search" type="text" placeholder="🔍  Search VMs, hosts, projects…">
+    <div class="user-badge">
+      <div class="user-dot">JD</div>
+      jdenton · admin
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ BREADCRUMB ═════════════════════════════════════ -->
+<div id="breadcrumb-bar">
+  <span class="breadcrumb-link">region-us-east-1</span>
+  <span class="bc-sep">›</span>
+  <span class="breadcrumb-link">az-east-1a</span>
+  <span class="bc-sep">›</span>
+  <span class="bc-current">compute0042.az-east-1a.example.com</span>
+  <div class="bc-actions">
+    <button class="btn primary">⬇ Drain Node</button>
+    <button class="btn">⬆ Undrain</button>
+    <button class="btn">↺ Reboot</button>
+    <button class="btn danger">⚙ Actions ▾</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ BODY ══════════════════════════════════════════ -->
+<div id="body">
+
+  <!-- ─────────────────────── LEFT SIDEBAR: Inventory tree ─────────────────────── -->
+  <div id="sidebar">
+    <div class="sidebar-header">Navigator — Infrastructure</div>
+    <div class="tree">
+
+      <!-- Region (= Datacenter) -->
+      <div class="tree-item">
+        <span class="expand">▼</span>
+        <span class="ico">🏢</span>
+        region-us-east-1
+        <span class="hint" title="VMware equivalent">DC</span>
+      </div>
+
+      <!-- AZ 1 (= Cluster) -->
+      <div class="tree-item tree-indent-1">
+        <span class="expand">▼</span>
+        <span class="ico">🗄️</span>
+        az-east-1a
+        <span class="hint">Cluster</span>
+      </div>
+
+      <!-- Hosts inside AZ 1 -->
+      <div class="tree-item tree-indent-2 selected">
+        <span class="expand"> </span>
+        <span class="ico">🖥️</span>
+        compute0042
+        <span class="hint">ESXi</span>
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🖥️</span>
+        compute0043
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🖥️</span>
+        compute0044
+        <span class="tree-badge warn">1 ⚠</span>
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🖥️</span>
+        compute0045
+      </div>
+
+      <!-- Control plane nodes (= Management Cluster) -->
+      <div class="tree-item tree-indent-1">
+        <span class="expand">▼</span>
+        <span class="ico">⚙️</span>
+        control-plane
+        <span class="hint">Mgmt</span>
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🔵</span>
+        ctrl-node-01
+        <span class="hint">etcd</span>
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🔵</span>
+        ctrl-node-02
+      </div>
+      <div class="tree-item tree-indent-2">
+        <span class="expand"> </span>
+        <span class="ico">🔵</span>
+        ctrl-node-03
+      </div>
+
+      <!-- AZ 2 (collapsed) -->
+      <div class="tree-item tree-indent-1">
+        <span class="expand">▶</span>
+        <span class="ico">🗄️</span>
+        az-east-1b
+        <span class="tree-badge">38 hosts</span>
+      </div>
+
+      <!-- K8s resource views -->
+      <div class="tree-item" style="margin-top:6px; border-top: 1px solid var(--vc-border); padding-top:8px;">
+        <span class="expand">▼</span>
+        <span class="ico">☸️</span>
+        K8s Cluster
+        <span class="hint">vApp</span>
+      </div>
+      <div class="tree-item tree-indent-1">
+        <span class="expand"> </span>
+        <span class="ico">📦</span>
+        Namespaces
+      </div>
+      <div class="tree-item tree-indent-1">
+        <span class="expand"> </span>
+        <span class="ico">🔗</span>
+        Services / LBs
+        <span class="hint">Port Groups</span>
+      </div>
+      <div class="tree-item tree-indent-1">
+        <span class="expand"> </span>
+        <span class="ico">💾</span>
+        Persistent Volumes
+        <span class="hint">Datastores</span>
+      </div>
+
+      <!-- Storage -->
+      <div class="tree-item" style="margin-top:6px; border-top: 1px solid var(--vc-border); padding-top:8px;">
+        <span class="expand">▶</span>
+        <span class="ico">💾</span>
+        Ceph / Block Storage
+        <span class="hint">Datastores</span>
+      </div>
+
+      <!-- Networking -->
+      <div class="tree-item">
+        <span class="expand">▶</span>
+        <span class="ico">🌐</span>
+        Neutron Networks
+        <span class="hint">vDS</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─────────────────────── RIGHT: Object detail ─────────────────────── -->
+  <div id="content">
+
+    <!-- Object header -->
+    <div id="obj-header">
+      <div class="obj-icon">🖥️</div>
+      <div class="obj-meta">
+        <h2>compute0042.az-east-1a.example.com</h2>
+        <div class="obj-sub">
+          Nova Hypervisor &nbsp;·&nbsp; K8s Node &nbsp;·&nbsp;
+          AZ: <strong>az-east-1a</strong> &nbsp;·&nbsp;
+          Kernel: <strong>5.15.0-100-generic</strong> &nbsp;·&nbsp;
+          Uptime: <strong>42d 7h</strong>
+        </div>
+        <div class="obj-badges">
+          <span class="badge green">● K8s Ready</span>
+          <span class="badge green">● Nova Up</span>
+          <span class="badge blue">Compute Node</span>
+          <span class="badge gray">Not Cordoned</span>
+        </div>
+      </div>
+      <div class="obj-actions">
+        <button class="btn primary">⬇ Drain Node</button>
+        <button class="btn">↺ Reboot</button>
+        <button class="btn danger">More ▾</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div id="tabs-bar">
+      <div class="tab active" onclick="showTab('summary')">Summary</div>
+      <div class="tab" onclick="showTab('instances')">Instances &amp; Pods <span class="hint" style="margin-left:2px">VMs</span></div>
+      <div class="tab" onclick="showTab('monitor')">Monitor</div>
+      <div class="tab" onclick="showTab('networks')">Networks <span class="hint">Port Groups</span></div>
+      <div class="tab" onclick="showTab('storage')">Volumes <span class="hint">Datastores</span></div>
+      <div class="tab" onclick="showTab('configure')">Configure</div>
+    </div>
+
+    <!-- ══════════ TAB BODIES ══════════ -->
+    <div id="tab-body">
+
+      <!-- ───────── SUMMARY tab ───────── -->
+      <div id="tab-summary">
+
+        <!-- vCenter→OpenStack concept map banner -->
+        <div class="vc-concept-map">
+          <strong>💡 VMware → OpenStack/K8s quick reference:</strong>
+          <div class="vc-map-grid" style="margin-top:6px">
+            <span class="vc-map-from">ESXi Host</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Nova Hypervisor + K8s Node</span>
+            <span class="vc-map-from">vSphere Cluster</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Availability Zone</span>
+            <span class="vc-map-from">Datacenter</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Region</span>
+            <span class="vc-map-from">VM</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Nova Instance (+ optional Pod)</span>
+            <span class="vc-map-from">vMotion</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Nova Live Migration</span>
+            <span class="vc-map-from">Enter Maintenance Mode</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Disable Nova + Cordon + Drain</span>
+            <span class="vc-map-from">VM Template</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Glance Image</span>
+            <span class="vc-map-from">Datastore</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Ceph/Cinder Volume</span>
+            <span class="vc-map-from">Port Group / vDS</span><span class="vc-map-arrow">→</span><span class="vc-map-to">Neutron Network / OVN</span>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <!-- Compute card -->
+          <div class="card">
+            <div class="card-header">Compute (Nova)</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Nova service state</span>
+                <span class="metric-value green">up · enabled</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Running instances</span>
+                <span class="metric-value">14</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Amphora (LB) instances</span>
+                <span class="metric-value yellow">3</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">vCPUs used / total</span>
+                <span class="metric-value">44 / 64</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">RAM used / total</span>
+                <span class="metric-value">180 / 256 GB</span>
+              </div>
+              <div class="progress-bar-wrap">
+                <div class="progress-label"><span>vCPU usage</span><span>68%</span></div>
+                <div class="progress-bg"><div class="progress-fill warn" style="width:68%"></div></div>
+              </div>
+              <div class="progress-bar-wrap">
+                <div class="progress-label"><span>RAM usage</span><span>70%</span></div>
+                <div class="progress-bg"><div class="progress-fill warn" style="width:70%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- K8s node card -->
+          <div class="card">
+            <div class="card-header">Kubernetes Node</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">K8s status</span>
+                <span class="metric-value green">Ready</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Cordoned</span>
+                <span class="metric-value green">No</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Running pods</span>
+                <span class="metric-value">31</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Node role</span>
+                <span class="metric-value">worker</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Kubelet version</span>
+                <span class="metric-value">v1.29.4</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Container runtime</span>
+                <span class="metric-value">containerd 1.7.14</span>
+              </div>
+              <div class="progress-bar-wrap">
+                <div class="progress-label"><span>Pod capacity</span><span>62%</span></div>
+                <div class="progress-bg"><div class="progress-fill" style="width:62%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hardware / Host info -->
+          <div class="card">
+            <div class="card-header">Hardware / Host Info</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Manufacturer</span>
+                <span class="metric-value">Dell PowerEdge R750</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">CPUs</span>
+                <span class="metric-value">2× Intel Xeon Gold 6338</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Physical cores</span>
+                <span class="metric-value">64 (128 threads)</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">RAM</span>
+                <span class="metric-value">256 GB DDR4</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">OS / Kernel</span>
+                <span class="metric-value">Ubuntu 22.04 · 5.15.0-100</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Uptime</span>
+                <span class="metric-value">42d 7h 12m</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">IPMI / BMC</span>
+                <span class="metric-value blue" style="color:var(--vc-blue); cursor:pointer">10.0.0.42 →</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Storage summary -->
+          <div class="card">
+            <div class="card-header">Storage &amp; Network</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Cinder volumes attached</span>
+                <span class="metric-value">8</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Local disk (/)</span>
+                <span class="metric-value">210 / 480 GB</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Ceph cluster health</span>
+                <span class="metric-value green">HEALTH_OK</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Neutron agent</span>
+                <span class="metric-value green">alive</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Tenant networks</span>
+                <span class="metric-value">4</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Floating IPs in use</span>
+                <span class="metric-value">6</span>
+              </div>
+              <div class="progress-bar-wrap">
+                <div class="progress-label"><span>Local disk</span><span>44%</span></div>
+                <div class="progress-bg"><div class="progress-fill" style="width:44%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-summary -->
+
+      <!-- ───────── INSTANCES tab ───────── -->
+      <div id="tab-instances" style="display:none">
+        <div class="toolbar">
+          <button class="btn primary">⊕ Launch Instance</button>
+          <button class="btn">⏸ Suspend</button>
+          <button class="btn">↗ Migrate</button>
+          <button class="btn danger">✕ Terminate</button>
+          <input class="toolbar-filter" type="text" placeholder="Filter…" style="margin-left:auto">
+          <select class="toolbar-filter">
+            <option>All types</option>
+            <option>Nova VM</option>
+            <option>Amphora LB</option>
+            <option>K8s Pod</option>
+          </select>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox"></th>
+              <th class="sortable">Name ↕</th>
+              <th class="sortable">Type <span class="hint">VM?</span></th>
+              <th class="sortable">Status</th>
+              <th class="sortable">Power State <span class="hint">Power</span></th>
+              <th class="sortable">Flavor <span class="hint">VM Size</span></th>
+              <th class="sortable">Project <span class="hint">Folder</span></th>
+              <th class="sortable">IP Address</th>
+              <th>Migration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="selected">
+              <td><input type="checkbox" checked></td>
+              <td><span class="cell-ico">🖥</span>web-prod-01</td>
+              <td><span class="badge blue">Nova VM</span></td>
+              <td><span class="status-dot green"></span>ACTIVE</td>
+              <td>Running</td>
+              <td><span class="flavor-tag">m1.large</span></td>
+              <td>project-web</td>
+              <td>192.168.10.51</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">🖥</span>web-prod-02</td>
+              <td><span class="badge blue">Nova VM</span></td>
+              <td><span class="status-dot green"></span>ACTIVE</td>
+              <td>Running</td>
+              <td><span class="flavor-tag">m1.large</span></td>
+              <td>project-web</td>
+              <td>192.168.10.52</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">⚖️</span>amphora-lb-7a3f</td>
+              <td><span class="badge yellow" style="background:#fff8e1;color:#e65100">Amphora LB</span></td>
+              <td><span class="status-dot green"></span>ACTIVE</td>
+              <td>Running</td>
+              <td><span class="flavor-tag">amphora.v2</span></td>
+              <td>octavia</td>
+              <td>10.0.0.81</td>
+              <td>Failover required</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">⚖️</span>amphora-lb-9c12</td>
+              <td><span class="badge yellow" style="background:#fff8e1;color:#e65100">Amphora LB</span></td>
+              <td><span class="status-dot green"></span>ACTIVE</td>
+              <td>Running</td>
+              <td><span class="flavor-tag">amphora.v2</span></td>
+              <td>octavia</td>
+              <td>10.0.0.82</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">🗄</span>db-staging-01</td>
+              <td><span class="badge blue">Nova VM</span></td>
+              <td><span class="status-dot yellow"></span>BUILD</td>
+              <td>Running</td>
+              <td><span class="flavor-tag">m1.xlarge</span></td>
+              <td>project-db</td>
+              <td>192.168.20.11</td>
+              <td>queued</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">📦</span>nginx-pod-xk2p9</td>
+              <td><span class="badge" style="background:#f3e5f5;color:#6a1b9a">K8s Pod</span></td>
+              <td><span class="status-dot green"></span>Running</td>
+              <td>—</td>
+              <td><span class="flavor-tag">2c/512Mi</span></td>
+              <td>ns:default</td>
+              <td>10.244.1.12</td>
+              <td>Evictable</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">📦</span>api-pod-8zqr4</td>
+              <td><span class="badge" style="background:#f3e5f5;color:#6a1b9a">K8s Pod</span></td>
+              <td><span class="status-dot green"></span>Running</td>
+              <td>—</td>
+              <td><span class="flavor-tag">4c/2Gi</span></td>
+              <td>ns:production</td>
+              <td>10.244.1.13</td>
+              <td>Evictable</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td><span class="cell-ico">🔒</span>daemonset-logging-q7</td>
+              <td><span class="badge" style="background:#f3e5f5;color:#6a1b9a">K8s Pod</span></td>
+              <td><span class="status-dot green"></span>Running</td>
+              <td>—</td>
+              <td><span class="flavor-tag">0.5c/256Mi</span></td>
+              <td>ns:kube-system</td>
+              <td>10.244.1.1</td>
+              <td>DaemonSet — will reschedule</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top:8px; font-size:11px; color:var(--vc-dim)">
+          Showing 8 of 14 Nova instances + 31 K8s pods on this node.
+          <span style="color:var(--vc-blue); cursor:pointer">Show all →</span>
+        </p>
+      </div><!-- /tab-instances -->
+
+      <!-- ───────── MONITOR tab ───────── -->
+      <div id="tab-monitor" style="display:none">
+        <div class="monitor-row">
+          <div class="sparkline-card">
+            <div class="sparkline-title">vCPU Utilization</div>
+            <div class="sparkline-value">68%</div>
+            <div class="sparkline-sub">44 / 64 vCPUs allocated</div>
+            <svg class="sparkline-svg" width="100%" height="40" viewBox="0 0 200 40">
+              <polyline points="0,38 20,30 40,32 60,20 80,15 100,22 120,18 140,12 160,16 180,10 200,14"
+                fill="none" stroke="#1e88e5" stroke-width="2"/>
+              <polyline points="0,38 20,30 40,32 60,20 80,15 100,22 120,18 140,12 160,16 180,10 200,14 200,40 0,40"
+                fill="rgba(30,136,229,0.1)" stroke="none"/>
+            </svg>
+          </div>
+          <div class="sparkline-card">
+            <div class="sparkline-title">RAM Usage</div>
+            <div class="sparkline-value">70%</div>
+            <div class="sparkline-sub">180 / 256 GB</div>
+            <svg class="sparkline-svg" width="100%" height="40" viewBox="0 0 200 40">
+              <polyline points="0,20 20,22 40,19 60,21 80,20 100,18 120,17 140,16 160,15 180,14 200,14"
+                fill="none" stroke="#43a047" stroke-width="2"/>
+              <polyline points="0,20 20,22 40,19 60,21 80,20 100,18 120,17 140,16 160,15 180,14 200,14 200,40 0,40"
+                fill="rgba(67,160,71,0.1)" stroke="none"/>
+            </svg>
+          </div>
+          <div class="sparkline-card">
+            <div class="sparkline-title">Network I/O</div>
+            <div class="sparkline-value">2.4 Gbps</div>
+            <div class="sparkline-sub">10 GbE uplink · 76% util</div>
+            <svg class="sparkline-svg" width="100%" height="40" viewBox="0 0 200 40">
+              <polyline points="0,35 20,28 40,20 60,25 80,10 100,15 120,8 140,18 160,6 180,12 200,8"
+                fill="none" stroke="#fb8c00" stroke-width="2"/>
+              <polyline points="0,35 20,28 40,20 60,25 80,10 100,15 120,8 140,18 160,6 180,12 200,8 200,40 0,40"
+                fill="rgba(251,140,0,0.1)" stroke="none"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="card-header" style="margin-bottom:8px; padding:7px 12px; background:var(--gray-bg); border-radius:4px 4px 0 0; border:1px solid var(--vc-border)">
+          Events &amp; Alarms
+        </div>
+        <div class="event-list">
+          <div class="event-item">
+            <div class="event-ico">✅</div>
+            <div class="event-body">
+              <div class="event-time">2026-04-04 14:22:01</div>
+              <div class="event-msg">Nova live-migration completed: web-prod-03 → compute0045 <span class="event-type task">task</span></div>
+            </div>
+          </div>
+          <div class="event-item">
+            <div class="event-ico">⚠️</div>
+            <div class="event-body">
+              <div class="event-time">2026-04-04 13:58:44</div>
+              <div class="event-msg">Amphora amphora-lb-7a3f: active/standby topology — failover required before drain <span class="event-type warning">warning</span></div>
+            </div>
+          </div>
+          <div class="event-item">
+            <div class="event-ico">ℹ️</div>
+            <div class="event-body">
+              <div class="event-time">2026-04-04 13:45:00</div>
+              <div class="event-msg">K8s node cordoned by user jdenton <span class="event-type info">info</span></div>
+            </div>
+          </div>
+          <div class="event-item">
+            <div class="event-ico">ℹ️</div>
+            <div class="event-body">
+              <div class="event-time">2026-04-04 13:44:52</div>
+              <div class="event-msg">Nova compute service disabled on compute0042 <span class="event-type info">info</span></div>
+            </div>
+          </div>
+          <div class="event-item">
+            <div class="event-ico">✅</div>
+            <div class="event-body">
+              <div class="event-time">2026-04-04 09:11:30</div>
+              <div class="event-msg">etcd health check passed: 3/3 members healthy <span class="event-type info">info</span></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-monitor -->
+
+      <!-- ───────── NETWORKS tab ───────── -->
+      <div id="tab-networks" style="display:none">
+        <p style="color:var(--vc-dim); font-size:12px; margin-bottom:12px">
+          Neutron networks &amp; ports on this host — equivalent to vDS port groups in VMware.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Network <span class="hint">Port Group</span></th>
+              <th>Type <span class="hint">vDS/VSS</span></th>
+              <th>CIDR</th>
+              <th>VLANs</th>
+              <th>Ports in use</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="cell-ico">🌐</span>net-provider-public</td>
+              <td><span class="az-tag">Flat</span></td>
+              <td>203.0.113.0/24</td>
+              <td>—</td>
+              <td>6</td>
+              <td><span class="status-dot green"></span>Active</td>
+            </tr>
+            <tr>
+              <td><span class="cell-ico">🌐</span>net-tenant-web</td>
+              <td><span class="az-tag">VXLAN</span></td>
+              <td>192.168.10.0/24</td>
+              <td>VNI 1001</td>
+              <td>4</td>
+              <td><span class="status-dot green"></span>Active</td>
+            </tr>
+            <tr>
+              <td><span class="cell-ico">🌐</span>net-tenant-db</td>
+              <td><span class="az-tag">VXLAN</span></td>
+              <td>192.168.20.0/24</td>
+              <td>VNI 1002</td>
+              <td>2</td>
+              <td><span class="status-dot green"></span>Active</td>
+            </tr>
+            <tr>
+              <td><span class="cell-ico">🌐</span>net-k8s-pods</td>
+              <td><span class="az-tag">Calico BGP</span></td>
+              <td>10.244.0.0/16</td>
+              <td>—</td>
+              <td>31</td>
+              <td><span class="status-dot green"></span>Active</td>
+            </tr>
+          </tbody>
+        </table>
+      </div><!-- /tab-networks -->
+
+      <!-- ───────── STORAGE tab ───────── -->
+      <div id="tab-storage" style="display:none">
+        <p style="color:var(--vc-dim); font-size:12px; margin-bottom:12px">
+          Cinder volumes and PVs attached to this node — equivalent to Datastores in VMware.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Volume / PV <span class="hint">Datastore</span></th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Attached To</th>
+              <th>Status</th>
+              <th>Ceph Pool</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="cell-ico">💾</span>vol-web-prod-01-root</td>
+              <td><span class="flavor-tag">Cinder/RBD</span></td>
+              <td>80 GB</td>
+              <td>web-prod-01</td>
+              <td><span class="status-dot green"></span>in-use</td>
+              <td>volumes</td>
+            </tr>
+            <tr>
+              <td><span class="cell-ico">💾</span>vol-db-staging-data</td>
+              <td><span class="flavor-tag">Cinder/RBD</span></td>
+              <td>500 GB</td>
+              <td>db-staging-01</td>
+              <td><span class="status-dot green"></span>in-use</td>
+              <td>volumes</td>
+            </tr>
+            <tr>
+              <td><span class="cell-ico">📁</span>pvc-prometheus-data</td>
+              <td><span class="flavor-tag">K8s PV/RBD</span></td>
+              <td>100 GB</td>
+              <td>ns:monitoring</td>
+              <td><span class="status-dot green"></span>Bound</td>
+              <td>kubernetes</td>
+            </tr>
+          </tbody>
+        </table>
+      </div><!-- /tab-storage -->
+
+      <!-- ───────── CONFIGURE tab ───────── -->
+      <div id="tab-configure" style="display:none">
+        <div class="summary-grid">
+          <div class="card">
+            <div class="card-header">Nova Compute Settings</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">CPU allocation ratio</span>
+                <span class="metric-value">4.0</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">RAM allocation ratio</span>
+                <span class="metric-value">1.5</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Reserved host memory</span>
+                <span class="metric-value">2048 MB</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Live-migration timeout</span>
+                <span class="metric-value">300s</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Hypervisor type</span>
+                <span class="metric-value">KVM/QEMU</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Draino / Drain Policy</div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Auto-drain on alert</span>
+                <span class="metric-value yellow">Disabled</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">etcd guard</span>
+                <span class="metric-value green">Enabled</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Max parallel drains</span>
+                <span class="metric-value">1</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Post-reboot wait</span>
+                <span class="metric-value">120s</span>
+              </div>
+              <div style="margin-top:10px">
+                <button class="btn primary">Edit Policy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-configure -->
+
+    </div><!-- /tab-body -->
+
+    <!-- ═══ RECENT TASKS panel ═══ -->
+    <div id="tasks-panel">
+      <div class="tasks-header">
+        Recent Tasks
+        <span style="font-weight:400; text-transform:none; letter-spacing:0">
+          <span style="color:var(--green-lt)">1 running</span> · 4 completed today
+        </span>
+      </div>
+      <div style="overflow-y:auto; flex:1">
+        <table class="task-table">
+          <thead>
+            <tr>
+              <th>Task <span class="hint">Like "Migrate VM"</span></th>
+              <th>Object</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Initiated by</th>
+              <th>Start Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Live-migrate instance</td>
+              <td>web-prod-05</td>
+              <td class="task-status"><span class="spinner">⟳</span> &nbsp;Migrating…</td>
+              <td><div class="progress-inline"><div class="bar"><div class="fill" style="width:60%"></div></div> 60%</div></td>
+              <td>jdenton</td>
+              <td>14:31:02</td>
+            </tr>
+            <tr>
+              <td>Failover Amphora LB</td>
+              <td>amphora-lb-7a3f</td>
+              <td class="task-status" style="color:var(--green)">✓ Completed</td>
+              <td><div class="progress-inline"><div class="bar"><div class="fill" style="width:100%"></div></div> 100%</div></td>
+              <td>jdenton</td>
+              <td>14:22:00</td>
+            </tr>
+            <tr>
+              <td>Disable Nova service</td>
+              <td>compute0042</td>
+              <td class="task-status" style="color:var(--green)">✓ Completed</td>
+              <td><div class="progress-inline"><div class="bar"><div class="fill" style="width:100%"></div></div> 100%</div></td>
+              <td>jdenton</td>
+              <td>13:44:52</td>
+            </tr>
+            <tr>
+              <td>Cordon K8s node</td>
+              <td>compute0042</td>
+              <td class="task-status" style="color:var(--green)">✓ Completed</td>
+              <td><div class="progress-inline"><div class="bar"><div class="fill" style="width:100%"></div></div> 100%</div></td>
+              <td>jdenton</td>
+              <td>13:45:00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /body -->
+
+<script>
+function showTab(name) {
+  ['summary','instances','monitor','networks','storage','configure'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    const names = ['summary','instances','monitor','networks','storage','configure'];
+    el.classList.toggle('active', names[i] === name);
+  });
+}
+
+// Sidebar tree selection
+document.querySelectorAll('.tree-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('selected'));
+    item.classList.add('selected');
+  });
+});
+</script>
+</body>
+</html>
