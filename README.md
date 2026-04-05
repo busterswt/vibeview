@@ -72,14 +72,25 @@ is established.
 
 Required at login:
 
-- Kubernetes API server URL
-- Kubernetes bearer token
-- Optional Kubernetes TLS skip-verify toggle
-- OpenStack Keystone auth URL
-- OpenStack username / password
-- OpenStack project name
-- OpenStack user domain and project domain (default `Default`)
-- Optional OpenStack region and interface
+- Kubernetes bearer token auth
+- Kubernetes client certificate auth
+- Kubernetes kubeconfig upload/paste
+- OpenStack Keystone username / password auth
+- OpenStack application credential auth
+- OpenStack `clouds.yaml` upload/paste
+
+### Recommended web auth choices
+
+For the web UI, the most operator-friendly combinations are:
+
+- Kubernetes: uploaded or pasted `kubeconfig`
+- OpenStack: application credentials
+
+Why:
+
+- `kubeconfig` avoids forcing operators to extract a raw bearer token out-of-band
+- application credentials are safer than sharing a full username/password with the UI
+- both approaches are easier to scope and rotate than long-lived personal credentials
 
 ---
 
@@ -101,8 +112,10 @@ draino --web --host 127.0.0.1 --port 9000
 
 Then open `http://localhost:8000` in a browser and authenticate with both:
 
-- Kubernetes credentials
-- OpenStack credentials
+- Kubernetes credentials:
+  bearer token, client certificate, or `kubeconfig`
+- OpenStack credentials:
+  password fields, application credential, or `clouds.yaml`
 
 The browser session is stored server-side in memory and all subsequent REST/WebSocket
 operations use those supplied credentials.

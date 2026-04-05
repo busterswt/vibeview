@@ -16,6 +16,60 @@ def test_session_endpoint_reports_unauthenticated():
     assert resp.json() == {"authenticated": False}
 
 
+def test_build_k8s_auth_from_kubeconfig():
+    payload = web_server.K8sLoginPayload(
+        mode="kubeconfig",
+        kubeconfig_yaml="""
+apiVersion: v1
+kind: Config
+clusters:
+  - name: demo
+    cluster:
+      server: https://cluster.example:6443
+contexts:
+  - name: demo
+    context:
+      cluster: demo
+      user: demo-user
+current-context: demo
+users:
+  - name: demo-user
+    user:
+      token: abc123
+""",
+    )
+
+    auth = web_server._build_k8s_auth(payload)
+
+    assert isinstance(auth, K8sAuth)
+    assert auth.mode == "kubeconfig"
+    assert auth.kubeconfig["current-context"] == "demo"
+
+
+def test_build_openstack_auth_from_clouds_yaml_uses_app_credentials():
+    payload = web_server.OpenStackLoginPayload(
+        mode="clouds_yaml",
+        clouds_yaml="""
+clouds:
+  demo:
+    auth:
+      auth_url: https://keystone.example/v3
+      application_credential_id: app-id
+      application_credential_secret: app-secret
+    region_name: RegionOne
+    interface: public
+""",
+        cloud_name="demo",
+    )
+
+    auth = web_server._build_openstack_auth(payload)
+
+    assert isinstance(auth, OpenStackAuth)
+    assert auth.mode == "application_credential"
+    assert auth.application_credential_id == "app-id"
+    assert auth.region_name == "RegionOne"
+
+
 def test_login_creates_session_and_gates_api(monkeypatch):
     captured: dict[str, object] = {}
 

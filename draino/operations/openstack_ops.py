@@ -15,14 +15,17 @@ _CLOUD: str | None = None
 
 @dataclass(slots=True)
 class OpenStackAuth:
-    auth_url: str
-    username: str
-    password: str
-    project_name: str
+    mode: str = "password"
+    auth_url: str = ""
+    username: str = ""
+    password: str = ""
+    project_name: str = ""
     user_domain_name: str = "Default"
     project_domain_name: str = "Default"
     region_name: str | None = None
     interface: str | None = None
+    application_credential_id: str | None = None
+    application_credential_secret: str | None = None
 
 
 def configure(cloud: str | None = None) -> None:
@@ -35,12 +38,16 @@ def _conn(auth: OpenStackAuth | None = None) -> openstack.connection.Connection:
         return openstack.connect(cloud=_CLOUD)
     kwargs = {
         "auth_url": auth.auth_url,
-        "username": auth.username,
-        "password": auth.password,
-        "project_name": auth.project_name,
-        "user_domain_name": auth.user_domain_name,
-        "project_domain_name": auth.project_domain_name,
     }
+    if auth.mode == "application_credential":
+        kwargs["application_credential_id"] = auth.application_credential_id
+        kwargs["application_credential_secret"] = auth.application_credential_secret
+    else:
+        kwargs["username"] = auth.username
+        kwargs["password"] = auth.password
+        kwargs["project_name"] = auth.project_name
+        kwargs["user_domain_name"] = auth.user_domain_name
+        kwargs["project_domain_name"] = auth.project_domain_name
     if auth.region_name:
         kwargs["region_name"] = auth.region_name
     if auth.interface:

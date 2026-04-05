@@ -1,13 +1,18 @@
 """Kubernetes operations: cordon, drain."""
 from __future__ import annotations
 
+import base64
+import os
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import yaml
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
+from kubernetes.config.kube_config import KubeConfigLoader
 
 LogFn = Callable[[str], None]
 
@@ -16,10 +21,16 @@ _CONTEXT: str | None = None
 
 @dataclass(slots=True)
 class K8sAuth:
-    server: str
-    token: str
+    mode: str = "token"
+    server: str = ""
+    token: str = ""
     skip_tls_verify: bool = False
     context: str | None = None
+    ca_cert: str | None = None
+    client_cert: str | None = None
+    client_key: str | None = None
+    kubeconfig: dict | None = None
+    temp_dir: str | None = None
 
 
 def configure(context: str | None = None) -> None:
@@ -34,15 +45,68 @@ def _load_config() -> None:
         config.load_kube_config(context=_CONTEXT)
 
 
+def _auth_temp_dir(auth: K8sAuth) -> str:
+    if auth.temp_dir is None:
+        auth.temp_dir = tempfile.mkdtemp(prefix="draino-k8s-")
+    return auth.temp_dir
+
+
+def _to_b64(value: str) -> str:
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def _manual_kubeconfig_dict(auth: K8sAuth) -> dict:
+    cluster: dict[str, object] = {"server": auth.server.rstrip("/")}
+    if auth.skip_tls_verify:
+        cluster["insecure-skip-tls-verify"] = True
+    elif auth.ca_cert:
+        cluster["certificate-authority-data"] = _to_b64(auth.ca_cert)
+
+    user: dict[str, object]
+    if auth.mode == "client_cert":
+        user = {
+            "client-certificate-data": _to_b64(auth.client_cert or ""),
+            "client-key-data": _to_b64(auth.client_key or ""),
+        }
+    else:
+        user = {"token": auth.token}
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [{"name": "draino", "cluster": cluster}],
+        "users": [{"name": "draino-user", "user": user}],
+        "contexts": [{
+            "name": auth.context or "draino",
+            "context": {"cluster": "draino", "user": "draino-user"},
+        }],
+        "current-context": auth.context or "draino",
+    }
+
+
+def _kubeconfig_dict(auth: K8sAuth) -> dict:
+    return auth.kubeconfig if auth.kubeconfig is not None else _manual_kubeconfig_dict(auth)
+
+
+def _write_kubeconfig(auth: K8sAuth) -> str:
+    temp_dir = _auth_temp_dir(auth)
+    path = os.path.join(temp_dir, "config.yaml")
+    with open(path, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(_kubeconfig_dict(auth), fh, sort_keys=False)
+    return path
+
+
 def _api_client(auth: K8sAuth | None = None) -> client.ApiClient:
     if auth is None:
         _load_config()
         return client.ApiClient()
     cfg = client.Configuration()
-    cfg.host = auth.server.rstrip("/")
-    cfg.verify_ssl = not auth.skip_tls_verify
-    cfg.api_key = {"authorization": auth.token}
-    cfg.api_key_prefix = {"authorization": "Bearer"}
+    loader = KubeConfigLoader(
+        _kubeconfig_dict(auth),
+        active_context=auth.context,
+        temp_file_path=_auth_temp_dir(auth),
+    )
+    loader.load_and_set(cfg)
     return client.ApiClient(cfg)
 
 
@@ -52,9 +116,9 @@ def _kubectl_base_cmd(auth: K8sAuth | None = None) -> list[str]:
         if _CONTEXT:
             cmd += ["--context", _CONTEXT]
         return cmd
-    cmd += ["--server", auth.server, "--token", auth.token]
-    if auth.skip_tls_verify:
-        cmd.append("--insecure-skip-tls-verify=true")
+    cmd += ["--kubeconfig", _write_kubeconfig(auth)]
+    if auth.context:
+        cmd += ["--context", auth.context]
     return cmd
 
 
@@ -114,6 +178,8 @@ def get_node_k8s_detail(
         "pods_allocatable":    None,
         "pod_count":           None,
         "roles":               [],
+        "labels":              {},
+        "annotations":         {},
         "error":               None,
     }
 
@@ -173,6 +239,8 @@ def get_node_k8s_detail(
         if k.startswith("node-role.kubernetes.io/")
     ]
     result["roles"] = roles or ["worker"]
+    result["labels"] = dict(sorted(labels.items()))
+    result["annotations"] = dict(sorted((node.metadata.annotations or {}).items()))
 
     # Live pod count (non-terminated)
     try:
