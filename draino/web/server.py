@@ -37,6 +37,7 @@ from typing import Optional, Set
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from ..audit import AuditLogger
 from ..models import NodePhase, NodeState
@@ -648,6 +649,46 @@ async def api_node_detail(node_name: str):
     k8s = await k8s_future
     hw  = await hw_future
     return {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
+
+
+@fastapi_app.get("/api/nodes/{node_name}/ovn-annotations")
+async def api_node_ovn_annotations(node_name: str):
+    """Return OVN-related annotations from the K8s node."""
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, k8s_ops.get_node_ovn_annotations, node_name)
+    return result
+
+
+class AnnotationPatch(BaseModel):
+    key: str
+    value: Optional[str] = None
+
+
+@fastapi_app.post("/api/nodes/{node_name}/ovn-annotations")
+async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch):
+    """Set or remove a single OVN annotation on a K8s node."""
+    if payload.key not in k8s_ops.OVN_ANNOTATION_KEYS:
+        return {"ok": False, "error": f"Key {payload.key!r} not in allowed OVN annotation keys"}
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(
+            None, k8s_ops.patch_node_annotation, node_name, payload.key, payload.value
+        )
+        return {"ok": True, "error": None}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@fastapi_app.get("/api/nodes/{node_name}/network-interfaces")
+async def api_node_network_interfaces(node_name: str):
+    """Return physical and bond network interfaces discovered via SSH."""
+    loop = asyncio.get_running_loop()
+    state = _server.node_states.get(node_name)
+    hostname = state.hypervisor if state else node_name
+    result = await loop.run_in_executor(
+        None, k8s_ops.get_node_network_interfaces, hostname
+    )
+    return result
 
 
 @fastapi_app.get("/api/k8s/namespaces")

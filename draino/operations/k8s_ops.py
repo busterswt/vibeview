@@ -407,6 +407,194 @@ def get_node_hardware_info(hostname: str) -> dict:
     return result
 
 
+OVN_ANNOTATION_KEYS = [
+    "ovn.kubernetes.io/tunnel-interface",
+    "ovn.openstack.org/bridges",
+    "ovn.openstack.org/int_bridge",
+    "ovn.openstack.org/mappings",
+    "ovn.openstack.org/ports",
+]
+
+
+def get_node_ovn_annotations(node_name: str) -> dict:
+    """Return OVN-related annotations from the K8s node object.
+
+    Returns a dict keyed by annotation name → value (str or None).
+    Adds an ``error`` key if the K8s API call fails.
+    """
+    _load_config()
+    v1 = client.CoreV1Api()
+    try:
+        node = v1.read_node(node_name)
+        ann = node.metadata.annotations or {}
+        return {k: ann.get(k) for k in OVN_ANNOTATION_KEYS}
+    except Exception as exc:
+        return {k: None for k in OVN_ANNOTATION_KEYS} | {"error": str(exc)}
+
+
+def patch_node_annotation(node_name: str, key: str, value: Optional[str]) -> None:
+    """Set (or remove, if *value* is None) a single annotation on a K8s node.
+
+    Uses the kubernetes Python client so no subprocess/kubectl required.
+    Raises any ApiException on failure.
+    """
+    _load_config()
+    v1 = client.CoreV1Api()
+    body = {"metadata": {"annotations": {key: value}}}
+    v1.patch_node(node_name, body)
+
+
+def get_node_network_interfaces(hostname: str) -> dict:
+    """SSH to *hostname* and return physical and bond network interfaces.
+
+    Reads /sys/class/net/ without root; uses ethtool -i for driver names
+    and udevadm for human-readable model/vendor strings.
+
+    Returns::
+
+        {
+          "interfaces": [
+            {
+              "name": "ens2f0np0",
+              "type": "physical",          # "physical" | "bond"
+              "status": "up",              # "up" | "down" | "unknown"
+              "speed": "25G",              # formatted string, None if unknown
+              "speed_mbps": 25000,         # int raw, None if unknown
+              "mac": "18:c0:4d:...",
+              "duplex": "full",
+              "driver": "ice",             # physical only
+              "model": "Ethernet E810-C",  # physical only, may be None
+              "vendor": "Intel Corp",      # physical only, may be None
+              "members": ["ens2f0np0"],    # bond only
+              "mode": "802.3ad",           # bond only
+            },
+            ...
+          ],
+          "error": None                    # str if SSH failed
+        }
+    """
+    script = r"""
+for d in /sys/class/net/*/; do
+  name=$(basename "$d")
+  is_phys=0; is_bond=0
+  [ -e "${d}device" ] && is_phys=1
+  [ -d "${d}bonding" ] && is_bond=1
+  [ "$is_phys" = "0" ] && [ "$is_bond" = "0" ] && continue
+  printf '__NIC__ %s\n' "$name"
+  printf 'oper=%s\n'      "$(cat ${d}operstate 2>/dev/null)"
+  printf 'mac=%s\n'       "$(cat ${d}address 2>/dev/null)"
+  printf 'speed_mbps=%s\n' "$(cat ${d}speed 2>/dev/null)"
+  printf 'duplex=%s\n'    "$(cat ${d}duplex 2>/dev/null)"
+  if [ "$is_bond" = "1" ]; then
+    printf 'type=bond\n'
+    printf 'slaves=%s\n'  "$(cat ${d}bonding/slaves 2>/dev/null)"
+    printf 'mode=%s\n'    "$(cat ${d}bonding/mode 2>/dev/null | cut -d' ' -f1)"
+  else
+    printf 'type=physical\n'
+    printf 'driver=%s\n'  "$(ethtool -i "$name" 2>/dev/null | awk '/^driver:/{print $2}')"
+    printf 'model=%s\n'   "$(udevadm info "${d}" 2>/dev/null | awk -F= '/^E: ID_MODEL_FROM_DATABASE=/{sub(/^[^=]*=/, ""); print; exit}')"
+    printf 'vendor=%s\n'  "$(udevadm info "${d}" 2>/dev/null | awk -F= '/^E: ID_VENDOR_FROM_DATABASE=/{sub(/^[^=]*=/, ""); print; exit}')"
+  fi
+  printf '__END_NIC__\n'
+done
+"""
+
+    def _fmt_speed(mbps_str: str) -> tuple[str | None, int | None]:
+        """Convert Mbps string to (human, int). Returns (None, None) if unknown."""
+        try:
+            v = int(mbps_str)
+        except (ValueError, TypeError):
+            return None, None
+        if v <= 0:
+            return None, None
+        if v >= 100_000:
+            return "100G", v
+        if v >= 40_000:
+            return "40G", v
+        if v >= 25_000:
+            return "25G", v
+        if v >= 10_000:
+            return "10G", v
+        if v >= 1_000:
+            return "1G", v
+        return f"{v}M", v
+
+    try:
+        proc = subprocess.run(
+            ["ssh",
+             "-o", "ConnectTimeout=5",
+             "-o", "BatchMode=yes",
+             "-o", "StrictHostKeyChecking=no",
+             hostname, script],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception as exc:
+        return {"interfaces": [], "error": str(exc)}
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {
+            "interfaces": [],
+            "error": f"SSH failed: {stderr}" if stderr else f"SSH exited {proc.returncode}",
+        }
+
+    interfaces: list[dict] = []
+    current: dict | None = None
+
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("__NIC__ "):
+            current = {
+                "name": line[len("__NIC__ "):].strip(),
+                "type": "physical",
+                "status": "unknown",
+                "speed": None,
+                "speed_mbps": None,
+                "mac": None,
+                "duplex": None,
+                "driver": None,
+                "model": None,
+                "vendor": None,
+                "members": [],
+                "mode": None,
+            }
+        elif line == "__END_NIC__":
+            if current is not None:
+                interfaces.append(current)
+            current = None
+        elif current is not None and "=" in line:
+            key, _, val = line.partition("=")
+            val = val.strip()
+            if key == "oper":
+                current["status"] = val if val else "unknown"
+            elif key == "mac":
+                current["mac"] = val or None
+            elif key == "speed_mbps":
+                spd, raw = _fmt_speed(val)
+                current["speed"] = spd
+                current["speed_mbps"] = raw
+            elif key == "duplex":
+                current["duplex"] = val or None
+            elif key == "type":
+                current["type"] = val
+            elif key == "driver":
+                current["driver"] = val or None
+            elif key == "model":
+                current["model"] = val or None
+            elif key == "vendor":
+                current["vendor"] = val or None
+            elif key == "slaves":
+                current["members"] = [s for s in val.split() if s]
+            elif key == "mode":
+                current["mode"] = val or None
+
+    # Sort: bonds first, then physicals alphabetically
+    interfaces.sort(key=lambda x: (0 if x["type"] == "bond" else 1, x["name"]))
+    return {"interfaces": interfaces, "error": None}
+
+
 def get_ovn_port_detail(port_id: str) -> dict:
     """Run `kubectl ko nbctl lsp-show <port_id>` and return parsed data.
 

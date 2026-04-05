@@ -416,6 +416,81 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .concept-table td:first-child { font-weight: 600; color: #455a64; }
 .concept-table td:last-child  { color: var(--blue); }
 
+/* OVN annotation editing */
+.card-title-actions { margin-left: auto; display: flex; gap: 5px; align-items: center; }
+.bridge-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0 6px; min-height: 28px; }
+.bridge-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--blue-bg); color: var(--blue); border: 1px solid #90caf9;
+  border-radius: 12px; padding: 2px 8px 2px 10px; font-size: 12px; font-weight: 500;
+  font-family: monospace;
+}
+.bridge-chip .bx {
+  width: 14px; height: 14px; border-radius: 50%; background: rgba(0,114,198,0.15);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 10px; color: var(--blue); flex-shrink: 0;
+  font-family: sans-serif;
+}
+.bridge-chip .bx:hover { background: rgba(0,114,198,0.35); }
+.add-chip-row { display: flex; align-items: center; gap: 6px; padding-top: 4px; border-top: 1px solid #f0f2f5; margin-top: 2px; }
+.add-chip-row input {
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 3px;
+  font-size: 12px; font-family: monospace; color: var(--text); width: 150px; outline: none;
+}
+.add-chip-row input:focus { border-color: var(--blue); }
+.ann-table { width: 100%; border-collapse: collapse; }
+.ann-table th {
+  text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 700;
+  color: var(--dim); text-transform: uppercase; letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border); background: var(--gray-bg); white-space: nowrap;
+}
+.ann-table td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+.ann-table tr:last-child td { border-bottom: none; }
+.ann-table select, .ann-table input[type=text] {
+  padding: 3px 7px; border: 1px solid var(--border); border-radius: 3px;
+  font-size: 12px; font-family: inherit; color: var(--text); background: var(--white); outline: none;
+}
+.ann-table select:focus, .ann-table input[type=text]:focus { border-color: var(--blue); }
+.ann-table .del-btn { background: none; border: none; color: #b0bec5; cursor: pointer; font-size: 14px; padding: 0 2px; }
+.ann-table .del-btn:hover { color: var(--red); }
+.add-row-btn {
+  display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--blue);
+  cursor: pointer; padding: 6px 10px 5px; border-top: 1px solid #f0f2f5;
+}
+.add-row-btn:hover { background: var(--hover); }
+.unsaved-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #f57f17; margin-left: 4px; vertical-align: middle;
+}
+/* NIC speed badges */
+.nic-speed { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+.nic-speed.g100 { background: #e3f2fd; color: #0d47a1; }
+.nic-speed.g40  { background: #e8eaf6; color: #283593; }
+.nic-speed.g25  { background: #e8f5e9; color: #1b5e20; }
+.nic-speed.g10  { background: #f3e5f5; color: #4a148c; }
+.nic-speed.g1   { background: #f5f5f5; color: #455a64; }
+.nic-speed.gunk { background: #f5f5f5; color: #9e9e9e; }
+.nic-type { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+.nic-type.physical { background: #e8f5e9; color: #2e7d32; }
+.nic-type.bond     { background: #fff3e0; color: #e65100; }
+/* warning modal */
+#ann-warn-modal {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 9000; align-items: center; justify-content: center;
+}
+#ann-warn-modal.open { display: flex; }
+.ann-warn-box {
+  background: var(--white); border-radius: 6px; padding: 20px 24px;
+  width: 460px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+  border-top: 4px solid #f57f17;
+}
+.ann-warn-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.ann-warn-body  { font-size: 12px; color: var(--dim); line-height: 1.6; margin-bottom: 12px; }
+.ann-warn-kv    { background: var(--gray-bg); border-radius: 4px; padding: 8px 10px; font-size: 11px; font-family: monospace; margin: 8px 0 14px; word-break: break-all; }
+.ann-warn-kv .k { color: var(--blue); }
+.ann-warn-kv .v { color: var(--text); }
+.ann-warn-btns  { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* ═══════════════════════════════════════════════════════
    NETWORKING & STORAGE VIEWS — full-width data views
 ═══════════════════════════════════════════════════════ */
@@ -724,6 +799,26 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </div>
 </div>
 
+<!-- OVN annotation warning modal -->
+<div id="ann-warn-modal">
+  <div class="ann-warn-box">
+    <div class="ann-warn-title">⚠ Apply OVN Annotation Change</div>
+    <div class="ann-warn-body">
+      Updating this annotation will trigger OVN reconciliation on the node.
+      <strong>This may cause a brief interruption to overlay network traffic.</strong>
+      Ensure no time-sensitive operations are in progress before proceeding.
+    </div>
+    <div class="ann-warn-kv">
+      <div><span class="k" id="awm-key"></span></div>
+      <div style="margin-top:4px"><span class="v" id="awm-val"></span></div>
+    </div>
+    <div class="ann-warn-btns">
+      <button class="btn" onclick="annWarnCancel()">Cancel</button>
+      <button class="btn warning" style="background:#e65100;color:white;border-color:#ef6c00" onclick="annWarnConfirm()">Apply Annotation</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reboot blocked modal -->
 <div class="modal-overlay" id="blocked-overlay">
   <div class="modal-box">
@@ -770,6 +865,24 @@ const collapsedGroups = new Set();
 
 // Node detail cache (summary tab)
 const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
+
+// Node network config cache (configure tab)
+// node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
+const nodeNetworkCache = {};
+
+// Working edit state for the currently-open Configure tab
+const netEdit = {
+  node:          null,
+  bridges:       [],
+  mappings:      [],   // [{physnet, bridge}]
+  ports:         [],   // [{bridge, iface}]
+  bridgesDirty:  false,
+  mappingsDirty: false,
+  portsDirty:    false,
+};
+
+// Pending annotation save (used by warning modal)
+let _annWarnPending = null;  // {key, value, successCb}
 
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
@@ -1136,6 +1249,8 @@ function selectNode(name) {
   }
   // Load rich node detail if not already cached
   if (!nodeDetailCache[name]) loadNodeDetail(name);
+  // Load network config data if Configure tab is active
+  if (activeTab === 'configure') _ensureNetworkDataLoaded(name);
   renderInfraDetail();
 }
 
@@ -1230,12 +1345,21 @@ function showTab(name) {
     setTimeout(() => ml.scrollTop = ml.scrollHeight, 0);
   }
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
+  if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
 
 function renderActiveTab(nd) {
   if (activeTab === 'summary')   renderSummaryTab(nd);
   if (activeTab === 'instances') renderInstancesTab(nd);
   if (activeTab === 'configure') renderConfigureTab(nd);
+}
+
+function _ensureNetworkDataLoaded(nodeName) {
+  const c = nodeNetworkCache[nodeName] || {};
+  if (!c.annotations && !c.annLoading)    loadOvnAnnotations(nodeName);
+  if (!c.ifaces     && !c.ifacesLoading)  loadNetworkInterfaces(nodeName);
+  // Initialise edit state if annotations just arrived and edit not yet set
+  if (c.annotations && netEdit.node !== nodeName) _initNetEdit(nodeName);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1604,6 +1728,10 @@ function podAge(iso) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function renderConfigureTab(nd) {
+  // If annotations are loaded but edit state isn't initialised for this node yet, init now
+  const _nc = nodeNetworkCache[nd.k8s_name];
+  if (_nc?.annotations && netEdit.node !== nd.k8s_name) _initNetEdit(nd.k8s_name);
+
   let h = `<div class="summary-grid" style="margin-bottom:16px">
     <div class="card">
       <div class="card-title">Node Details</div>
@@ -1631,8 +1759,16 @@ function renderConfigureTab(nd) {
       </div>
     </div>`;
   }
-  h += `</div>
-  <div class="card vmware-ref-card">
+  h += `</div>`;
+
+  // ── OVN Networking section ────────────────────────────────────────────────
+  h += renderOvnSection(nd);
+
+  // ── Physical interfaces section ───────────────────────────────────────────
+  h += renderNicSection(nd);
+
+  // ── VMware reference (hidden when hints off) ──────────────────────────────
+  h += `<div class="card vmware-ref-card" style="margin-top:16px">
     <div class="card-title">💡 VMware vSphere → OpenStack / Kubernetes Reference</div>
     <div class="card-body" style="padding:0">
       <table class="concept-table">
@@ -1657,7 +1793,467 @@ function renderConfigureTab(nd) {
       </table>
     </div>
   </div>`;
+
   document.getElementById('configure-content').innerHTML = h;
+
+  // After DOM is set, bind interactive elements
+  _bindConfigureTab(nd.k8s_name);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// § OVN NETWORKING SECTION (Configure tab)
+// ════════════════════════════════════════════════════════════════════════════
+
+async function loadOvnAnnotations(nodeName) {
+  const c = nodeNetworkCache[nodeName] || {};
+  nodeNetworkCache[nodeName] = { ...c, annLoading: true };
+  if (selectedNode === nodeName && activeTab === 'configure') renderConfigureTab(nodes[nodeName]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/ovn-annotations`);
+    const json = await resp.json();
+    nodeNetworkCache[nodeName] = { ...nodeNetworkCache[nodeName], annLoading: false, annotations: json };
+    // Reset edit state if this is the current node
+    if (netEdit.node === nodeName) _initNetEdit(nodeName);
+  } catch (e) {
+    nodeNetworkCache[nodeName] = { ...nodeNetworkCache[nodeName], annLoading: false, annotations: { error: String(e) } };
+  }
+  if (selectedNode === nodeName && activeTab === 'configure') renderConfigureTab(nodes[nodeName]);
+}
+
+async function loadNetworkInterfaces(nodeName) {
+  const c = nodeNetworkCache[nodeName] || {};
+  nodeNetworkCache[nodeName] = { ...c, ifacesLoading: true, ifaces: null, ifacesError: null };
+  if (selectedNode === nodeName && activeTab === 'configure') renderConfigureTab(nodes[nodeName]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/network-interfaces`);
+    const json = await resp.json();
+    nodeNetworkCache[nodeName] = {
+      ...nodeNetworkCache[nodeName],
+      ifacesLoading: false,
+      ifaces:       json.interfaces || [],
+      ifacesError:  json.error || null,
+    };
+  } catch (e) {
+    nodeNetworkCache[nodeName] = { ...nodeNetworkCache[nodeName], ifacesLoading: false, ifaces: [], ifacesError: String(e) };
+  }
+  if (selectedNode === nodeName && activeTab === 'configure') renderConfigureTab(nodes[nodeName]);
+}
+
+function _initNetEdit(nodeName) {
+  const ann = (nodeNetworkCache[nodeName] || {}).annotations || {};
+  netEdit.node          = nodeName;
+  netEdit.bridges       = ann['ovn.openstack.org/bridges'] ? ann['ovn.openstack.org/bridges'].split(',').map(s => s.trim()).filter(Boolean) : [];
+  netEdit.mappings      = ann['ovn.openstack.org/mappings'] ? ann['ovn.openstack.org/mappings'].split(',').map(s => { const [p, b] = s.trim().split(':'); return { physnet: p || '', bridge: b || '' }; }).filter(m => m.physnet || m.bridge) : [];
+  netEdit.ports         = ann['ovn.openstack.org/ports'] ? ann['ovn.openstack.org/ports'].split(',').map(s => { const [b, i] = s.trim().split(':'); return { bridge: b || '', iface: i || '' }; }).filter(p => p.bridge || p.iface) : [];
+  netEdit.bridgesDirty  = false;
+  netEdit.mappingsDirty = false;
+  netEdit.portsDirty    = false;
+}
+
+function renderOvnSection(nd) {
+  const name  = nd.k8s_name;
+  const cache = nodeNetworkCache[name] || {};
+  const ann   = cache.annotations || {};
+  const loading = cache.annLoading;
+
+  let h = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--dim);padding-bottom:6px;margin:16px 0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+    OVN Node Networking
+    ${netEdit.node === name && (netEdit.bridgesDirty || netEdit.mappingsDirty || netEdit.portsDirty) ? `<span style="font-size:10px;font-weight:400;color:#f57f17;text-transform:none">● Unsaved changes</span>` : ''}
+  </div>`;
+
+  if (!cache.annotations && !loading) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Loading annotations…</div>`;
+    return h;
+  }
+  if (ann.error) {
+    h += `<div class="err-block">${esc(ann.error)}</div>`;
+    return h;
+  }
+  if (loading) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Loading annotations…</div>`;
+    return h;
+  }
+
+  const bridges     = netEdit.node === name ? netEdit.bridges : [];
+  const mappings    = netEdit.node === name ? netEdit.mappings : [];
+  const ports       = netEdit.node === name ? netEdit.ports : [];
+  const ifaces      = (cache.ifaces || []).filter(i => i.type === 'physical' || i.type === 'bond');
+  const ifaceNames  = ifaces.map(i => i.name);
+  const ifaceLoading = cache.ifacesLoading;
+
+  // ── Tunnel + int_bridge (read-only) ───────────────────────────────────────
+  h += `<div class="summary-grid" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-title">Tunnel &amp; Integration Bridge <span class="hint">Read-only</span></div>
+      <div class="card-body">
+        <div class="mrow">
+          <span class="ml" style="font-family:monospace;font-size:11px;font-weight:400">ovn.kubernetes.io/tunnel-interface</span>
+          <span class="mv mono">${esc(ann['ovn.kubernetes.io/tunnel-interface'] || '—')}</span>
+        </div>
+        <div class="mrow">
+          <span class="ml" style="font-family:monospace;font-size:11px;font-weight:400">ovn.openstack.org/int_bridge</span>
+          <span class="mv mono">${esc(ann['ovn.openstack.org/int_bridge'] || '—')}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bridges (editable chips) -->
+    <div class="card">
+      <div class="card-title">
+        <span style="font-family:monospace;font-size:11px">ovn.openstack.org/bridges</span>
+        <div class="card-title-actions">
+          ${netEdit.bridgesDirty ? `<span class="unsaved-dot" title="Unsaved"></span>` : ''}
+          <button class="btn sm primary" id="cfg-save-bridges" onclick="cfgSaveBridges()" ${netEdit.bridgesDirty ? '' : 'disabled'}>Save</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--dim);margin-bottom:6px">OVS bridges managed by OVN on this node.</div>
+        <div class="bridge-list" id="cfg-bridge-list">
+          ${bridges.map((b, i) => `<span class="bridge-chip">${esc(b)}<span class="bx" onclick="cfgRemoveBridge(${i})" title="Remove">✕</span></span>`).join('')}
+          ${bridges.length === 0 ? `<span style="color:var(--dim);font-size:11px">No bridges configured</span>` : ''}
+        </div>
+        <div class="add-chip-row">
+          <input type="text" id="cfg-bridge-input" placeholder="br-phys" maxlength="40">
+          <button class="btn sm primary" onclick="cfgAddBridge()">+ Add</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Mappings ──────────────────────────────────────────────────────────────
+  h += `<div class="card" style="margin-bottom:12px">
+    <div class="card-title">
+      <span style="font-family:monospace;font-size:11px">ovn.openstack.org/mappings</span>
+      <span class="hint">physnet → bridge</span>
+      <div class="card-title-actions">
+        ${netEdit.mappingsDirty ? `<span class="unsaved-dot" title="Unsaved"></span>` : ''}
+        <button class="btn sm primary" id="cfg-save-mappings" onclick="cfgSaveMappings()" ${netEdit.mappingsDirty ? '' : 'disabled'}>Save</button>
+      </div>
+    </div>
+    <div style="padding:5px 12px 2px;font-size:11px;color:var(--dim)">
+      Maps a physical network name to an OVS bridge.
+      The bridge must exist in <code style="background:var(--gray-bg);padding:1px 4px;border-radius:2px">ovn.openstack.org/bridges</code>.
+    </div>
+    <table class="ann-table">
+      <thead><tr>
+        <th style="width:32px">#</th>
+        <th>Physical Network Name</th>
+        <th style="width:16px"></th>
+        <th>OVS Bridge</th>
+        <th style="width:32px"></th>
+      </tr></thead>
+      <tbody id="cfg-mappings-body">
+        ${mappings.map((m, i) => `<tr>
+          <td style="color:var(--dim);font-size:11px">${i+1}</td>
+          <td><input type="text" value="${esc(m.physnet)}" style="width:180px"
+              oninput="netEdit.mappings[${i}].physnet=this.value;netEdit.mappingsDirty=true;_cfgMarkDirty()"
+              placeholder="physnet1"></td>
+          <td style="color:var(--dim);text-align:center;padding:0">:</td>
+          <td>
+            <select onchange="netEdit.mappings[${i}].bridge=this.value;netEdit.mappingsDirty=true;_cfgMarkDirty()">
+              ${bridges.length ? bridges.map(b => `<option value="${esc(b)}" ${b===m.bridge?'selected':''}>${esc(b)}</option>`).join('') : `<option value="${esc(m.bridge)}">${esc(m.bridge)||'(no bridges)'}</option>`}
+            </select>
+            ${m.bridge && !bridges.includes(m.bridge) ? `<span class="err-chip" style="margin-left:4px" title="Bridge not in bridges list">⚠ not in bridges</span>` : ''}
+          </td>
+          <td><button class="del-btn" onclick="cfgRemoveMapping(${i})" title="Remove">🗑</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="add-row-btn" onclick="cfgAddMapping()">+ Add mapping</div>
+  </div>`;
+
+  // ── Ports ─────────────────────────────────────────────────────────────────
+  const ifaceSelectOrLoading = (selectedIface) => {
+    if (ifaceLoading) return `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`;
+    if (ifaceNames.length === 0) return `<input type="text" value="${esc(selectedIface)}" style="width:160px;font-family:monospace"
+        oninput="this.dataset.pendingIface=this.value">`;
+    return `<select>${ifaceNames.map(n => `<option value="${esc(n)}" ${n===selectedIface?'selected':''}>${esc(n)}</option>`).join('')}</select>`;
+  };
+
+  h += `<div class="card" style="margin-bottom:16px">
+    <div class="card-title">
+      <span style="font-family:monospace;font-size:11px">ovn.openstack.org/ports</span>
+      <span class="hint">bridge → physical interface</span>
+      <div class="card-title-actions">
+        ${netEdit.portsDirty ? `<span class="unsaved-dot" title="Unsaved"></span>` : ''}
+        <button class="btn sm primary" id="cfg-save-ports" onclick="cfgSavePorts()" ${netEdit.portsDirty ? '' : 'disabled'}>Save</button>
+      </div>
+    </div>
+    <div style="padding:5px 12px 2px;font-size:11px;color:var(--dim)">
+      Maps an OVS bridge to a physical or bond interface.
+      The bridge must be in <code style="background:var(--gray-bg);padding:1px 4px;border-radius:2px">ovn.openstack.org/bridges</code>.
+      The interface is selected from interfaces discovered on this node.
+    </div>
+    <table class="ann-table">
+      <thead><tr>
+        <th style="width:32px">#</th>
+        <th>OVS Bridge</th>
+        <th style="width:16px"></th>
+        <th>Physical / Bond Interface ${ifaceLoading ? `<span class="spinner" style="font-size:10px">⟳</span>` : ''}</th>
+        <th style="width:32px"></th>
+      </tr></thead>
+      <tbody id="cfg-ports-body">
+        ${ports.map((p, i) => `<tr>
+          <td style="color:var(--dim);font-size:11px">${i+1}</td>
+          <td>
+            <select onchange="netEdit.ports[${i}].bridge=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">
+              ${bridges.length ? bridges.map(b => `<option value="${esc(b)}" ${b===p.bridge?'selected':''}>${esc(b)}</option>`).join('') : `<option value="${esc(p.bridge)}">${esc(p.bridge)||'(no bridges)'}</option>`}
+            </select>
+            ${p.bridge && !bridges.includes(p.bridge) ? `<span class="err-chip" style="margin-left:4px" title="Bridge not in bridges list">⚠ not in bridges</span>` : ''}
+          </td>
+          <td style="color:var(--dim);text-align:center;padding:0">:</td>
+          <td id="cfg-port-iface-${i}">
+            ${ifaceLoading
+              ? `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`
+              : ifaceNames.length > 0
+                ? `<select onchange="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">${ifaceNames.map(n => `<option value="${esc(n)}" ${n===p.iface?'selected':''}>${esc(n)}</option>`).join('')}</select>`
+                : `<input type="text" value="${esc(p.iface)}" style="width:160px;font-family:monospace" oninput="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">`
+            }
+          </td>
+          <td><button class="del-btn" onclick="cfgRemovePort(${i})" title="Remove">🗑</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="add-row-btn" onclick="cfgAddPort()">+ Add port mapping</div>
+  </div>`;
+
+  return h;
+}
+
+function renderNicSection(nd) {
+  const cache = nodeNetworkCache[nd.k8s_name] || {};
+  let h = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--dim);padding-bottom:6px;margin:16px 0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+    Physical Interfaces &amp; Bonds
+    ${cache.ifacesLoading ? `<span style="font-size:10px;font-weight:400;color:var(--dim);text-transform:none"><span class="spinner">⟳</span> Loading via SSH…</span>` : ''}
+  </div>`;
+
+  if (cache.ifacesError) {
+    h += `<div class="err-block">${esc(cache.ifacesError)}</div>`;
+    return h;
+  }
+  if (!cache.ifaces && !cache.ifacesLoading) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Fetching interface data from node…</div>`;
+    return h;
+  }
+  if (cache.ifacesLoading || !cache.ifaces) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Loading…</div>`;
+    return h;
+  }
+
+  const physicals = cache.ifaces.filter(n => n.type === 'physical');
+  const bonds     = cache.ifaces.filter(n => n.type === 'bond');
+
+  function speedCls(s) {
+    if (!s) return 'gunk';
+    if (s.startsWith('100')) return 'g100';
+    if (s.startsWith('40'))  return 'g40';
+    if (s.startsWith('25'))  return 'g25';
+    if (s.startsWith('10G')) return 'g10';
+    if (s.startsWith('1G'))  return 'g1';
+    return 'gunk';
+  }
+  function statusDot(st) {
+    const c = st === 'up' ? 'green' : 'gray';
+    return `<span class="tree-dot ${c}" style="display:inline-block;margin-right:4px;flex-shrink:0"></span>${esc(st)}`;
+  }
+
+  if (physicals.length) {
+    h += `<div style="font-size:11px;font-weight:600;color:var(--dim);margin-bottom:6px">Physical Interfaces</div>
+    <table class="data-table" style="margin-bottom:14px">
+      <thead><tr>
+        <th>Interface</th><th>Status</th><th>Speed</th><th>Duplex</th>
+        <th>Driver</th><th>Model</th><th>MAC</th>
+      </tr></thead>
+      <tbody>
+        ${physicals.map(n => `<tr>
+          <td style="font-family:monospace;font-weight:600">${esc(n.name)}</td>
+          <td>${statusDot(n.status)}</td>
+          <td>${n.speed ? `<span class="nic-speed ${speedCls(n.speed)}">${esc(n.speed)}</span>` : '<span style="color:var(--dim)">—</span>'}</td>
+          <td style="color:var(--dim);font-size:11px">${esc(n.duplex || '—')}</td>
+          <td style="font-family:monospace;font-size:11px;color:var(--dim)">${esc(n.driver || '—')}</td>
+          <td style="font-size:11px;color:var(--dim)">${esc(n.model || (n.vendor ? n.vendor : '—'))}</td>
+          <td style="font-family:monospace;font-size:11px;color:var(--dim)">${esc(n.mac || '—')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  if (bonds.length) {
+    h += `<div style="font-size:11px;font-weight:600;color:var(--dim);margin-bottom:6px">Bond Interfaces</div>
+    <table class="data-table" style="margin-bottom:14px">
+      <thead><tr>
+        <th>Bond</th><th>Status</th><th>Speed</th><th>Mode</th><th>MAC</th><th>Members</th>
+      </tr></thead>
+      <tbody>
+        ${bonds.map(n => `<tr>
+          <td style="font-family:monospace;font-weight:600">${esc(n.name)}</td>
+          <td>${statusDot(n.status)}</td>
+          <td>${n.speed ? `<span class="nic-speed ${speedCls(n.speed)}">${esc(n.speed)}</span>` : '<span style="color:var(--dim)">—</span>'}</td>
+          <td style="font-size:11px;color:var(--dim)">${esc(n.mode || '—')}</td>
+          <td style="font-family:monospace;font-size:11px;color:var(--dim)">${esc(n.mac || '—')}</td>
+          <td>${n.members.map(m => `<span class="tree-badge" style="margin-right:3px;font-family:monospace">${esc(m)}</span>`).join('')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  if (!physicals.length && !bonds.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:6px 0">No physical or bond interfaces found.</div>`;
+  }
+  return h;
+}
+
+// ── Configure tab binding (called after DOM render) ──────────────────────────
+
+function _bindConfigureTab(nodeName) {
+  const inp = document.getElementById('cfg-bridge-input');
+  if (inp) {
+    inp.onkeydown = e => { if (e.key === 'Enter') cfgAddBridge(); };
+  }
+}
+
+function _cfgMarkDirty() {
+  // Re-render just the title unsaved indicators without full re-render
+  const saveB  = document.getElementById('cfg-save-bridges');
+  const saveM  = document.getElementById('cfg-save-mappings');
+  const saveP  = document.getElementById('cfg-save-ports');
+  if (saveB) saveB.disabled = !netEdit.bridgesDirty;
+  if (saveM) saveM.disabled = !netEdit.mappingsDirty;
+  if (saveP) saveP.disabled = !netEdit.portsDirty;
+}
+
+// ── Bridge operations ────────────────────────────────────────────────────────
+
+function cfgAddBridge() {
+  const inp = document.getElementById('cfg-bridge-input');
+  const val = (inp?.value || '').trim();
+  if (!val) return;
+  if (!/^[a-zA-Z0-9_-]+$/.test(val)) { alert('Bridge name must contain only letters, numbers, hyphens, or underscores.'); return; }
+  if (netEdit.bridges.includes(val))  { alert(`Bridge "${val}" already exists.`); return; }
+  netEdit.bridges.push(val);
+  netEdit.bridgesDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+}
+
+function cfgRemoveBridge(i) {
+  const name = netEdit.bridges[i];
+  const usedM = netEdit.mappings.some(m => m.bridge === name);
+  const usedP = netEdit.ports.some(p => p.bridge === name);
+  if (usedM || usedP) {
+    if (!confirm(`Bridge "${name}" is referenced in ${[usedM && 'Mappings', usedP && 'Ports'].filter(Boolean).join(' and ')}. Remove anyway?`)) return;
+  }
+  netEdit.bridges.splice(i, 1);
+  netEdit.bridgesDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+}
+
+function cfgSaveBridges() {
+  const val = netEdit.bridges.join(',');
+  _annWarnAndSave('ovn.openstack.org/bridges', val, () => {
+    netEdit.bridgesDirty = false;
+    _cfgMarkDirty();
+  });
+}
+
+// ── Mapping operations ───────────────────────────────────────────────────────
+
+function cfgAddMapping() {
+  netEdit.mappings.push({ physnet: '', bridge: netEdit.bridges[0] || '' });
+  netEdit.mappingsDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+  // Focus last physnet input
+  const inputs = document.querySelectorAll('#cfg-mappings-body input[type=text]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function cfgRemoveMapping(i) {
+  netEdit.mappings.splice(i, 1);
+  netEdit.mappingsDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+}
+
+function cfgSaveMappings() {
+  const val = netEdit.mappings.filter(m => m.physnet && m.bridge).map(m => `${m.physnet}:${m.bridge}`).join(',');
+  _annWarnAndSave('ovn.openstack.org/mappings', val, () => {
+    netEdit.mappingsDirty = false;
+    _cfgMarkDirty();
+  });
+}
+
+// ── Port operations ──────────────────────────────────────────────────────────
+
+function cfgAddPort() {
+  const ifaces = ((nodeNetworkCache[netEdit.node] || {}).ifaces || []).filter(i => i.type === 'physical' || i.type === 'bond');
+  netEdit.ports.push({ bridge: netEdit.bridges[0] || '', iface: ifaces[0]?.name || '' });
+  netEdit.portsDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+}
+
+function cfgRemovePort(i) {
+  netEdit.ports.splice(i, 1);
+  netEdit.portsDirty = true;
+  renderConfigureTab(nodes[netEdit.node]);
+}
+
+function cfgSavePorts() {
+  const val = netEdit.ports.filter(p => p.bridge && p.iface).map(p => `${p.bridge}:${p.iface}`).join(',');
+  _annWarnAndSave('ovn.openstack.org/ports', val, () => {
+    netEdit.portsDirty = false;
+    _cfgMarkDirty();
+  });
+}
+
+// ── Warning modal + API call ─────────────────────────────────────────────────
+
+function _annWarnAndSave(key, value, successCb) {
+  _annWarnPending = { key, value, successCb };
+  document.getElementById('awm-key').textContent = key;
+  document.getElementById('awm-val').textContent = value || '(empty — will clear annotation)';
+  document.getElementById('ann-warn-modal').classList.add('open');
+}
+
+function annWarnCancel() {
+  document.getElementById('ann-warn-modal').classList.remove('open');
+  _annWarnPending = null;
+}
+
+async function annWarnConfirm() {
+  if (!_annWarnPending) return;
+  const { key, value, successCb } = _annWarnPending;
+  _annWarnPending = null;
+  document.getElementById('ann-warn-modal').classList.remove('open');
+
+  const nodeName = netEdit.node;
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/ovn-annotations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'API error');
+    // Update cache
+    if (nodeNetworkCache[nodeName]?.annotations) {
+      nodeNetworkCache[nodeName].annotations[key] = value;
+    }
+    successCb?.();
+    _showToast(`✓ Annotation saved`, `${key} = ${value || '(cleared)'}`, 'green');
+  } catch (e) {
+    _showToast(`✗ Failed to save annotation`, String(e), 'red');
+  }
+  if (selectedNode === nodeName && activeTab === 'configure') renderConfigureTab(nodes[nodeName]);
+}
+
+function _showToast(title, body, type) {
+  const t = document.createElement('div');
+  const bc = type === 'green' ? 'var(--green-lt)' : type === 'red' ? 'var(--red-lt)' : '#f57f17';
+  t.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:9999;background:#1a2332;color:white;
+    padding:10px 16px;border-radius:6px;font-size:12px;max-width:440px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.25);border-left:3px solid ${bc};`;
+  t.innerHTML = `<strong>${esc(title)}</strong><br>
+    <span style="font-family:monospace;font-size:11px;color:#cfd8dc;word-break:break-all">${esc(body)}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 4000);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2653,6 +3249,7 @@ document.getElementById('modal-input').addEventListener('keydown', e => {
 
 document.addEventListener('keydown', e => {
   if (document.getElementById('modal-overlay').classList.contains('open'))   return;
+  if (document.getElementById('ann-warn-modal').classList.contains('open'))  { if (e.key === 'Escape') annWarnCancel(); return; }
   if (document.getElementById('blocked-overlay').classList.contains('open')) { if (e.key === 'Escape') closeBlocked(); return; }
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')         return;
   if (activeView !== 'infrastructure') return;

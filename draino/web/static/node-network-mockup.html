@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Node Network Configuration</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   VARIABLES & RESET (from main app)
+═══════════════════════════════════════════════════════ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue:      #0072c6;
+  --blue-lt:   #1e88e5;
+  --blue-bg:   #e3f2fd;
+  --header:    #1a2332;
+  --sidebar:   #f4f6f8;
+  --border:    #d1d9e0;
+  --sel:       #bbdefb;
+  --hover:     #e8f4fd;
+  --text:      #1a2332;
+  --dim:       #607d8b;
+  --white:     #ffffff;
+  --gray-bg:   #f0f2f5;
+  --green:     #2e7d32;
+  --green-lt:  #4caf50;
+  --yellow:    #f57f17;
+  --yellow-lt: #ffc107;
+  --red:       #c62828;
+  --red-lt:    #ef5350;
+  --magenta:   #7b1fa2;
+  --cyan:      #00838f;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOP BAR ── */
+#top-bar {
+  background: var(--header); height: 40px; display: flex; align-items: center;
+  padding: 0 14px; flex-shrink: 0; border-bottom: 2px solid var(--blue); gap: 0;
+}
+.logo { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.logo-icon { width: 24px; height: 24px; background: var(--blue); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: white; }
+.logo-sub  { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-nav   { display: flex; gap: 2px; margin-left: 28px; }
+.top-nav a { color: #b0bec5; text-decoration: none; padding: 4px 10px; border-radius: 3px; font-size: 12px; cursor: pointer; }
+.top-nav a.active { color: white; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.mock-badge { background: #ff6f00; color: white; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; letter-spacing: 0.5px; }
+
+/* ── BREADCRUMB ── */
+#breadcrumb-bar {
+  background: var(--white); border-bottom: 1px solid var(--border);
+  padding: 0 14px; height: 34px; display: flex; align-items: center;
+  gap: 6px; font-size: 12px; color: var(--dim); flex-shrink: 0;
+}
+.bc-link { color: var(--blue); cursor: pointer; }
+.bc-sep  { color: #b0bec5; }
+.bc-cur  { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 4px 11px; border: 1px solid var(--border); background: var(--white);
+  border-radius: 3px; cursor: pointer; font-size: 12px; color: var(--text);
+  font-family: inherit; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--hover); border-color: var(--blue-lt); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--blue);   color: white; border-color: var(--blue); }
+.btn.primary:hover:not(:disabled) { background: var(--blue-lt); }
+.btn.danger  { background: #b71c1c; color: white; border-color: var(--red); }
+.btn.danger:hover:not(:disabled)  { background: #7f0000; }
+.btn.sm { padding: 2px 8px; font-size: 11px; }
+
+/* ── LAYOUT ── */
+#body { display: flex; flex: 1; overflow: hidden; }
+#sidebar {
+  width: 270px; min-width: 200px; background: var(--sidebar);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+}
+.sidebar-head {
+  background: var(--white); padding: 7px 12px; font-size: 11px; font-weight: 700;
+  color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.tree-group {
+  padding: 6px 10px 4px; font-size: 11px; font-weight: 700; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 6px;
+  border-top: 1px solid var(--border); margin-top: 2px;
+}
+.tree-group:first-child { border-top: none; margin-top: 0; }
+.tree-item {
+  padding: 5px 10px 5px 16px; cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+  border-left: 3px solid transparent;
+}
+.tree-item:hover { background: var(--hover); }
+.tree-item.selected { background: var(--sel); border-left-color: var(--blue); }
+.tree-item.selected .ti-name { color: var(--blue); font-weight: 500; }
+.ti-ico  { font-size: 14px; flex-shrink: 0; }
+.ti-name { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.tree-dot.green  { background: var(--green-lt); }
+.tree-dot.gray   { background: #bdbdbd; }
+.tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
+.tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
+
+#content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── OBJECT HEADER ── */
+#obj-header {
+  background: var(--white); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; align-items: flex-start; gap: 12px; flex-shrink: 0;
+}
+.obj-icon { width: 40px; height: 40px; background: var(--blue-bg); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+.obj-meta { flex: 1; min-width: 0; }
+.obj-meta h2 { font-size: 16px; font-weight: 600; }
+.obj-sub  { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.obj-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.obj-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; }
+.badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.badge.green  { background: #e8f5e9; color: var(--green); }
+.badge.yellow { background: #fff8e1; color: var(--yellow); }
+.badge.red    { background: #ffebee; color: var(--red); }
+.badge.blue   { background: var(--blue-bg); color: var(--blue); }
+.badge.gray   { background: #f5f5f5; color: #607d8b; }
+
+/* ── TABS ── */
+#tabs-bar {
+  background: var(--white); border-bottom: 1px solid var(--border);
+  padding: 0 16px; display: flex; flex-shrink: 0;
+}
+.tab { padding: 8px 14px; cursor: pointer; font-size: 12px; color: var(--dim); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab:hover { color: var(--blue); }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 500; }
+
+#tab-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+/* ── CARDS ── */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.summary-grid.full { grid-template-columns: 1fr; }
+.card { background: var(--white); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.card-title {
+  background: var(--gray-bg); padding: 6px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--dim); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.card-title-actions { margin-left: auto; display: flex; gap: 5px; }
+.card-body { padding: 10px 12px; }
+.mrow { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #f0f2f5; font-size: 12px; }
+.mrow:last-child { border-bottom: none; }
+.mrow .ml { color: var(--dim); flex-shrink: 0; min-width: 220px; }
+.mrow .mv { font-weight: 600; }
+.mv.dim   { color: var(--dim); font-weight: 400; }
+.mv.green { color: var(--green); }
+.mv.mono  { font-family: monospace; font-size: 11px; color: var(--dim); font-weight: 400; }
+
+/* ── HINT / ERROR CHIPS ── */
+.hint {
+  display: inline-block; background: #fff9c4; color: #5d4037;
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid #fff176; font-style: italic; flex-shrink: 0;
+}
+.err-block {
+  background: #ffebee; color: #c62828; font-size: 11px;
+  border-radius: 4px; padding: 6px 10px; margin: 4px 0;
+  border: 1px solid #ef9a9a;
+}
+.info-block {
+  background: var(--blue-bg); color: var(--blue); font-size: 11px;
+  border-radius: 4px; padding: 6px 10px; margin: 6px 0;
+  border: 1px solid #90caf9;
+}
+
+/* ── SECTION TITLE inside tab body ── */
+.tab-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--dim); padding-bottom: 6px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+/* ══════════════════════════════════════════════════════
+   OVN ANNOTATIONS — Bridges list
+══════════════════════════════════════════════════════ */
+.bridge-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0; }
+.bridge-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--blue-bg); color: var(--blue); border: 1px solid #90caf9;
+  border-radius: 12px; padding: 2px 8px 2px 10px; font-size: 12px; font-weight: 500;
+}
+.bridge-chip .remove-x {
+  width: 14px; height: 14px; border-radius: 50%; background: rgba(0,114,198,0.15);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 10px; color: var(--blue); flex-shrink: 0;
+  line-height: 1;
+}
+.bridge-chip .remove-x:hover { background: rgba(0,114,198,0.35); }
+.add-chip-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.add-chip-row input {
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 3px;
+  font-size: 12px; font-family: inherit; color: var(--text); width: 140px; outline: none;
+}
+.add-chip-row input:focus { border-color: var(--blue); }
+
+/* ══════════════════════════════════════════════════════
+   OVN ANNOTATIONS — Mappings / Ports editable table
+══════════════════════════════════════════════════════ */
+.ann-table { width: 100%; border-collapse: collapse; }
+.ann-table th {
+  text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 700;
+  color: var(--dim); text-transform: uppercase; letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border); background: var(--gray-bg);
+}
+.ann-table td { padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+.ann-table tr:last-child td { border-bottom: none; }
+.ann-table select, .ann-table input {
+  padding: 3px 7px; border: 1px solid var(--border); border-radius: 3px;
+  font-size: 12px; font-family: inherit; color: var(--text); background: var(--white);
+  outline: none;
+}
+.ann-table select:focus, .ann-table input:focus { border-color: var(--blue); }
+.ann-table .del-btn {
+  background: none; border: none; color: #b0bec5; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1;
+}
+.ann-table .del-btn:hover { color: var(--red); }
+.add-row-btn {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--blue); cursor: pointer; padding: 6px 8px 4px;
+  border-top: 1px solid #f0f2f5;
+}
+.add-row-btn:hover { background: var(--hover); }
+
+/* ── unsaved indicator ── */
+.unsaved-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #f57f17; margin-left: 5px; vertical-align: middle;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+.save-bar {
+  background: #fff8e1; border: 1px solid #ffe082; border-radius: 4px;
+  padding: 6px 12px; margin-top: 8px; display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: #5d4037;
+}
+.save-bar .spacer { flex: 1; }
+
+/* ══════════════════════════════════════════════════════
+   PHYSICAL INTERFACES TABLE
+══════════════════════════════════════════════════════ */
+.data-table { width: 100%; border-collapse: collapse; background: var(--white); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+.data-table thead th {
+  background: var(--gray-bg); padding: 6px 10px; text-align: left;
+  font-size: 11px; font-weight: 600; color: var(--dim);
+  border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap;
+}
+.data-table tbody tr { border-bottom: 1px solid #f0f2f5; }
+.data-table tbody tr:hover { background: var(--hover); }
+.data-table td { padding: 6px 10px; font-size: 12px; vertical-align: middle; }
+.data-table td.mono { font-family: monospace; font-size: 11px; color: var(--dim); }
+.nic-speed { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+.nic-speed.g100  { background: #e3f2fd; color: #0d47a1; }
+.nic-speed.g25   { background: #e8f5e9; color: #1b5e20; }
+.nic-speed.g10   { background: #f3e5f5; color: #4a148c; }
+.nic-speed.g1    { background: #f5f5f5; color: #455a64; }
+.nic-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.nic-status.up   { background: var(--green-lt); }
+.nic-status.down { background: #bdbdbd; }
+.nic-type { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+.nic-type.physical { background: #e8f5e9; color: #2e7d32; }
+.nic-type.bond    { background: #fff3e0; color: #e65100; }
+.nic-type.vlan    { background: #f3e5f5; color: #6a1b9a; }
+.bond-members { font-size: 10px; color: var(--dim); margin-top: 2px; font-family: monospace; }
+.loading-row td { color: var(--dim); font-style: italic; }
+.spinner { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── progress bar (loading overlay for async) ── */
+.async-status {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--dim); margin-bottom: 8px;
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="top-bar">
+  <div class="logo">
+    <div class="logo-icon">⬇</div>
+    <div>
+      Draino
+      <div class="logo-sub">Node Evacuation Manager</div>
+    </div>
+  </div>
+  <nav class="top-nav">
+    <a class="active">Infrastructure</a>
+    <a>Kubernetes</a>
+    <a>Networking</a>
+    <a>Storage</a>
+    <a>Audit Log</a>
+  </nav>
+  <div class="top-right">
+    <span class="mock-badge">MOCKUP</span>
+  </div>
+</div>
+
+<!-- BREADCRUMB -->
+<div id="breadcrumb-bar">
+  <span class="bc-link">Infrastructure</span>
+  <span class="bc-sep">›</span>
+  <span class="bc-link">Compute Nodes</span>
+  <span class="bc-sep">›</span>
+  <span class="bc-cur">compute04.example.com</span>
+  <div class="bc-actions">
+    <button class="btn" disabled>⬇ Drain Node</button>
+    <button class="btn" disabled>↗ Live Migrate All</button>
+    <button class="btn" disabled>✓ Enable Service</button>
+  </div>
+</div>
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-head">Compute Nodes</div>
+    <div id="tree">
+      <div class="tree-group">▾ &nbsp;All Nodes</div>
+      <div class="tree-item">
+        <span class="ti-ico">🖥</span>
+        <span class="ti-name">compute01</span>
+        <span class="tree-dot green"></span>
+      </div>
+      <div class="tree-item">
+        <span class="ti-ico">🖥</span>
+        <span class="ti-name">compute02</span>
+        <span class="tree-dot green"></span>
+        <span class="tree-badge etcd">etcd</span>
+      </div>
+      <div class="tree-item">
+        <span class="ti-ico">🖥</span>
+        <span class="ti-name">compute03</span>
+        <span class="tree-dot green"></span>
+      </div>
+      <div class="tree-item selected">
+        <span class="ti-ico">🖥</span>
+        <span class="ti-name">compute04</span>
+        <span class="tree-dot green"></span>
+      </div>
+      <div class="tree-item">
+        <span class="ti-ico">🖥</span>
+        <span class="ti-name">compute05</span>
+        <span class="tree-dot gray"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTENT AREA -->
+  <div id="content">
+
+    <!-- OBJECT HEADER -->
+    <div id="obj-header">
+      <div class="obj-icon">🖥</div>
+      <div class="obj-meta">
+        <h2>compute04.example.com</h2>
+        <div class="obj-sub">Nova Hypervisor · compute04 · az1</div>
+        <div class="obj-badges">
+          <span class="badge green">● Ready</span>
+          <span class="badge blue">Schedulable</span>
+          <span class="badge blue">az1</span>
+          <span class="badge gray">worker</span>
+        </div>
+      </div>
+      <div class="obj-actions">
+        <button class="btn">Preflight Check</button>
+        <button class="btn warning" style="background:#e65100;color:white;border-color:#ef6c00">⬇ Drain</button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div id="tabs-bar">
+      <div class="tab">Summary</div>
+      <div class="tab">Instances &amp; Pods</div>
+      <div class="tab">Monitor</div>
+      <div class="tab active">Configure</div>
+    </div>
+
+    <!-- TAB BODY -->
+    <div id="tab-body">
+
+      <!-- ── SECTION: Node Details ─────────────────────── -->
+      <div class="tab-section-title">Node Details</div>
+      <div class="summary-grid" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-title">Identification</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">K8s node name</span><span class="mv">compute04</span></div>
+            <div class="mrow"><span class="ml">Nova hypervisor</span><span class="mv mono">compute04.example.com</span></div>
+            <div class="mrow"><span class="ml">Kernel</span><span class="mv mono">5.15.0-112-generic</span></div>
+            <div class="mrow"><span class="ml">Uptime</span><span class="mv dim">42 days, 3 hrs</span></div>
+            <div class="mrow"><span class="ml">Is compute node</span><span class="mv green">Yes</span></div>
+            <div class="mrow"><span class="ml">Availability zone</span><span class="mv" style="color:var(--blue)">az1</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">etcd</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Carries etcd role</span><span class="mv dim">No</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════
+           SECTION: OVN Node Networking
+      ══════════════════════════════════════════════════════ -->
+      <div class="tab-section-title" id="ovn-section-title">
+        OVN Node Networking
+        <span id="ovn-unsaved" style="display:none"><span class="unsaved-dot"></span> Unsaved changes</span>
+      </div>
+
+      <div class="info-block" style="margin-bottom:12px">
+        These annotations configure how OVN-Kubernetes integrates with OpenStack Neutron on this node.
+        Changes update the Kubernetes node annotation directly.
+      </div>
+
+      <!-- Row 1: tunnel interface + int_bridge (read-only) -->
+      <div class="summary-grid" style="margin-bottom:12px">
+
+        <div class="card">
+          <div class="card-title">
+            Tunnel &amp; Integration Bridge
+            <span class="hint">Read-only — set by OVN-K8s</span>
+          </div>
+          <div class="card-body">
+            <div class="mrow">
+              <span class="ml" style="min-width:0">ovn.kubernetes.io/tunnel-interface</span>
+              <span class="mv mono">genev_sys_6081</span>
+            </div>
+            <div class="mrow">
+              <span class="ml" style="min-width:0">ovn.openstack.org/int_bridge</span>
+              <span class="mv mono">br-int</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bridges (editable list) -->
+        <div class="card" id="card-bridges">
+          <div class="card-title">
+            ovn.openstack.org/bridges
+            <div class="card-title-actions">
+              <button class="btn sm primary" onclick="saveBridges()" id="btn-save-bridges" disabled>Save</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="font-size:11px;color:var(--dim);margin-bottom:6px">
+              Comma-separated list of OVS bridges managed by OVN on this node.
+            </div>
+            <div class="bridge-list" id="bridge-chip-list">
+              <!-- chips rendered by JS -->
+            </div>
+            <div class="add-chip-row" id="bridge-add-row">
+              <input type="text" id="bridge-new-input" placeholder="br-newphys" maxlength="40"
+                onkeydown="if(event.key==='Enter')addBridge()">
+              <button class="btn sm primary" onclick="addBridge()">+ Add Bridge</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Mappings + Ports (full-width each) -->
+      <div class="summary-grid full" style="margin-bottom:12px">
+
+        <!-- Mappings -->
+        <div class="card">
+          <div class="card-title">
+            ovn.openstack.org/mappings
+            <span class="hint">physnet → bridge</span>
+            <div class="card-title-actions">
+              <button class="btn sm primary" onclick="saveMappings()" id="btn-save-mappings" disabled>Save</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <div style="padding:6px 12px 4px;font-size:11px;color:var(--dim)">
+              Maps a physical network name to an OVS bridge. The bridge must exist in
+              <code style="background:var(--gray-bg);padding:1px 4px;border-radius:2px">ovn.openstack.org/bridges</code>.
+            </div>
+            <table class="ann-table" id="mappings-table">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>Physical Network Name <span class="hint">label · editable</span></th>
+                  <th style="width:16px"></th>
+                  <th>OVS Bridge <span class="hint">must be in bridges list</span></th>
+                  <th style="width:32px"></th>
+                </tr>
+              </thead>
+              <tbody id="mappings-body">
+                <!-- rows rendered by JS -->
+              </tbody>
+            </table>
+            <div class="add-row-btn" onclick="addMapping()">
+              + Add mapping
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-grid full" style="margin-bottom:20px">
+        <!-- Ports -->
+        <div class="card">
+          <div class="card-title">
+            ovn.openstack.org/ports
+            <span class="hint">bridge → physical interface</span>
+            <div class="card-title-actions">
+              <button class="btn sm primary" onclick="savePorts()" id="btn-save-ports" disabled>Save</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <div style="padding:6px 12px 4px;font-size:11px;color:var(--dim)">
+              Maps an OVS bridge to a physical or bond interface on this node.
+              The bridge must exist in <code style="background:var(--gray-bg);padding:1px 4px;border-radius:2px">ovn.openstack.org/bridges</code>.
+              The interface is selected from detected physical/bond interfaces.
+            </div>
+            <table class="ann-table" id="ports-table">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>OVS Bridge <span class="hint">must be in bridges list</span></th>
+                  <th style="width:16px"></th>
+                  <th>Physical / Bond Interface <span class="hint">selected from node interfaces</span></th>
+                  <th style="width:32px"></th>
+                </tr>
+              </thead>
+              <tbody id="ports-body">
+                <!-- rows rendered by JS -->
+              </tbody>
+            </table>
+            <div class="add-row-btn" onclick="addPort()">
+              + Add port mapping
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════
+           SECTION: Physical Network Interfaces
+      ══════════════════════════════════════════════════════ -->
+      <div class="tab-section-title" id="nic-section-title">
+        Physical Interfaces &amp; Bonds
+        <div class="async-status" id="nic-loading-status">
+          <span class="spinner">⟳</span> Loading interface data…
+        </div>
+      </div>
+
+      <div id="nic-section">
+        <!-- populated by JS after simulated async load -->
+        <div style="color:var(--dim);font-size:12px;padding:8px 0">
+          Fetching interface details from node via SSH…
+        </div>
+      </div>
+
+    </div><!-- end #tab-body -->
+  </div><!-- end #content -->
+</div><!-- end #body -->
+
+<script>
+// ════════════════════════════════════════════════════════
+// MOCK DATA
+// ════════════════════════════════════════════════════════
+
+// Current annotation values (simulating what comes from the K8s node)
+let bridges   = ['br-ex', 'br-ex2'];
+let intBridge = 'br-int';
+let mappings  = [
+  { physnet: 'physnet1', bridge: 'br-ex'  },
+  { physnet: 'physnet2', bridge: 'br-ex2' },
+];
+let ports = [
+  { bridge: 'br-ex',  iface: 'ens2f0np0' },
+  { bridge: 'br-ex2', iface: 'bond0'     },
+];
+
+// Physical interfaces discovered via SSH (async)
+const mockNics = [
+  { name: 'ens2f0np0', type: 'physical', status: 'up',   speed: '25G',  driver: 'ice',    model: 'Intel E810-C', mac: '18:c0:4d:aa:11:01', members: [] },
+  { name: 'ens2f1np1', type: 'physical', status: 'up',   speed: '25G',  driver: 'ice',    model: 'Intel E810-C', mac: '18:c0:4d:aa:11:02', members: [] },
+  { name: 'ens3f0np0', type: 'physical', status: 'up',   speed: '10G',  driver: 'bnxt_en',model: 'Broadcom 57504', mac: 'b4:96:91:bb:22:01', members: [] },
+  { name: 'ens3f1np1', type: 'physical', status: 'down', speed: '10G',  driver: 'bnxt_en',model: 'Broadcom 57504', mac: 'b4:96:91:bb:22:02', members: [] },
+  { name: 'eno1',      type: 'physical', status: 'up',   speed: '1G',   driver: 'tg3',    model: 'Broadcom BCM5720', mac: 'a4:bf:01:cc:33:01', members: [] },
+  { name: 'bond0',     type: 'bond',     status: 'up',   speed: '20G',  driver: 'bonding',model: 'LACP (802.3ad)', mac: '18:c0:4d:aa:11:01', members: ['ens2f0np0','ens2f1np1'] },
+];
+
+// Interfaces available for port assignment (physical + bonds only)
+const assignableIfaces = mockNics.map(n => n.name);
+
+// ════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function markUnsaved() {
+  document.getElementById('ovn-unsaved').style.display = '';
+}
+function clearUnsaved() {
+  // Only clear if all three are saved
+  const allSaved = !bridgesDirty && !mappingsDirty && !portsDirty;
+  if (allSaved) document.getElementById('ovn-unsaved').style.display = 'none';
+}
+
+let bridgesDirty  = false;
+let mappingsDirty = false;
+let portsDirty    = false;
+
+// ════════════════════════════════════════════════════════
+// BRIDGES
+// ════════════════════════════════════════════════════════
+
+function renderBridges() {
+  const list = document.getElementById('bridge-chip-list');
+  list.innerHTML = bridges.map((b, i) => `
+    <span class="bridge-chip">
+      ${esc(b)}
+      <span class="remove-x" title="Remove ${esc(b)}" onclick="removeBridge(${i})">✕</span>
+    </span>
+  `).join('');
+}
+
+function removeBridge(i) {
+  const name = bridges[i];
+  // Warn if bridge is in use by mappings or ports
+  const usedMapping = mappings.some(m => m.bridge === name);
+  const usedPort    = ports.some(p => p.bridge === name);
+  if (usedMapping || usedPort) {
+    if (!confirm(`Bridge "${name}" is referenced in ${usedMapping?'Mappings':''}${usedMapping&&usedPort?' and ':''}${usedPort?'Ports':''}. Remove anyway?`)) return;
+  }
+  bridges.splice(i, 1);
+  bridgesDirty = true;
+  markUnsaved();
+  document.getElementById('btn-save-bridges').disabled = false;
+  renderBridges();
+  renderMappings();  // update selects
+  renderPorts();
+}
+
+function addBridge() {
+  const input = document.getElementById('bridge-new-input');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!/^[a-zA-Z0-9_-]+$/.test(val)) {
+    alert('Bridge name must contain only letters, numbers, hyphens, or underscores.');
+    return;
+  }
+  if (bridges.includes(val)) {
+    alert(`Bridge "${val}" already exists.`);
+    return;
+  }
+  bridges.push(val);
+  input.value = '';
+  bridgesDirty = true;
+  markUnsaved();
+  document.getElementById('btn-save-bridges').disabled = false;
+  renderBridges();
+  renderMappings();
+  renderPorts();
+}
+
+function saveBridges() {
+  const annotation = bridges.join(',');
+  console.log('[MOCK] PATCH annotation ovn.openstack.org/bridges =', annotation);
+  showSaveToast('ovn.openstack.org/bridges', annotation);
+  bridgesDirty = false;
+  document.getElementById('btn-save-bridges').disabled = true;
+  clearUnsaved();
+}
+
+// ════════════════════════════════════════════════════════
+// MAPPINGS
+// ════════════════════════════════════════════════════════
+
+function bridgeOptions(selected) {
+  return bridges.map(b =>
+    `<option value="${esc(b)}" ${b === selected ? 'selected' : ''}>${esc(b)}</option>`
+  ).join('');
+}
+
+function renderMappings() {
+  const tbody = document.getElementById('mappings-body');
+  tbody.innerHTML = mappings.map((m, i) => `
+    <tr>
+      <td style="color:var(--dim);font-size:11px;font-family:monospace">#${i+1}</td>
+      <td>
+        <input type="text" value="${esc(m.physnet)}" style="width:160px"
+          oninput="mappings[${i}].physnet=this.value;setMappingsDirty()"
+          placeholder="physnet1">
+      </td>
+      <td style="color:var(--dim);text-align:center;padding:0 4px">:</td>
+      <td>
+        <select onchange="mappings[${i}].bridge=this.value;setMappingsDirty()">
+          ${bridgeOptions(m.bridge)}
+        </select>
+        ${!bridges.includes(m.bridge) ? `<span class="err-block" style="display:inline;padding:1px 6px;margin-left:4px;font-size:10px">Bridge not in list!</span>` : ''}
+      </td>
+      <td>
+        <button class="del-btn" title="Remove" onclick="removeMapping(${i})">🗑</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function setMappingsDirty() {
+  mappingsDirty = true;
+  markUnsaved();
+  document.getElementById('btn-save-mappings').disabled = false;
+}
+
+function removeMapping(i) {
+  mappings.splice(i, 1);
+  setMappingsDirty();
+  renderMappings();
+}
+
+function addMapping() {
+  mappings.push({ physnet: '', bridge: bridges[0] || '' });
+  setMappingsDirty();
+  renderMappings();
+  // focus the new row's input
+  const inputs = document.querySelectorAll('#mappings-body input[type=text]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function saveMappings() {
+  const annotation = mappings.map(m => `${m.physnet}:${m.bridge}`).join(',');
+  console.log('[MOCK] PATCH annotation ovn.openstack.org/mappings =', annotation);
+  showSaveToast('ovn.openstack.org/mappings', annotation);
+  mappingsDirty = false;
+  document.getElementById('btn-save-mappings').disabled = true;
+  clearUnsaved();
+}
+
+// ════════════════════════════════════════════════════════
+// PORTS
+// ════════════════════════════════════════════════════════
+
+function ifaceOptions(selected) {
+  return assignableIfaces.map(iface =>
+    `<option value="${esc(iface)}" ${iface === selected ? 'selected' : ''}>${esc(iface)}</option>`
+  ).join('');
+}
+
+function renderPorts() {
+  const tbody = document.getElementById('ports-body');
+  tbody.innerHTML = ports.map((p, i) => `
+    <tr>
+      <td style="color:var(--dim);font-size:11px;font-family:monospace">#${i+1}</td>
+      <td>
+        <select onchange="ports[${i}].bridge=this.value;setPortsDirty()">
+          ${bridgeOptions(p.bridge)}
+        </select>
+        ${!bridges.includes(p.bridge) ? `<span class="err-block" style="display:inline;padding:1px 6px;margin-left:4px;font-size:10px">Bridge not in list!</span>` : ''}
+      </td>
+      <td style="color:var(--dim);text-align:center;padding:0 4px">:</td>
+      <td>
+        <select onchange="ports[${i}].iface=this.value;setPortsDirty()">
+          ${ifaceOptions(p.iface)}
+        </select>
+      </td>
+      <td>
+        <button class="del-btn" title="Remove" onclick="removePort(${i})">🗑</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function setPortsDirty() {
+  portsDirty = true;
+  markUnsaved();
+  document.getElementById('btn-save-ports').disabled = false;
+}
+
+function removePort(i) {
+  ports.splice(i, 1);
+  setPortsDirty();
+  renderPorts();
+}
+
+function addPort() {
+  ports.push({ bridge: bridges[0] || '', iface: assignableIfaces[0] || '' });
+  setPortsDirty();
+  renderPorts();
+}
+
+function savePorts() {
+  const annotation = ports.map(p => `${p.bridge}:${p.iface}`).join(',');
+  console.log('[MOCK] PATCH annotation ovn.openstack.org/ports =', annotation);
+  showSaveToast('ovn.openstack.org/ports', annotation);
+  portsDirty = false;
+  document.getElementById('btn-save-ports').disabled = true;
+  clearUnsaved();
+}
+
+// ════════════════════════════════════════════════════════
+// TOAST (simulates save confirmation)
+// ════════════════════════════════════════════════════════
+
+function showSaveToast(key, value) {
+  // Simple in-page toast
+  const t = document.createElement('div');
+  t.style.cssText = `
+    position:fixed; bottom:20px; right:20px; z-index:9999;
+    background:#1a2332; color:white; padding:10px 16px; border-radius:6px;
+    font-size:12px; max-width:400px; box-shadow:0 4px 12px rgba(0,0,0,0.25);
+    border-left:3px solid var(--green-lt);
+  `;
+  t.innerHTML = `<strong>✓ Saved</strong> <span style="color:#b0bec5">(mock)</span><br>
+    <span style="font-family:monospace;font-size:11px;color:#90caf9">${esc(key)}</span><br>
+    <span style="font-family:monospace;font-size:10px;color:#cfd8dc;word-break:break-all">${esc(value)}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3000);
+}
+
+// ════════════════════════════════════════════════════════
+// PHYSICAL INTERFACES (async simulation)
+// ════════════════════════════════════════════════════════
+
+function renderNics() {
+  document.getElementById('nic-loading-status').style.display = 'none';
+
+  const physicals = mockNics.filter(n => n.type === 'physical');
+  const bonds     = mockNics.filter(n => n.type === 'bond');
+
+  function speedCls(s) {
+    if (s === '100G') return 'g100';
+    if (s.startsWith('25')) return 'g25';
+    if (s.startsWith('10')) return 'g10';
+    return 'g1';
+  }
+
+  let h = '';
+
+  // Physical interfaces table
+  h += `<div class="tab-section-title" style="margin-top:0">Physical Interfaces</div>`;
+  h += `<table class="data-table" style="margin-bottom:16px">
+    <thead>
+      <tr>
+        <th>Interface</th>
+        <th>Status</th>
+        <th>Speed</th>
+        <th>Driver</th>
+        <th>Model</th>
+        <th>MAC Address</th>
+      </tr>
+    </thead>
+    <tbody>`;
+  for (const n of physicals) {
+    h += `<tr>
+      <td style="font-family:monospace;font-weight:600">${esc(n.name)}</td>
+      <td><span class="nic-status ${n.status}"></span> ${esc(n.status)}</td>
+      <td><span class="nic-speed ${speedCls(n.speed)}">${esc(n.speed)}</span></td>
+      <td style="font-family:monospace;font-size:11px;color:var(--dim)">${esc(n.driver)}</td>
+      <td style="font-size:11px;color:var(--dim)">${esc(n.model)}</td>
+      <td class="mono">${esc(n.mac)}</td>
+    </tr>`;
+  }
+  h += `</tbody></table>`;
+
+  // Bonds table
+  if (bonds.length) {
+    h += `<div class="tab-section-title" style="margin-top:4px">Bond Interfaces</div>`;
+    h += `<table class="data-table">
+      <thead>
+        <tr>
+          <th>Bond Name</th>
+          <th>Status</th>
+          <th>Agg. Speed</th>
+          <th>Mode / Driver</th>
+          <th>MAC Address</th>
+          <th>Members</th>
+        </tr>
+      </thead>
+      <tbody>`;
+    for (const n of bonds) {
+      h += `<tr>
+        <td style="font-family:monospace;font-weight:600">${esc(n.name)}</td>
+        <td><span class="nic-status ${n.status}"></span> ${esc(n.status)}</td>
+        <td><span class="nic-speed ${speedCls(n.speed)}">${esc(n.speed)}</span></td>
+        <td style="font-size:11px;color:var(--dim)">${esc(n.model)}</td>
+        <td class="mono">${esc(n.mac)}</td>
+        <td>
+          ${n.members.map(m => `<span style="font-family:monospace;font-size:11px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:3px;margin-right:4px">${esc(m)}</span>`).join('')}
+        </td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+  }
+
+  document.getElementById('nic-section').innerHTML = h;
+}
+
+// ════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════
+
+renderBridges();
+renderMappings();
+renderPorts();
+
+// Simulate async SSH fetch for interface data (1.2s delay)
+setTimeout(renderNics, 1200);
+
+// Enter key on bridge input
+document.getElementById('bridge-new-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addBridge();
+});
+</script>
+</body>
+</html>
