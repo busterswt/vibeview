@@ -1138,6 +1138,7 @@ function setAuthenticatedUI(info) {
     : (info?.username || 'Authenticated');
   document.getElementById('user-label').textContent = label;
   document.getElementById('user-dot').textContent = label.slice(0, 1).toUpperCase();
+  document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
   setAuthMessage('');
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
 }
@@ -1152,6 +1153,7 @@ function setUnauthenticatedUI() {
   document.getElementById('logout-btn').classList.remove('visible');
   document.getElementById('user-label').textContent = 'Auth required';
   document.getElementById('user-dot').textContent = 'D';
+  document.getElementById('bc-reboot').title = '';
   wsSetStatus(false);
   if (ws) {
     try { ws.close(); } catch (_) {}
@@ -3564,7 +3566,8 @@ function updateActionButtons(nd) {
   drBtn.className   = `btn ${drained && !busy ? 'warning' : ''}`;
 
   rbBtn.textContent = phase === 'rebooting'  ? '⏻ Rebooting…'  : '⏻ Reboot';
-  rbBtn.disabled    = busy;
+  rbBtn.disabled    = busy || !authInfo?.is_admin;
+  rbBtn.title       = authInfo?.is_admin ? '' : "Requires OpenStack admin role";
 
   poBtn.disabled = false;
 }

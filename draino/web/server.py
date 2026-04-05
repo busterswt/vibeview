@@ -68,6 +68,8 @@ class SessionRecord:
     server: "DrainoServer"
     username: str
     project_name: str
+    role_names: list[str]
+    is_admin: bool
     created_at: float
     last_seen: float
 
@@ -164,10 +166,13 @@ class DrainoServer:
         self,
         k8s_auth:  Optional[k8s_ops.K8sAuth] = None,
         openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
+        role_names: Optional[list[str]] = None,
         audit_log: Optional[str] = None,
     ) -> None:
         self.k8s_auth = k8s_auth
         self.openstack_auth = openstack_auth
+        self.role_names = role_names or []
+        self.is_admin = any(role.lower() == "admin" for role in self.role_names)
         self._audit  = AuditLogger(path=audit_log)
 
         self.node_states:      dict[str, NodeState] = {}
@@ -419,6 +424,11 @@ class DrainoServer:
 
     def action_reboot_request(self, node_name: str) -> None:
         """Validate and initiate reboot: etcd preflight if needed, else confirm prompt."""
+        if not self.is_admin:
+            detail = "Reboot requires the OpenStack 'admin' role."
+            self._audit.log("reboot", node_name, "blocked", detail)
+            self._push({"type": "log", "node": node_name, "message": detail, "color": "warn"})
+            return
         state = self.node_states.get(node_name)
         if not state:
             return
@@ -457,6 +467,11 @@ class DrainoServer:
             self._push({"type": "reboot_confirm_needed", "node": node_name})
 
     def action_reboot_confirm(self, node_name: str) -> None:
+        if not self.is_admin:
+            detail = "Reboot requires the OpenStack 'admin' role."
+            self._audit.log("reboot", node_name, "blocked", detail)
+            self._push({"type": "log", "node": node_name, "message": detail, "color": "warn"})
+            return
         state = self.node_states.get(node_name)
         if not state:
             return
@@ -706,6 +721,8 @@ async def api_session(request: Request):
         "authenticated": True,
         "username": record.username,
         "project_name": record.project_name,
+        "role_names": record.role_names,
+        "is_admin": record.is_admin,
     }
 
 
@@ -743,7 +760,13 @@ async def api_login(payload: LoginPayload, response: Response):
             detail=f"OpenStack authentication failed: {exc}",
         ) from exc
 
-    server = DrainoServer(k8s_auth=k8s_auth, openstack_auth=openstack_auth, audit_log=_audit_log_path)
+    role_names = openstack_ops.get_current_role_names(auth=openstack_auth)
+    server = DrainoServer(
+        k8s_auth=k8s_auth,
+        openstack_auth=openstack_auth,
+        role_names=role_names,
+        audit_log=_audit_log_path,
+    )
     if _app_loop is not None:
         server.set_loop(_app_loop)
     server._audit.log("session", "-", "started", "web ui user-authenticated session")
@@ -753,6 +776,8 @@ async def api_login(payload: LoginPayload, response: Response):
         server=server,
         username=openstack_auth.username,
         project_name=openstack_auth.project_name,
+        role_names=role_names,
+        is_admin=server.is_admin,
         created_at=time.time(),
         last_seen=time.time(),
     ))

@@ -107,6 +107,11 @@ Then open `http://localhost:8000` in a browser and authenticate with both:
 The browser session is stored server-side in memory and all subsequent REST/WebSocket
 operations use those supplied credentials.
 
+For the web UI, reboot is additionally restricted to sessions whose OpenStack role
+assignments include `admin`. Non-admin sessions can still inspect nodes and run
+non-reboot workflows, but the reboot action is disabled in the UI and rejected
+server-side.
+
 ### Options
 
 | Flag | Default | Description |
@@ -158,6 +163,9 @@ Reverses a cordon/disable.
 
 Issues a reboot after evacuation is complete.  For etcd nodes, SSH health of all etcd
 peers is checked first; the reboot is blocked if it would reduce the cluster below quorum.
+
+In the web UI, reboot is only available to authenticated sessions with the OpenStack
+`admin` role.
 
 1. Check etcd quorum (etcd nodes only)
 2. SSH `reboot` command to the node

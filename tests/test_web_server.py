@@ -40,6 +40,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
 
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", fake_get_nodes)
     monkeypatch.setattr(web_server.openstack_ops, "_conn", fake_conn)
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["member", "admin"])
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", fake_refresh)
     monkeypatch.setattr(web_server.k8s_ops, "list_k8s_namespaces", fake_list_namespaces)
 
@@ -78,6 +79,8 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert session.json()["authenticated"] is True
         assert session.json()["username"] == "ops-user"
         assert session.json()["project_name"] == "admin"
+        assert session.json()["is_admin"] is True
+        assert session.json()["role_names"] == ["member", "admin"]
 
         namespaces = client.get("/api/k8s/namespaces")
         assert namespaces.status_code == 200
@@ -94,6 +97,7 @@ def test_websocket_requires_session_and_uses_session_server(monkeypatch):
             return None
 
     monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
 
     payload = {
         "kubernetes": {
@@ -123,3 +127,24 @@ def test_websocket_requires_session_and_uses_session_server(monkeypatch):
 
     assert message["type"] == "full_state"
     assert "node-1" in message["nodes"]
+
+
+def test_reboot_request_requires_admin_role(tmp_path):
+    server = web_server.DrainoServer(
+        role_names=["member"],
+        audit_log=str(tmp_path / "audit.log"),
+    )
+    state = NodeState(k8s_name="node-1", hypervisor="hv-1")
+    server.node_states["node-1"] = state
+
+    pushed: list[dict] = []
+    server._push = pushed.append
+
+    server.action_reboot_request("node-1")
+
+    assert pushed == [{
+        "type": "log",
+        "node": "node-1",
+        "message": "Reboot requires the OpenStack 'admin' role.",
+        "color": "warn",
+    }]

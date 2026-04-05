@@ -553,3 +553,43 @@ def wait_for_lb_active(
         time.sleep(15)
     log(f"Timeout waiting for load balancer {lb_id} to become ACTIVE")
     return False
+
+
+def get_current_role_names(auth: OpenStackAuth | None = None) -> list[str]:
+    """Return Keystone role names for the currently authenticated user/project."""
+    conn = _conn(auth=auth)
+    role_names: set[str] = set()
+
+    user_id = getattr(conn, "current_user_id", None)
+    project_id = getattr(conn, "current_project_id", None)
+    if not user_id or not project_id:
+        return []
+
+    role_name_by_id: dict[str, str] = {}
+    try:
+        for role in conn.list_roles():
+            role_id = getattr(role, "id", None)
+            role_name = getattr(role, "name", None)
+            if role_id and role_name:
+                role_name_by_id[role_id] = role_name
+    except Exception:
+        pass
+
+    try:
+        assignments = conn.list_role_assignments(
+            filters={"user": user_id, "project": project_id}
+        )
+    except Exception:
+        return []
+
+    for assignment in assignments:
+        role_id = None
+        role = getattr(assignment, "role", None)
+        if isinstance(role, dict):
+            role_id = role.get("id")
+        elif role is not None:
+            role_id = getattr(role, "id", None)
+        if role_id and role_id in role_name_by_id:
+            role_names.add(role_name_by_id[role_id])
+
+    return sorted(role_names)
