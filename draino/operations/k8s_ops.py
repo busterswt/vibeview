@@ -162,18 +162,23 @@ def get_ovn_port_detail(port_id: str) -> dict:
     cmd = ["kubectl"]
     if _CONTEXT:
         cmd += ["--context", _CONTEXT]
-    cmd += ["ko", "nbctl", "lsp-show", port_id]
+    # ovn-nbctl has no lsp-show; use --format=list find to get all columns
+    cmd += ["ko", "nbctl", "--format=list", "find", "Logical_Switch_Port",
+            f"name={port_id}"]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     except FileNotFoundError:
         raise RuntimeError("kubectl not found in PATH")
     except subprocess.TimeoutExpired:
-        raise RuntimeError("kubectl ko nbctl lsp-show timed out")
+        raise RuntimeError("kubectl ko nbctl find timed out")
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
-        raise RuntimeError(stderr or f"lsp-show exited with code {result.returncode}")
+        raise RuntimeError(stderr or f"nbctl find exited with code {result.returncode}")
+
+    if not result.stdout.strip():
+        raise RuntimeError(f"No logical switch port found with name {port_id!r}")
 
     def _parse_ovn_map(s: str) -> dict:
         """Parse OVN map format: {key="value", key2=value2}"""
@@ -187,28 +192,26 @@ def get_ovn_port_detail(port_id: str) -> dict:
         return out
 
     data: dict = {
-        "id":               port_id,
-        "type":             "",
-        "addresses":        [],
-        "port_security":    [],
-        "up":               None,
-        "enabled":          None,
-        "tag":              None,
-        "external_ids":     {},
-        "options":          {},
+        "id":                port_id,
+        "type":              "",
+        "addresses":         [],
+        "port_security":     [],
+        "up":                None,
+        "enabled":           None,
+        "tag":               None,
+        "external_ids":      {},
+        "options":           {},
         "dynamic_addresses": "",
     }
 
     for line in result.stdout.splitlines():
-        content = line.rstrip()
-        stripped = content.lstrip()
-        if not stripped or stripped.startswith("port "):
+        if ":" not in line:
             continue
-        if ":" not in stripped:
-            continue
-        key, _, val = stripped.partition(":")
+        key, _, val = line.partition(":")
         key = key.strip()
         val = val.strip()
+        if not key:
+            continue
 
         if key == "type":
             data["type"] = val.strip('"')
@@ -216,23 +219,27 @@ def get_ovn_port_detail(port_id: str) -> dict:
             try:
                 data["addresses"] = _json.loads(val)
             except Exception:
-                data["addresses"] = [val.strip('"')] if val else []
+                data["addresses"] = [val.strip('"')] if val and val != "[]" else []
         elif key == "port_security":
             try:
                 data["port_security"] = _json.loads(val)
             except Exception:
-                data["port_security"] = [val.strip('"')] if val else []
+                data["port_security"] = [val.strip('"')] if val and val != "[]" else []
         elif key == "up":
-            data["up"] = (val == "true")
+            if val in ("true", "false"):
+                data["up"] = (val == "true")
         elif key == "enabled":
-            data["enabled"] = (val == "true")
+            if val in ("true", "false"):
+                data["enabled"] = (val == "true")
         elif key == "tag":
             try:
                 data["tag"] = int(val)
             except Exception:
                 pass
         elif key == "dynamic_addresses":
-            data["dynamic_addresses"] = val.strip('"')
+            v = val.strip('"')
+            if v:
+                data["dynamic_addresses"] = v
         elif key in ("external_ids", "options"):
             data[key] = _parse_ovn_map(val)
 
