@@ -127,7 +127,7 @@ body {
 /* Each view fills the body; only one shown at a time */
 .view { display: none; flex: 1; overflow: hidden; }
 .view.active { display: flex; }
-#view-infra { flex-direction: row; }
+#view-infrastructure { flex-direction: row; }
 #view-networking { flex-direction: row; }
 #view-storage    { flex-direction: column; }
 #net-detail-wrap {
@@ -168,8 +168,9 @@ body {
   text-transform: uppercase; letter-spacing: 0.5px;
   display: flex; align-items: center; gap: 6px;
   border-top: 1px solid var(--border); margin-top: 2px;
-  user-select: none;
+  user-select: none; cursor: pointer;
 }
+.tree-group:hover { background: var(--hover); }
 .tree-group:first-child { border-top: none; margin-top: 0; }
 .tree-expand { color: var(--dim); font-size: 10px; width: 12px; }
 .tree-count  { background: #e0e0e0; color: var(--dim); font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: auto; }
@@ -202,6 +203,14 @@ body {
   font-size: 10px; padding: 1px 5px; border-radius: 3px;
   border: 1px solid #fff176; font-style: italic; flex-shrink: 0;
 }
+body.no-hints .hint { display: none !important; }
+.hint-toggle {
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: #b0bec5; padding: 3px 9px; border-radius: 3px; font-size: 11px;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.hint-toggle:hover { background: rgba(255,255,255,0.14); color: white; }
+.hint-toggle.on  { background: rgba(255,220,50,0.15); border-color: rgba(255,220,50,0.4); color: #ffe082; }
 
 /* ═══════════════════════════════════════════════════════
    CONTENT AREA (right side of Infrastructure view)
@@ -490,6 +499,7 @@ body {
   </nav>
   <div class="top-right">
     <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
+    <button class="hint-toggle on" id="hint-toggle" onclick="toggleHints()" title="Toggle VMware terminology hints">💡 VMware hints</button>
     <div id="clock"></div>
     <div id="ws-pill">
       <div id="ws-dot"></div>
@@ -509,11 +519,14 @@ body {
   <span class="bc-cur" id="bc-node"></span>
   <!-- Infrastructure actions (hidden in other views) -->
   <div class="bc-actions" id="bc-infra-actions">
-    <button class="btn primary" id="bc-evacuate" onclick="actionEvacuate()"       disabled>▶ Evacuate</button>
-    <button class="btn"         id="bc-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
-    <button class="btn"         id="bc-pods"     onclick="actionPods()"           disabled>⬡ Pods</button>
-    <button class="btn"         id="bc-refresh"  onclick="actionRefresh()">⟳ Refresh</button>
-    <button class="btn danger"  id="bc-reboot"   onclick="actionReboot()"         disabled>⏻ Reboot</button>
+    <!-- Node-specific actions: shown only when a node is selected -->
+    <div id="bc-node-actions" style="display:none;gap:6px;align-items:center">
+      <button class="btn primary" id="bc-evacuate" onclick="actionEvacuate()">▶ Evacuate</button>
+      <button class="btn"         id="bc-drain"    onclick="actionDrainOrUndrain()">▽ Drain</button>
+      <button class="btn"         id="bc-pods"     onclick="actionPods()">⬡ Pods</button>
+      <button class="btn danger"  id="bc-reboot"   onclick="actionReboot()">⏻ Reboot</button>
+    </div>
+    <button class="btn" id="bc-refresh" onclick="actionRefresh()">⟳ Refresh</button>
   </div>
   <!-- Network / Storage refresh -->
   <div class="bc-actions" id="bc-net-actions" style="display:none">
@@ -528,7 +541,7 @@ body {
 <div id="body">
 
   <!-- ── Infrastructure view ── -->
-  <div class="view active" id="view-infra">
+  <div class="view active" id="view-infrastructure">
     <div id="sidebar">
       <div class="sidebar-head">Navigator — Infrastructure</div>
       <div id="tree">
@@ -543,12 +556,6 @@ body {
           <h2 id="oh-name">Select a node</h2>
           <div class="obj-sub" id="oh-sub">Choose a node from the inventory to view its status and manage operations.</div>
           <div class="obj-badges" id="oh-badges"></div>
-        </div>
-        <div class="obj-actions">
-          <button class="btn primary" id="btn-evacuate" onclick="actionEvacuate()"       disabled>▶ Evacuate</button>
-          <button class="btn"         id="btn-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
-          <button class="btn"         id="btn-pods"     onclick="actionPods()"           disabled>⬡ Pods</button>
-          <button class="btn danger"  id="btn-reboot"   onclick="actionReboot()"         disabled>⏻ Reboot</button>
         </div>
       </div>
 
@@ -674,6 +681,12 @@ let ws           = null;
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
 const stepTimes = {};
 
+// Hints toggle
+let showHints = true;
+
+// Sidebar collapse state
+const collapsedGroups = new Set();
+
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedNetwork  = null;
@@ -688,6 +701,18 @@ const OP_COLOR  = {
   confirming:'op-migrating', failing_over:'op-migrating',
   complete:'op-complete', failed:'op-failed', pending:'op-queued',
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// § HINTS TOGGLE
+// ════════════════════════════════════════════════════════════════════════════
+
+function toggleHints() {
+  showHints = !showHints;
+  document.body.classList.toggle('no-hints', !showHints);
+  const btn = document.getElementById('hint-toggle');
+  btn.textContent = showHints ? '💡 VMware hints' : '💡 Hints off';
+  btn.classList.toggle('on', showHints);
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // § WEBSOCKET
@@ -893,17 +918,31 @@ function rebuildSidebar() {
   const other   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
   let html = '';
   if (compute.length) {
-    html += `<div class="tree-group"><span class="tree-expand">▼</span> 🖥️ Compute Nodes <span class="tree-count">${compute.length}</span></div>`;
-    for (const [name, nd] of compute) html += treeItemHtml(name, nd);
+    const col = collapsedGroups.has('compute');
+    html += `<div class="tree-group" onclick="toggleGroup('compute')">
+      <span class="tree-expand">${col ? '▶' : '▼'}</span> 🖥️ Compute Nodes
+      <span class="tree-count">${compute.length}</span>
+    </div>`;
+    if (!col) for (const [name, nd] of compute) html += treeItemHtml(name, nd);
   }
   if (other.length) {
-    html += `<div class="tree-group"><span class="tree-expand">▼</span> ⚙️ Other Nodes <span class="tree-count">${other.length}</span></div>`;
-    for (const [name, nd] of other) html += treeItemHtml(name, nd);
+    const col = collapsedGroups.has('other');
+    html += `<div class="tree-group" onclick="toggleGroup('other')">
+      <span class="tree-expand">${col ? '▶' : '▼'}</span> ⚙️ Other Nodes
+      <span class="tree-count">${other.length}</span>
+    </div>`;
+    if (!col) for (const [name, nd] of other) html += treeItemHtml(name, nd);
   }
   if (!compute.length && !other.length) {
-    html = `<div class="tree-group" style="border-top:none">No nodes loaded</div>`;
+    html = `<div class="tree-group" style="border-top:none;cursor:default">No nodes loaded</div>`;
   }
   document.getElementById('tree').innerHTML = html;
+}
+
+function toggleGroup(groupId) {
+  if (collapsedGroups.has(groupId)) collapsedGroups.delete(groupId);
+  else collapsedGroups.add(groupId);
+  rebuildSidebar();
 }
 
 function updateSidebarRow(name) {
@@ -931,9 +970,8 @@ function selectNode(name) {
   const el = document.querySelector(`[data-node="${escAttr(name)}"]`);
   if (el) el.classList.add('selected');
 
-  // Reset pods button labels
-  document.getElementById('btn-pods').textContent = '⬡ Pods';
-  document.getElementById('bc-pods').textContent  = '⬡ Pods';
+  // Reset pods button label
+  document.getElementById('bc-pods').textContent = '⬡ Pods';
 
   const nd = nodes[name];
   if (nd) {
@@ -1816,32 +1854,36 @@ function renderTasksPanel() {
 // § ACTION BUTTONS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Sync all action button pairs (obj-header + breadcrumb bar). */
+/** Show/hide and update breadcrumb action buttons based on selected node. */
 function updateActionButtons(nd) {
-  const phase   = nd?.phase;
-  const drained = nd && (nd.k8s_cordoned || nd.compute_status === 'disabled');
-  const busy    = ['running','rebooting','undraining'].includes(phase);
-  const noSel   = !nd;
-
-  const evTxt = phase === 'running'   ? '▶ Evacuating…' : '▶ Evacuate';
-  const rbTxt = phase === 'rebooting' ? '⏻ Rebooting…'  : '⏻ Reboot';
-  const drTxt = phase === 'undraining'? '↺ Undraining…' : drained ? '↺ Undrain' : '▽ Drain';
-
-  const sets = [
-    ['btn-evacuate', 'bc-evacuate'],
-    ['btn-drain',    'bc-drain'],
-    ['btn-pods',     'bc-pods'],
-    ['btn-reboot',   'bc-reboot'],
-  ];
-  for (const [hdId, bcId] of sets) {
-    for (const id of [hdId, bcId]) {
-      const el = document.getElementById(id); if (!el) continue;
-      if (id.includes('evacuate')) { el.disabled = noSel || busy || !nd?.is_compute; el.textContent = evTxt; el.className = 'btn primary'; }
-      if (id.includes('drain'))    { el.disabled = noSel || busy; el.textContent = drTxt; el.className = `btn ${drained && !busy ? 'warning' : ''}`; }
-      if (id.includes('pods'))     { el.disabled = noSel; }
-      if (id.includes('reboot'))   { el.disabled = noSel || busy; el.textContent = rbTxt; el.className = 'btn danger'; }
-    }
+  const nodeActions = document.getElementById('bc-node-actions');
+  if (!nd) {
+    nodeActions.style.display = 'none';
+    return;
   }
+  nodeActions.style.display = 'flex';
+
+  const phase   = nd.phase;
+  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  const busy    = ['running','rebooting','undraining'].includes(phase);
+
+  const evBtn = document.getElementById('bc-evacuate');
+  const drBtn = document.getElementById('bc-drain');
+  const rbBtn = document.getElementById('bc-reboot');
+  const poBtn = document.getElementById('bc-pods');
+
+  evBtn.textContent = phase === 'running'    ? '▶ Evacuating…' : '▶ Evacuate';
+  evBtn.disabled    = busy || !nd.is_compute;
+  evBtn.className   = 'btn primary';
+
+  drBtn.textContent = phase === 'undraining' ? '↺ Undraining…' : drained ? '↺ Undrain' : '▽ Drain';
+  drBtn.disabled    = busy;
+  drBtn.className   = `btn ${drained && !busy ? 'warning' : ''}`;
+
+  rbBtn.textContent = phase === 'rebooting'  ? '⏻ Rebooting…'  : '⏻ Reboot';
+  rbBtn.disabled    = busy;
+
+  poBtn.disabled = false;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1869,8 +1911,7 @@ function actionPodsInline() {
   showPods     = true;
   lastPodsCache = null;
   wsSend({ action: 'get_pods', node: selectedNode });
-  document.getElementById('btn-pods').textContent = '✕ Pods';
-  document.getElementById('bc-pods').textContent  = '✕ Pods';
+  document.getElementById('bc-pods').textContent = '✕ Pods';
   const sec = document.getElementById('pods-section');
   if (sec) sec.innerHTML = `<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
 }
