@@ -5,11 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Draino — Node Evacuation Manager</title>
 <style>
-/* ── Reset & variables ── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --vc-navy:    #1a2332;
   --vc-blue:    #0072c6;
   --vc-blue-lt: #1e88e5;
   --vc-blue-bg: #e3f2fd;
@@ -50,13 +48,23 @@ body {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  gap: 16px;
+  gap: 0;
   flex-shrink: 0;
   border-bottom: 2px solid var(--vc-blue);
 }
 .logo { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .logo-icon { width: 24px; height: 24px; background: var(--vc-blue); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: white; }
 .logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 2px; margin-left: 28px; }
+.top-nav a { color: #b0bec5; text-decoration: none; padding: 4px 10px; border-radius: 3px; font-size: 12px; cursor: pointer; }
+.top-nav a:hover { color: white; background: rgba(255,255,255,0.08); }
+.top-nav a.active { color: white; }
+.top-search {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  color: white; padding: 4px 10px; border-radius: 3px; font-size: 12px;
+  width: 190px; font-family: inherit; outline: none;
+}
+.top-search::placeholder { color: #78909c; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
 #clock { color: #90a4ae; font-size: 12px; }
 #ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
@@ -64,6 +72,40 @@ body {
 #ws-dot.live { background: var(--green-lt); }
 .user-badge { color: #b0bec5; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .user-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--vc-blue); color: white; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── Breadcrumb bar ── */
+#breadcrumb-bar {
+  background: var(--vc-white);
+  border-bottom: 1px solid var(--vc-border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vc-dim);
+  flex-shrink: 0;
+}
+.bc-link { color: var(--vc-blue); cursor: pointer; }
+.bc-link:hover { text-decoration: underline; }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--vc-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+/* ── Buttons ── */
+.btn {
+  padding: 4px 11px; border: 1px solid var(--vc-border); background: var(--vc-white);
+  border-radius: 3px; cursor: pointer; font-size: 12px; color: var(--vc-text);
+  font-family: inherit; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--vc-hover); border-color: var(--vc-blue-lt); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--vc-blue); color: white; border-color: var(--vc-blue); }
+.btn.primary:hover:not(:disabled) { background: var(--vc-blue-lt); }
+.btn.warning { background: #e65100; color: white; border-color: #ef6c00; }
+.btn.warning:hover:not(:disabled) { background: #bf360c; }
+.btn.danger  { background: #b71c1c; color: white; border-color: #c62828; }
+.btn.danger:hover:not(:disabled)  { background: #7f0000; }
 
 /* ── Body split ── */
 #body { display: flex; flex: 1; overflow: hidden; }
@@ -87,60 +129,65 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--vc-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
-.sidebar-refresh {
-  cursor: pointer; color: var(--vc-blue); font-size: 14px;
-  padding: 0 4px; line-height: 1;
-}
-.sidebar-refresh:hover { color: var(--vc-blue-lt); }
 #tree { overflow-y: auto; flex: 1; padding: 4px 0; }
-.tree-group-header {
+
+/* Tree group headers (like Cluster/AZ headers in vCenter) */
+.tree-group {
   padding: 6px 10px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--vc-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  border-top: 1px solid var(--vc-border);
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  font-size: 11px; font-weight: 700; color: var(--vc-dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 6px;
+  border-top: 1px solid var(--vc-border); margin-top: 2px;
+  cursor: default; user-select: none;
 }
-.tree-group-header:first-child { border-top: none; }
-.tree-count { background: #e0e0e0; color: var(--vc-dim); font-size: 10px; padding: 0 5px; border-radius: 8px; }
+.tree-group:first-child { border-top: none; margin-top: 0; }
+.tree-expand { color: var(--vc-dim); font-size: 10px; width: 12px; }
+.tree-count { background: #e0e0e0; color: var(--vc-dim); font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: auto; }
+
+/* Tree items (individual nodes) */
 .tree-item {
-  padding: 5px 10px 5px 14px;
+  padding: 5px 10px 5px 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   border-left: 3px solid transparent;
   user-select: none;
 }
 .tree-item:hover { background: var(--vc-hover); }
 .tree-item.selected { background: var(--vc-sel); border-left-color: var(--vc-blue); }
+.tree-item .ti-expand { width: 12px; color: var(--vc-dim); font-size: 10px; flex-shrink: 0; }
+.tree-item .ti-ico { font-size: 14px; flex-shrink: 0; }
+.tree-item .ti-name { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-item.selected .ti-name { color: var(--vc-blue); font-weight: 500; }
+
+/* vCenter-style "hint" chip — shows VMware equivalent concept */
+.hint {
+  display: inline-block; background: #fff9c4; color: #5d4037;
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid #fff176; font-style: italic; flex-shrink: 0;
+}
+
+/* Phase dot in sidebar */
 .tree-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  flex-shrink: 0; background: #bdbdbd;
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
 }
-.tree-dot.green    { background: var(--green-lt); }
-.tree-dot.yellow   { background: var(--yellow-lt); animation: pulse 1.2s ease-in-out infinite; }
-.tree-dot.red      { background: var(--red-lt); }
-.tree-dot.gray     { background: #bdbdbd; }
-.tree-dot.magenta  { background: #ce93d8; animation: pulse 1.2s ease-in-out infinite; }
-.tree-dot.cyan     { background: #80deea; animation: pulse 1.2s ease-in-out infinite; }
+.tree-dot.green   { background: var(--green-lt); }
+.tree-dot.yellow  { background: var(--yellow-lt); animation: pulse 1.2s ease-in-out infinite; }
+.tree-dot.red     { background: var(--red-lt); }
+.tree-dot.gray    { background: #bdbdbd; }
+.tree-dot.magenta { background: #ce93d8; animation: pulse 1.2s ease-in-out infinite; }
+.tree-dot.cyan    { background: #80deea; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-.tree-name { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-item.selected .tree-name { color: var(--vc-blue); font-weight: 500; }
-.tree-tag {
-  font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0;
-  background: #ffebee; color: var(--red); font-weight: 600;
+
+.tree-badge {
+  margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0;
+  background: var(--vc-blue-bg); color: var(--vc-blue); font-weight: 500;
 }
-.tree-counts { font-size: 10px; color: var(--vc-dim); flex-shrink: 0; }
-.tree-counts.active { color: var(--vc-blue); }
+.tree-badge.warn { background: #fff8e1; color: #e65100; }
+.tree-badge.err  { background: #ffebee; color: var(--red); }
+.tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
 
 /* ── Content area ── */
 #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -156,17 +203,16 @@ body {
   flex-shrink: 0;
 }
 .obj-icon {
-  width: 38px; height: 38px; background: var(--vc-blue-bg); border-radius: 5px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; flex-shrink: 0;
+  width: 40px; height: 40px; background: var(--vc-blue-bg); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0;
 }
 .obj-meta { flex: 1; min-width: 0; }
-.obj-meta h2 { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.obj-meta h2 { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .obj-meta .obj-sub { font-size: 11px; color: var(--vc-dim); margin-top: 2px; }
 .obj-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .badge {
   display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
 }
 .badge.green   { background: #e8f5e9; color: var(--green); }
 .badge.yellow  { background: #fff8e1; color: var(--yellow); }
@@ -175,23 +221,7 @@ body {
 .badge.gray    { background: #f5f5f5; color: #607d8b; }
 .badge.magenta { background: #f3e5f5; color: var(--magenta); }
 .badge.cyan    { background: #e0f7fa; color: var(--cyan); }
-.obj-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; }
-
-/* Buttons */
-.btn {
-  padding: 4px 11px; border: 1px solid var(--vc-border); background: var(--vc-white);
-  border-radius: 3px; cursor: pointer; font-size: 12px; color: var(--vc-text);
-  font-family: inherit; display: inline-flex; align-items: center; gap: 4px;
-  white-space: nowrap;
-}
-.btn:hover:not(:disabled) { background: var(--vc-hover); border-color: var(--vc-blue-lt); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn.primary { background: var(--vc-blue); color: white; border-color: var(--vc-blue); }
-.btn.primary:hover:not(:disabled) { background: var(--vc-blue-lt); border-color: var(--vc-blue-lt); }
-.btn.warning { background: #e65100; color: white; border-color: #ef6c00; }
-.btn.warning:hover:not(:disabled) { background: #bf360c; }
-.btn.danger  { background: #b71c1c; color: white; border-color: #c62828; }
-.btn.danger:hover:not(:disabled)  { background: #7f0000; }
+.obj-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Tabs */
 #tabs-bar {
@@ -203,21 +233,30 @@ body {
 }
 .tab {
   padding: 8px 14px; cursor: pointer; font-size: 12px; color: var(--vc-dim);
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
-  white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
 }
 .tab:hover { color: var(--vc-blue); }
 .tab.active { color: var(--vc-blue); border-bottom-color: var(--vc-blue); font-weight: 500; }
 
-/* Tab body */
 #tab-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+/* ── Concept map banner (Summary tab top) ── */
+.concept-map {
+  background: #fffde7; border: 1px solid #fff176; border-radius: 4px;
+  padding: 8px 12px; margin-bottom: 14px; font-size: 11px; color: #5d4037;
+}
+.concept-map strong { color: #3e2723; }
+.cm-grid {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  gap: 3px 10px; align-items: center; margin-top: 6px;
+}
+.cm-from  { font-weight: 600; color: #4e342e; }
+.cm-arrow { color: #90a4ae; text-align: center; }
+.cm-to    { color: var(--vc-blue); font-weight: 600; }
 
 /* ── Summary tab ── */
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.card {
-  background: var(--vc-white); border: 1px solid var(--vc-border);
-  border-radius: 4px; overflow: hidden;
-}
+.card { background: var(--vc-white); border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; }
 .card-title {
   background: var(--gray-bg); padding: 6px 12px;
   font-size: 11px; font-weight: 700; text-transform: uppercase;
@@ -239,12 +278,12 @@ body {
 .mv.gray    { color: #9e9e9e; }
 .mv.dim     { color: var(--vc-dim); font-weight: 400; }
 
-/* etcd alert box */
+/* etcd alert */
 .etcd-alert {
   border: 1px solid #fff176; background: #fffde7; border-radius: 4px;
   padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #5d4037; line-height: 1.6;
 }
-.etcd-alert.danger { border-color: #ef9a9a; background: #ffebee; color: var(--red); }
+.etcd-alert.danger   { border-color: #ef9a9a; background: #ffebee; color: var(--red); }
 .etcd-alert.checking { border-color: #b0bec5; background: #f5f5f5; color: var(--vc-dim); }
 .etcd-peers { font-size: 11px; color: #78909c; margin-top: 4px; }
 
@@ -264,15 +303,14 @@ body {
 .step-row.success  { color: var(--green); }
 .step-row.failed   { background: #ffebee; color: var(--red); font-weight: 600; }
 .step-row.skipped  { color: var(--vc-dim); }
-.step-icon { width: 16px; flex-shrink: 0; font-size: 12px; }
+.step-icon  { width: 16px; flex-shrink: 0; }
 .step-label { flex: 1; }
 .step-detail { color: var(--vc-dim); font-size: 11px; }
 .step-row.running .step-detail { color: #e65100; }
 
 .downtime-counter {
   background: #f3e5f5; border: 1px solid #ce93d8; border-radius: 4px;
-  padding: 6px 12px; color: var(--magenta); font-weight: 700;
-  font-size: 14px; margin-bottom: 12px;
+  padding: 6px 12px; color: var(--magenta); font-weight: 700; font-size: 14px; margin-bottom: 12px;
 }
 .reboot-complete {
   background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px;
@@ -283,7 +321,7 @@ body {
   padding: 6px 10px; background: var(--gray-bg); border-radius: 3px;
 }
 
-/* Preflight instances */
+/* Preflight / instance tables */
 .inst-table { width: 100%; border-collapse: collapse; }
 .inst-table th {
   text-align: left; padding: 5px 8px; font-size: 11px; font-weight: 600;
@@ -293,23 +331,26 @@ body {
 .inst-table td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f0f2f5; }
 .inst-table tr:last-child td { border-bottom: none; }
 .inst-table tr:hover td { background: var(--vc-hover); }
-.amp-tag { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 8px; font-size: 10px; font-weight: 600; }
-.vol-tag { background: var(--vc-blue-bg); color: var(--vc-blue); padding: 1px 5px; border-radius: 8px; font-size: 10px; }
-.eph-tag { background: #f5f5f5; color: #9e9e9e; padding: 1px 5px; border-radius: 8px; font-size: 10px; }
+.tag-amp { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+.tag-vol { background: var(--vc-blue-bg); color: var(--vc-blue); padding: 1px 5px; border-radius: 8px; font-size: 10px; }
+.tag-eph { background: #f5f5f5; color: #9e9e9e; padding: 1px 5px; border-radius: 8px; font-size: 10px; }
 
-/* op status colours (live migration) */
-.op-queued      { color: var(--vc-dim); }
-.op-migrating   { color: var(--yellow); font-weight: 600; }
-.op-complete    { color: var(--green); }
-.op-failed      { color: var(--red); font-weight: 700; }
+/* op status colours */
+.op-queued    { color: var(--vc-dim); }
+.op-migrating { color: var(--yellow); font-weight: 600; }
+.op-complete  { color: var(--green); }
+.op-failed    { color: var(--red); font-weight: 700; }
 
-/* ── Instances & Pods tab ── */
-.tab-section-title {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-  color: var(--vc-dim); padding-bottom: 6px; margin-bottom: 10px;
-  border-bottom: 1px solid var(--vc-border);
-  display: flex; align-items: center; justify-content: space-between;
+/* ── Instances tab ── */
+.inst-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0 10px; border-bottom: 1px solid var(--vc-border); margin-bottom: 12px;
 }
+.toolbar-filter {
+  padding: 4px 10px; border: 1px solid var(--vc-border); border-radius: 3px;
+  font-size: 12px; color: var(--vc-text); font-family: inherit; background: var(--vc-white);
+}
+
 .data-table { width: 100%; border-collapse: collapse; background: var(--vc-white); border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
 .data-table thead th {
   background: var(--gray-bg); padding: 6px 10px; text-align: left;
@@ -317,35 +358,50 @@ body {
   border-bottom: 1px solid var(--vc-border); text-transform: uppercase; letter-spacing: 0.3px;
   white-space: nowrap;
 }
-.data-table tbody tr { border-bottom: 1px solid #f0f2f5; cursor: default; }
+.data-table tbody tr { border-bottom: 1px solid #f0f2f5; }
 .data-table tbody tr:hover { background: var(--vc-hover); }
 .data-table td { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
 .sdot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-.sdot.green { background: var(--green-lt); }
+.sdot.green  { background: var(--green-lt); }
 .sdot.yellow { background: var(--yellow-lt); }
-.sdot.red { background: var(--red-lt); }
-.sdot.gray { background: #bdbdbd; }
-.phase-badge {
-  padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600;
-  display: inline-block;
+.sdot.red    { background: var(--red-lt); }
+.sdot.gray   { background: #bdbdbd; }
+.ph-badge {
+  padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; display: inline-block;
 }
-.ph-running   { background: #fff3e0; color: #e65100; }
-.ph-complete  { background: #e8f5e9; color: var(--green); }
-.ph-failed    { background: #ffebee; color: var(--red); }
-.ph-queued    { background: #f5f5f5; color: #9e9e9e; }
-.ph-migrating { background: #fff8e1; color: var(--yellow); }
+.ph-running  { background: #fff3e0; color: #e65100; }
+.ph-complete { background: #e8f5e9; color: var(--green); }
+.ph-failed   { background: #ffebee; color: var(--red); }
+.ph-queued   { background: #f5f5f5; color: #9e9e9e; }
+.ph-migrate  { background: #fff8e1; color: var(--yellow); }
 
-/* ── Monitor tab (event log) ── */
-#monitor-log { font-size: 12px; line-height: 1.7; }
-.log-line { padding: 1px 0; }
-.log-ts { color: var(--vc-dim); }
-.log-node { color: var(--vc-blue); }
-.log-dim     { color: var(--vc-dim); }
-.log-info    { color: var(--vc-text); }
-.log-success { color: var(--green); font-weight: 600; }
-.log-warn    { color: var(--yellow); }
-.log-error   { color: var(--red); }
-.log-magenta { color: var(--magenta); }
+.tab-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--vc-dim); padding-bottom: 6px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--vc-border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+/* ── Monitor tab — event list ── */
+.event-list { background: var(--vc-white); border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; }
+.event-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 12px; border-bottom: 1px solid #f0f2f5; font-size: 12px;
+}
+.event-item:last-child { border-bottom: none; }
+.event-ico { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.event-body { flex: 1; min-width: 0; }
+.event-ts  { color: var(--vc-dim); font-size: 11px; }
+.event-msg { color: var(--vc-text); word-break: break-word; }
+.event-tag {
+  font-size: 10px; padding: 1px 5px; border-radius: 8px;
+  font-weight: 500; margin-left: 5px; display: inline-block;
+}
+.et-info  { background: var(--vc-blue-bg); color: var(--vc-blue); }
+.et-warn  { background: #fff8e1; color: #e65100; }
+.et-error { background: #ffebee; color: var(--red); }
+.et-task  { background: #f3e5f5; color: #6a1b9a; }
+.et-ok    { background: #e8f5e9; color: var(--green); }
 
 /* ── Configure tab ── */
 .concept-table { width: 100%; border-collapse: collapse; }
@@ -358,17 +414,38 @@ body {
 .concept-table td:first-child { font-weight: 600; color: #455a64; }
 .concept-table td:last-child  { color: var(--vc-blue); }
 
-/* ── Bottom event log ── */
-#log-panel {
-  height: 120px; border-top: 1px solid var(--vc-border);
+/* ── Recent Tasks panel (bottom) ── */
+#tasks-panel {
+  height: 126px; border-top: 1px solid var(--vc-border);
   background: var(--vc-white); flex-shrink: 0; display: flex; flex-direction: column;
 }
-.log-panel-head {
-  background: var(--gray-bg); padding: 4px 12px;
+.tasks-head {
+  background: var(--gray-bg); padding: 4px 12px; flex-shrink: 0;
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-  color: var(--vc-dim); border-bottom: 1px solid var(--vc-border); flex-shrink: 0;
+  color: var(--vc-dim); border-bottom: 1px solid var(--vc-border);
+  display: flex; align-items: center; justify-content: space-between;
 }
-#log-view { flex: 1; overflow-y: auto; padding: 4px 12px; font-size: 11px; line-height: 1.7; }
+.tasks-head-right { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--vc-dim); }
+.task-table { width: 100%; border-collapse: collapse; }
+.task-table thead th {
+  background: var(--vc-white); padding: 4px 10px; text-align: left;
+  font-size: 10px; font-weight: 600; color: var(--vc-dim);
+  text-transform: uppercase; border-bottom: 1px solid #f0f2f5; position: sticky; top: 0;
+}
+.task-table tbody tr:hover { background: var(--vc-hover); }
+.task-table td { padding: 4px 10px; font-size: 11px; white-space: nowrap; }
+.task-status { display: flex; align-items: center; gap: 5px; }
+.progress-inline { display: flex; align-items: center; gap: 6px; }
+.prog-bar  { width: 80px; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
+.prog-fill { height: 6px; border-radius: 3px; background: var(--vc-blue); transition: width 0.3s; }
+.prog-fill.done { background: var(--green-lt); }
+.prog-fill.fail { background: var(--red-lt); }
+.prog-fill.skip { background: #bdbdbd; }
+#tasks-scroll { overflow-y: auto; flex: 1; }
+
+/* shortcuts hint in tasks head */
+.kbd-hints { color: #90a4ae; font-size: 11px; }
+.kbd-hints b { color: #b0bec5; }
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -378,21 +455,21 @@ body {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .spinner { animation: spin 1s linear infinite; display: inline-block; }
 
-/* ── Reboot modal ── */
-#modal-overlay {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+/* ── Modals ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
   z-index: 100; align-items: center; justify-content: center;
 }
-#modal-overlay.open { display: flex; }
-#modal-box {
+.modal-overlay.open { display: flex; }
+.modal-box {
   background: var(--vc-white); border: 1px solid var(--vc-border); border-top: 3px solid var(--red);
-  border-radius: 4px; padding: 24px 28px; width: 460px;
+  border-radius: 4px; padding: 24px 28px; width: 480px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.18);
 }
-#modal-box h2 { color: var(--red); margin-bottom: 6px; font-size: 15px; }
-#modal-node-name { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
-#modal-box p { color: var(--vc-dim); font-size: 12px; margin-bottom: 4px; line-height: 1.6; }
-#modal-box label { color: var(--vc-text); font-size: 12px; display: block; margin: 14px 0 6px; }
+.modal-box h2 { color: var(--red); margin-bottom: 8px; font-size: 15px; }
+.modal-node   { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+.modal-box p  { color: var(--vc-dim); font-size: 12px; margin-bottom: 4px; line-height: 1.6; }
+.modal-box label { color: var(--vc-text); font-size: 12px; display: block; margin: 14px 0 6px; }
 #modal-input {
   width: 100%; border: 1px solid var(--vc-border); background: white;
   color: var(--vc-text); font-family: inherit; font-size: 13px;
@@ -401,26 +478,12 @@ body {
 #modal-input:focus { border-color: var(--vc-blue); }
 #modal-input.shake { border-color: var(--red); animation: shake 0.3s ease; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
-#modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
-
-/* ── Reboot blocked banner ── */
-#blocked-banner {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-  z-index: 100; align-items: center; justify-content: center;
-}
-#blocked-banner.open { display: flex; }
-#blocked-box {
-  background: var(--vc-white); border: 1px solid var(--vc-border); border-top: 3px solid var(--red);
-  border-radius: 4px; padding: 24px 28px; width: 480px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
-}
-#blocked-box h2 { color: var(--red); margin-bottom: 10px; font-size: 15px; }
-#blocked-detail { font-size: 12px; color: var(--vc-dim); line-height: 1.6; margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
 </style>
 </head>
 <body>
 
-<!-- ── Top bar ── -->
+<!-- ═══ TOP BAR ═══ -->
 <div id="top-bar">
   <div class="logo">
     <div class="logo-icon">D</div>
@@ -429,7 +492,14 @@ body {
       <div class="logo-sub">Node Evacuation Manager</div>
     </div>
   </div>
+  <nav class="top-nav">
+    <a class="active">Infrastructure</a>
+    <a>Networking</a>
+    <a>Storage</a>
+    <a>Monitor</a>
+  </nav>
   <div class="top-right">
+    <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
     <div id="clock"></div>
     <div id="ws-pill">
       <div id="ws-dot"></div>
@@ -442,26 +512,37 @@ body {
   </div>
 </div>
 
-<!-- ── Body ── -->
+<!-- ═══ BREADCRUMB BAR ═══ -->
+<div id="breadcrumb-bar">
+  <span class="bc-link" onclick="selectedNode=null;renderDetail()">All Nodes</span>
+  <span class="bc-sep" id="bc-sep" style="display:none">›</span>
+  <span class="bc-cur" id="bc-node"></span>
+  <div class="bc-actions">
+    <button class="btn primary" id="bc-evacuate" onclick="actionEvacuate()" disabled>▶ Evacuate</button>
+    <button class="btn"         id="bc-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
+    <button class="btn"         id="bc-pods"     onclick="actionPods()" disabled>⬡ Pods</button>
+    <button class="btn"         id="bc-refresh"  onclick="actionRefresh()">⟳ Refresh</button>
+    <button class="btn danger"  id="bc-reboot"   onclick="actionReboot()" disabled>⏻ Reboot</button>
+  </div>
+</div>
+
+<!-- ═══ BODY ═══ -->
 <div id="body">
 
-  <!-- Sidebar -->
+  <!-- SIDEBAR -->
   <div id="sidebar">
-    <div class="sidebar-head">
-      Navigator
-      <span class="sidebar-refresh" title="Refresh nodes (R)" onclick="actionRefresh()">⟳</span>
-    </div>
+    <div class="sidebar-head">Navigator — Infrastructure</div>
     <div id="tree">
-      <div class="tree-group-header">Loading nodes…</div>
+      <div class="tree-group"><span class="tree-expand">▼</span> Loading nodes…</div>
     </div>
   </div>
 
-  <!-- Content -->
+  <!-- CONTENT -->
   <div id="content">
 
     <!-- Object header -->
     <div id="obj-header">
-      <div class="obj-icon">🖥️</div>
+      <div class="obj-icon" id="oh-icon">🖥️</div>
       <div class="obj-meta">
         <h2 id="oh-name">Select a node</h2>
         <div class="obj-sub" id="oh-sub">Choose a node from the inventory to view its status and manage operations.</div>
@@ -469,7 +550,7 @@ body {
       </div>
       <div class="obj-actions" id="oh-actions">
         <button class="btn primary" id="btn-evacuate" onclick="actionEvacuate()" disabled>▶ Evacuate</button>
-        <button class="btn warning" id="btn-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
+        <button class="btn"         id="btn-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
         <button class="btn"         id="btn-pods"     onclick="actionPods()" disabled>⬡ Pods</button>
         <button class="btn danger"  id="btn-reboot"   onclick="actionReboot()" disabled>⏻ Reboot</button>
       </div>
@@ -477,10 +558,10 @@ body {
 
     <!-- Tabs -->
     <div id="tabs-bar">
-      <div class="tab active" id="tab-btn-summary"    onclick="showTab('summary')">Summary</div>
-      <div class="tab"        id="tab-btn-instances"  onclick="showTab('instances')">Instances &amp; Pods</div>
-      <div class="tab"        id="tab-btn-monitor"    onclick="showTab('monitor')">Monitor</div>
-      <div class="tab"        id="tab-btn-configure"  onclick="showTab('configure')">Configure</div>
+      <div class="tab active" id="tab-btn-summary"   onclick="showTab('summary')">Summary</div>
+      <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances &amp; Pods <span class="hint">VMs &amp; Templates</span></div>
+      <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Monitor</div>
+      <div class="tab"        id="tab-btn-configure" onclick="showTab('configure')">Configure</div>
     </div>
 
     <!-- Tab bodies -->
@@ -489,56 +570,70 @@ body {
       <!-- Summary -->
       <div id="tab-summary">
         <div id="summary-content">
-          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
-            Select a node from the inventory to view its status.
-          </div>
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">Select a node from the inventory to view its status.</div>
         </div>
       </div>
 
       <!-- Instances & Pods -->
       <div id="tab-instances" style="display:none">
         <div id="instances-content">
-          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
-            Select a node to view its instances and pods.
-          </div>
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">Select a node to view its instances and pods.</div>
         </div>
       </div>
 
-      <!-- Monitor (event log) -->
+      <!-- Monitor -->
       <div id="tab-monitor" style="display:none">
-        <div class="tab-section-title">Event Log</div>
-        <div id="monitor-log"></div>
+        <div class="tab-section-title" style="margin-bottom:10px"><span>Events &amp; Alarms</span></div>
+        <div class="event-list" id="monitor-log"></div>
       </div>
 
       <!-- Configure -->
       <div id="tab-configure" style="display:none">
         <div id="configure-content">
-          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
-            Select a node to view its configuration.
-          </div>
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">Select a node to view its configuration.</div>
         </div>
       </div>
 
-    </div><!-- /tab-body -->
+    </div>
   </div><!-- /content -->
 </div><!-- /body -->
 
-<!-- Bottom event log -->
-<div id="log-panel">
-  <div class="log-panel-head">Event Log &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">S: Evacuate &nbsp; U: Drain/Undrain &nbsp; P: Pods &nbsp; R: Refresh &nbsp; Ctrl+R: Reboot</span></div>
-  <div id="log-view"></div>
+<!-- ═══ RECENT TASKS PANEL ═══ -->
+<div id="tasks-panel">
+  <div class="tasks-head">
+    Recent Tasks
+    <span class="tasks-head-right kbd-hints">
+      <b>S</b> Evacuate &nbsp; <b>U</b> Drain/Undrain &nbsp; <b>P</b> Pods &nbsp; <b>R</b> Refresh &nbsp; <b>Ctrl+R</b> Reboot
+    </span>
+  </div>
+  <div id="tasks-scroll">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>Task <span class="hint">Workflow Step</span></th>
+          <th>Node <span class="hint">ESXi Host</span></th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-tbody">
+        <tr><td colspan="5" style="color:var(--vc-dim);text-align:center;padding:10px">No active tasks — select a node and start an operation.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <!-- Reboot confirm modal -->
-<div id="modal-overlay">
-  <div id="modal-box">
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
     <h2>⚠ Reboot Node</h2>
-    <div id="modal-node-name"></div>
+    <div class="modal-node" id="modal-node-name"></div>
     <p>This will SSH into the node and issue <strong>sudo reboot</strong>.</p>
     <p>Downtime is measured until K8s reports the node Ready again.</p>
     <label>Type <strong>YES</strong> and press Enter to confirm:</label>
     <input id="modal-input" type="text" placeholder="YES" autocomplete="off">
-    <div id="modal-actions">
+    <div class="modal-actions">
       <button class="btn" onclick="cancelReboot()">Cancel</button>
       <button class="btn danger" onclick="confirmReboot()">Reboot</button>
     </div>
@@ -546,10 +641,10 @@ body {
 </div>
 
 <!-- Reboot blocked modal -->
-<div id="blocked-banner">
-  <div id="blocked-box">
+<div class="modal-overlay" id="blocked-overlay">
+  <div class="modal-box">
     <h2>⛔ Reboot Blocked — etcd Quorum Risk</h2>
-    <div id="blocked-detail"></div>
+    <div id="blocked-detail" style="font-size:12px;color:var(--vc-dim);line-height:1.6;margin-bottom:16px"></div>
     <div style="display:flex;justify-content:flex-end">
       <button class="btn" onclick="closeBlocked()">Dismiss</button>
     </div>
@@ -560,7 +655,6 @@ body {
 // ─────────────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────────────
-
 let nodes         = {};
 let selectedNode  = null;
 let pendingReboot = null;
@@ -580,19 +674,11 @@ const OP_COLOR  = {
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket
 // ─────────────────────────────────────────────────────────────────────────────
-
 function wsConnect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen  = () => {
-    document.getElementById('ws-dot').classList.add('live');
-    document.getElementById('ws-label').textContent = 'Live';
-  };
-  ws.onclose = () => {
-    document.getElementById('ws-dot').classList.remove('live');
-    document.getElementById('ws-label').textContent = 'Reconnecting…';
-    setTimeout(wsConnect, 3000);
-  };
+  ws.onopen  = () => { document.getElementById('ws-dot').classList.add('live'); document.getElementById('ws-label').textContent = 'Live'; };
+  ws.onclose = () => { document.getElementById('ws-dot').classList.remove('live'); document.getElementById('ws-label').textContent = 'Reconnecting…'; setTimeout(wsConnect, 3000); };
   ws.onerror = () => ws.close();
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -604,15 +690,11 @@ function wsConnect() {
     else if (msg.type === 'pods')                   onPods(msg);
   };
 }
-
-function send(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-}
+function send(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Message handlers
 // ─────────────────────────────────────────────────────────────────────────────
-
 function onFullState(msg) {
   nodes = msg.nodes;
   rebuildSidebar();
@@ -623,41 +705,36 @@ function onStateUpdate(msg) {
   nodes[msg.node] = msg.data;
   updateSidebarRow(msg.node);
   if (msg.node === selectedNode) renderDetail();
+  renderTasksPanel(); // always update tasks panel when any node changes
 }
 
 function onLog(msg) {
-  const colorMap = {
-    dim:       'log-dim',
-    cyan:      'log-dim',
-    magenta:   'log-magenta',
-    important: 'log-info',
-    success:   'log-success',
-    warn:      'log-warn',
-    error:     'log-error',
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  // icon + tag based on color
+  const iconMap = { success:'✅', error:'❌', warn:'⚠️', magenta:'🔄', important:'ℹ️', dim:'ℹ️', cyan:'ℹ️' };
+  const tagMap  = {
+    success: `<span class="event-tag et-ok">ok</span>`,
+    error:   `<span class="event-tag et-error">error</span>`,
+    warn:    `<span class="event-tag et-warn">warning</span>`,
+    magenta: `<span class="event-tag et-task">reboot</span>`,
+    important:`<span class="event-tag et-task">task</span>`,
   };
-  const ts    = new Date().toLocaleTimeString('en-GB', { hour12: false });
-  const cls   = colorMap[msg.color] || 'log-dim';
-  const nodeTag = (msg.node && msg.node !== '-')
-    ? `<span class="log-node">${escHtml(msg.node)}</span>  ` : '';
-  const line = `<span class="log-ts">[${ts}]</span> ${nodeTag}<span class="${cls}">${escHtml(msg.message)}</span>`;
+  const ico    = iconMap[msg.color]  || 'ℹ️';
+  const tag    = tagMap[msg.color]   || '';
+  const nodeTag = (msg.node && msg.node !== '-') ? `<strong>${escHtml(msg.node)}</strong> — ` : '';
 
-  // Bottom event log (always visible)
-  const logDiv = document.createElement('div');
-  logDiv.className = 'log-line';
-  logDiv.innerHTML = line;
-  const logView = document.getElementById('log-view');
-  logView.appendChild(logDiv);
-  while (logView.children.length > 300) logView.removeChild(logView.firstChild);
-  logView.scrollTop = logView.scrollHeight;
+  const item = document.createElement('div');
+  item.className = 'event-item';
+  item.innerHTML = `<div class="event-ico">${ico}</div>
+    <div class="event-body">
+      <div class="event-ts">${ts}</div>
+      <div class="event-msg">${nodeTag}${escHtml(msg.message)}${tag}</div>
+    </div>`;
 
-  // Monitor tab log (duplicate)
-  const monDiv = document.createElement('div');
-  monDiv.className = 'log-line';
-  monDiv.innerHTML = line;
-  const monLog = document.getElementById('monitor-log');
-  monLog.appendChild(monDiv);
-  while (monLog.children.length > 500) monLog.removeChild(monLog.firstChild);
-  if (activeTab === 'monitor') monLog.scrollTop = monLog.scrollHeight;
+  const ml = document.getElementById('monitor-log');
+  ml.appendChild(item);
+  while (ml.children.length > 200) ml.removeChild(ml.firstChild);
+  if (activeTab === 'monitor') ml.scrollTop = ml.scrollHeight;
 }
 
 function onRebootConfirmNeeded(msg) {
@@ -670,84 +747,80 @@ function onRebootConfirmNeeded(msg) {
 }
 
 function onRebootBlocked(msg) {
-  onLog({ node: msg.node, message: `✗ Reboot blocked — ${msg.detail}`, color: 'error' });
+  onLog({ node: msg.node, message: `Reboot blocked — ${msg.detail}`, color: 'error' });
   document.getElementById('blocked-detail').textContent = msg.detail;
-  document.getElementById('blocked-banner').classList.add('open');
+  document.getElementById('blocked-overlay').classList.add('open');
 }
 
 function onPods(msg) {
   if (selectedNode !== msg.node) return;
   lastPodsCache = { node: msg.node, pods: msg.pods || [] };
-  if (activeTab === 'instances') renderPodsSection(msg.node, msg.pods || []);
+  if (activeTab === 'instances') {
+    const sec = document.getElementById('pods-section');
+    if (sec) sec.innerHTML = buildPodsTableHtml(msg.node, msg.pods || []);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sidebar tree
 // ─────────────────────────────────────────────────────────────────────────────
-
 function phaseColor(nd) {
-  if (nd.phase === 'error')     return 'red';
-  if (nd.phase === 'rebooting') return 'magenta';
-  if (nd.phase === 'undraining')return 'cyan';
-  if (nd.phase === 'running')   return 'yellow';
-  if (nd.phase === 'complete')  return 'green';
-  // idle
-  if (!nd.k8s_ready)   return 'red';
-  if (nd.k8s_cordoned) return 'gray';
-  if (nd.compute_status === 'down') return 'red';
+  if (nd.phase === 'error')      return 'red';
+  if (nd.phase === 'rebooting')  return 'magenta';
+  if (nd.phase === 'undraining') return 'cyan';
+  if (nd.phase === 'running')    return 'yellow';
+  if (nd.phase === 'complete')   return 'green';
+  if (!nd.k8s_ready)             return 'red';
+  if (nd.k8s_cordoned)           return 'gray';
+  if (nd.compute_status === 'down')     return 'red';
   if (nd.compute_status === 'disabled') return 'yellow';
   return 'green';
 }
 
 function treeItemHtml(name, nd) {
-  const sel      = name === selectedNode ? ' selected' : '';
-  const etcTag   = nd.is_etcd ? `<span class="tree-tag">etcd</span>` : '';
-  const dotColor = phaseColor(nd);
-  let counts = '';
+  const sel    = name === selectedNode ? ' selected' : '';
+  const dotCls = phaseColor(nd);
+  // VMware hint: compute → ESXi, non-compute etcd → Mgmt
+  const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
+  const etcdBadge = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  let badge = '';
   if (nd.is_compute) {
-    const a = nd.amphora_count;
-    const v = nd.vm_count;
-    if (a !== null && a !== undefined && v !== null && v !== undefined) {
-      const cls = (a > 0 || v > 0) ? 'active' : '';
-      counts = `<span class="tree-counts ${cls}">${v}vm ${a}amp</span>`;
-    } else if (nd.phase !== 'idle') {
-      counts = `<span class="tree-counts active">${nd.phase}</span>`;
+    const v = nd.vm_count, a = nd.amphora_count;
+    if (v !== null && v !== undefined && a !== null && a !== undefined) {
+      const active = (v > 0 || a > 0) ? ' warn' : '';
+      if (v > 0 || a > 0) badge = `<span class="tree-badge${active}">${v}vm ${a}amp</span>`;
     }
   }
   return `<div class="tree-item${sel}" onclick="selectNode('${escAttr(name)}')" data-node="${escAttr(name)}">
-    <span class="tree-dot ${dotColor}"></span>
-    <span class="tree-name">${escHtml(name)}</span>
-    ${etcTag}${counts}
+    <span class="ti-expand"> </span>
+    <span class="ti-ico">${nd.is_compute ? '🖥️' : nd.is_etcd ? '🔵' : '⚙️'}</span>
+    <span class="tree-dot ${dotCls}"></span>
+    <span class="ti-name">${escHtml(name)}</span>
+    <span class="hint">${hintTxt}</span>
+    ${etcdBadge}${badge}
   </div>`;
 }
 
 function rebuildSidebar() {
-  const tree = document.getElementById('tree');
-  const computeNodes = Object.entries(nodes).filter(([,nd]) => nd.is_compute);
-  const otherNodes   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
-
+  const tree    = document.getElementById('tree');
+  const compute = Object.entries(nodes).filter(([,nd]) => nd.is_compute);
+  const other   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
   let html = '';
-  if (computeNodes.length) {
-    html += `<div class="tree-group-header">
-      🖥 Compute Nodes <span class="tree-count">${computeNodes.length}</span>
-    </div>`;
-    for (const [name, nd] of computeNodes) html += treeItemHtml(name, nd);
+  if (compute.length) {
+    html += `<div class="tree-group"><span class="tree-expand">▼</span> 🖥️ Compute Nodes <span class="tree-count">${compute.length}</span></div>`;
+    for (const [name, nd] of compute) html += treeItemHtml(name, nd);
   }
-  if (otherNodes.length) {
-    html += `<div class="tree-group-header">
-      ⚙ Other Nodes <span class="tree-count">${otherNodes.length}</span>
-    </div>`;
-    for (const [name, nd] of otherNodes) html += treeItemHtml(name, nd);
+  if (other.length) {
+    html += `<div class="tree-group"><span class="tree-expand">▼</span> ⚙️ Other Nodes <span class="tree-count">${other.length}</span></div>`;
+    for (const [name, nd] of other) html += treeItemHtml(name, nd);
   }
-  if (!computeNodes.length && !otherNodes.length) {
-    html = '<div class="tree-group-header">No nodes loaded</div>';
-  }
+  if (!compute.length && !other.length)
+    html = `<div class="tree-group"><span class="tree-expand">▼</span> No nodes loaded</div>`;
   tree.innerHTML = html;
 }
 
 function updateSidebarRow(name) {
-  const nd  = nodes[name];
-  if (!nd) return;
+  const nd = nodes[name]; if (!nd) return;
   const el = document.querySelector(`[data-node="${escAttr(name)}"]`);
   if (!el) { rebuildSidebar(); return; }
   const tmp = document.createElement('div');
@@ -758,14 +831,11 @@ function updateSidebarRow(name) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Node selection
 // ─────────────────────────────────────────────────────────────────────────────
-
 function selectNode(name) {
   selectedNode = name;
-  // reset pods state on node switch
-  showPods = false;
-  lastPodsCache = null;
+  showPods = false; lastPodsCache = null;
   document.getElementById('btn-pods').textContent = '⬡ Pods';
-
+  document.getElementById('bc-pods').textContent  = '⬡ Pods';
   const nd = nodes[name];
   if (nd) {
     if (nd.is_etcd) {
@@ -779,30 +849,34 @@ function selectNode(name) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Detail rendering (header + active tab)
+// Detail rendering
 // ─────────────────────────────────────────────────────────────────────────────
-
 function renderDetail() {
   if (!selectedNode || !nodes[selectedNode]) {
     renderObjHeaderEmpty();
     updateActionButtons(null);
+    updateBreadcrumb(null);
+    renderTasksPanel();
     return;
   }
   const nd = nodes[selectedNode];
   renderObjHeader(nd);
   updateActionButtons(nd);
+  updateBreadcrumb(nd);
+  renderTasksPanel();
   renderActiveTab(nd);
 }
 
 function renderObjHeaderEmpty() {
+  document.getElementById('oh-icon').textContent = '🖥️';
   document.getElementById('oh-name').textContent = 'Select a node';
   document.getElementById('oh-sub').textContent  = 'Choose a node from the inventory to view its status and manage operations.';
   document.getElementById('oh-badges').innerHTML = '';
 }
 
 function renderObjHeader(nd) {
+  document.getElementById('oh-icon').textContent = nd.is_compute ? '🖥️' : nd.is_etcd ? '🔵' : '⚙️';
   document.getElementById('oh-name').textContent = nd.k8s_name;
-
   const parts = [];
   if (nd.hypervisor && nd.hypervisor !== nd.k8s_name) parts.push(`Hypervisor: ${nd.hypervisor}`);
   if (nd.uptime)         parts.push(`Uptime: ${nd.uptime}`);
@@ -810,50 +884,46 @@ function renderObjHeader(nd) {
   document.getElementById('oh-sub').textContent = parts.join('  ·  ') || '';
 
   const badges = [];
-  // Phase badge
-  const phaseColors = {
-    idle:'', running:'yellow', complete:'green', error:'red',
-    rebooting:'magenta', undraining:'cyan',
-  };
-  const phaseLabels = {
-    idle:'', running:'Workflow Running', complete:'Complete', error:'Error',
-    rebooting:'Rebooting', undraining:'Undraining',
-  };
-  if (nd.phase !== 'idle') {
-    const pc = phaseColors[nd.phase] || 'gray';
-    badges.push(`<span class="badge ${pc}">${phaseLabels[nd.phase] || nd.phase.toUpperCase()}</span>`);
-  }
-  // K8s status
-  if (!nd.k8s_ready)         badges.push(`<span class="badge red">● K8s Not Ready</span>`);
+  const phaseColors = { running:'yellow', complete:'green', error:'red', rebooting:'magenta', undraining:'cyan' };
+  const phaseLabels = { running:'Workflow Running', complete:'Complete', error:'Error', rebooting:'Rebooting', undraining:'Undraining' };
+  if (nd.phase !== 'idle')
+    badges.push(`<span class="badge ${phaseColors[nd.phase]||'gray'}">${phaseLabels[nd.phase]||nd.phase.toUpperCase()}</span>`);
+  if      (!nd.k8s_ready)    badges.push(`<span class="badge red">● K8s Not Ready</span>`);
   else if (nd.k8s_cordoned)  badges.push(`<span class="badge gray">Cordoned</span>`);
-  else if (nd.phase === 'idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
-  // Nova status
+  else if (nd.phase==='idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
   if (nd.is_compute) {
-    if (nd.compute_status === 'up')       badges.push(`<span class="badge green">● Nova Up</span>`);
+    if      (nd.compute_status === 'up')       badges.push(`<span class="badge green">● Nova Up</span>`);
     else if (nd.compute_status === 'disabled') badges.push(`<span class="badge yellow">Nova Disabled</span>`);
     else if (nd.compute_status === 'down')     badges.push(`<span class="badge red">Nova DOWN</span>`);
-    else if (!nd.compute_status)               badges.push(`<span class="badge gray">Nova Loading…</span>`);
+    else if (!nd.compute_status)               badges.push(`<span class="badge gray">Nova …</span>`);
     badges.push(`<span class="badge blue">Compute Node</span>`);
   }
   if (nd.is_etcd) badges.push(`<span class="badge red">etcd</span>`);
-
   document.getElementById('oh-badges').innerHTML = badges.join('');
+}
+
+function updateBreadcrumb(nd) {
+  const sep  = document.getElementById('bc-sep');
+  const node = document.getElementById('bc-node');
+  if (nd) {
+    sep.style.display  = '';
+    node.textContent   = nd.k8s_name;
+  } else {
+    sep.style.display  = 'none';
+    node.textContent   = '';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tabs
 // ─────────────────────────────────────────────────────────────────────────────
-
 function showTab(name) {
   activeTab = name;
   ['summary','instances','monitor','configure'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display      = t === name ? '' : 'none';
+    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
-  if (name === 'monitor') {
-    const ml = document.getElementById('monitor-log');
-    setTimeout(() => ml.scrollTop = ml.scrollHeight, 0);
-  }
+  if (name === 'monitor') { const ml = document.getElementById('monitor-log'); setTimeout(()=>ml.scrollTop=ml.scrollHeight,0); }
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
 }
 
@@ -865,33 +935,97 @@ function renderActiveTab(nd) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Recent Tasks panel
+// ─────────────────────────────────────────────────────────────────────────────
+function stepProgress(status) {
+  if (status === 'success')  return { pct:100, cls:'done' };
+  if (status === 'failed')   return { pct:100, cls:'fail' };
+  if (status === 'skipped')  return { pct:100, cls:'skip' };
+  if (status === 'running')  return { pct:55,  cls:'' };
+  return { pct:0, cls:'' };
+}
+
+function renderTasksPanel() {
+  const tbody = document.getElementById('tasks-tbody');
+  const nd    = selectedNode ? nodes[selectedNode] : null;
+
+  if (!nd || !nd.steps || !nd.steps.length) {
+    // Show a hint row from any actively running node instead
+    const activeNode = Object.values(nodes).find(n => n.steps && n.steps.length && n.phase !== 'idle');
+    if (activeNode) {
+      renderStepsAsTaskRows(tbody, activeNode);
+    } else {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--vc-dim);text-align:center;padding:10px">No active tasks — select a node and start an operation.</td></tr>`;
+    }
+    return;
+  }
+  renderStepsAsTaskRows(tbody, nd);
+}
+
+function renderStepsAsTaskRows(tbody, nd) {
+  const now = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  let html = '';
+  for (const s of nd.steps) {
+    const prog = stepProgress(s.status);
+    const statusHtml = s.status === 'running'
+      ? `<span class="task-status"><span class="spinner">⟳</span> Running…</span>`
+      : s.status === 'success'
+        ? `<span style="color:var(--green)">✓ Done</span>`
+        : s.status === 'failed'
+          ? `<span style="color:var(--red)">✗ Failed</span>`
+          : s.status === 'skipped'
+            ? `<span style="color:var(--vc-dim)">— Skipped</span>`
+            : `<span style="color:var(--vc-dim)">○ Pending</span>`;
+    html += `<tr>
+      <td>${escHtml(s.label)}</td>
+      <td>${escHtml(nd.k8s_name)}</td>
+      <td>${statusHtml}</td>
+      <td>
+        <div class="progress-inline">
+          <div class="prog-bar"><div class="prog-fill ${prog.cls}" style="width:${prog.pct}%"></div></div>
+          ${prog.pct}%
+        </div>
+      </td>
+      <td style="color:var(--vc-dim)">${now}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary tab
 // ─────────────────────────────────────────────────────────────────────────────
-
 function renderSummaryTab(nd) {
   let h = '';
 
-  // ── etcd quorum block ──
+  // ── Concept map banner ──
+  h += `<div class="concept-map">
+    <strong>💡 VMware → OpenStack/K8s quick reference for this node:</strong>
+    <div class="cm-grid">
+      <span class="cm-from">ESXi Host</span><span class="cm-arrow">→</span><span class="cm-to">Nova Hypervisor + K8s Node</span>
+      <span class="cm-from">Enter Maintenance Mode</span><span class="cm-arrow">→</span><span class="cm-to">Disable Nova + Cordon + Drain pods</span>
+      <span class="cm-from">vMotion</span><span class="cm-arrow">→</span><span class="cm-to">Nova Live Migration</span>
+      <span class="cm-from">VM</span><span class="cm-arrow">→</span><span class="cm-to">Nova Instance (+ K8s Pod if containerised)</span>
+    </div>
+    <div style="margin-top:5px;font-size:10px"><a href="#" onclick="showTab('configure');return false" style="color:#0072c6">Full VMware reference →</a></div>
+  </div>`;
+
+  // ── etcd quorum ──
   if (nd.is_etcd) {
-    const peers   = Object.values(nodes).filter(n => n.is_etcd);
-    const total   = peers.length;
-    const quorum  = Math.floor(total / 2) + 1;
-    const safeDn  = total - quorum;
-    const anyChecking = peers.some(n => n.etcd_checking);
-    if (anyChecking) {
+    const peers = Object.values(nodes).filter(n => n.is_etcd);
+    const total = peers.length, quorum = Math.floor(total/2)+1, safeDn = total-quorum;
+    if (peers.some(n => n.etcd_checking)) {
       h += `<div class="etcd-alert checking"><span class="spinner">⟳</span> Checking etcd health on all ${total} etcd nodes…</div>`;
     } else {
       const checked = peers.filter(n => n.etcd_healthy !== null && n.etcd_healthy !== undefined);
       if (!checked.length) {
         h += `<div class="etcd-alert">⚠ etcd node — health unknown (will be checked before reboot)</div>`;
       } else {
-        const healthy   = peers.filter(n => n.etcd_healthy === true).length;
+        const healthy = peers.filter(n => n.etcd_healthy === true).length;
         const remaining = healthy - (nd.etcd_healthy === true ? 1 : 0);
-        const atRisk    = remaining < quorum;
-        const peerList  = peers.map(p =>
-          `${escHtml(p.k8s_name)} ${p.etcd_healthy === true ? '✓' : p.etcd_healthy === false ? '✗' : '?'}`
-        ).join('  ·  ');
-        h += `<div class="etcd-alert ${atRisk ? 'danger' : ''}">
+        const atRisk = remaining < quorum;
+        const peerList = peers.map(p => `${escHtml(p.k8s_name)} ${p.etcd_healthy===true?'✓':p.etcd_healthy===false?'✗':'?'}`).join('  ·  ');
+        h += `<div class="etcd-alert ${atRisk?'danger':''}">
           ${atRisk
             ? `⚠ ETCD QUORUM RISK — ${healthy}/${total} healthy, reboot would leave ${remaining} available (quorum=${quorum})`
             : `⚠ etcd — ${healthy}/${total} healthy · safe to work on ${safeDn} at a time`}
@@ -907,115 +1041,92 @@ function renderSummaryTab(nd) {
     h += `<div class="downtime-counter">⏱ Downtime: ${elapsed}s</div>`;
   }
 
-  // ── Workflow steps (when active) ──
+  // ── Workflow steps ──
   if (nd.steps && nd.steps.length) {
-    h += `<div class="steps-section">
-      <div class="steps-title">Workflow Steps</div>`;
+    h += `<div class="steps-section"><div class="steps-title">Workflow Steps</div>`;
     for (const s of nd.steps) {
-      const icon = STEP_ICON[s.status] || '○';
-      const spin = s.status === 'running' ? ' <span class="spinner">⟳</span>' : '';
+      const spin = s.status==='running' ? ' <span class="spinner">⟳</span>' : '';
       h += `<div class="step-row ${s.status}">
-        <span class="step-icon">${icon}${spin}</span>
+        <span class="step-icon">${STEP_ICON[s.status]||'○'}${spin}</span>
         <span class="step-label">${escHtml(s.label)}</span>
-        ${s.detail ? `<span class="step-detail">${escHtml(s.detail)}</span>` : ''}
+        ${s.detail?`<span class="step-detail">${escHtml(s.detail)}</span>`:''}
       </div>`;
     }
     h += `</div>`;
-
-    // Reboot complete banner
-    if (nd.phase === 'idle' && nd.reboot_downtime !== null && nd.reboot_downtime !== undefined) {
+    if (nd.phase==='idle' && nd.reboot_downtime!==null && nd.reboot_downtime!==undefined)
       h += `<div class="reboot-complete">✓ Reboot complete — total downtime: ${Math.round(nd.reboot_downtime)}s</div>`;
-    }
-    // Idle hints
-    if (nd.phase === 'idle') {
-      if (nd.k8s_cordoned || nd.compute_status === 'disabled')
-        h += `<div class="idle-hint">Click <strong>Drain (Undrain)</strong> to re-enable this node.</div>`;
-      else
-        h += `<div class="idle-hint">Click <strong>Evacuate</strong> to start the full evacuation workflow, or <strong>Drain</strong> for a quick drain-only operation.</div>`;
-    }
-    // Non-compute note
-    if (!nd.is_compute && nd.phase === 'idle') {
-      if (nd.k8s_cordoned)
-        h += `<div class="idle-hint">Node is cordoned — click <strong>Drain (Undrain)</strong> to uncordon.</div>`;
+    if (nd.phase==='idle') {
+      if (nd.k8s_cordoned || nd.compute_status==='disabled')
+        h += `<div class="idle-hint">Node is drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
     }
   }
 
   // ── Status cards ──
   h += `<div class="summary-grid">`;
-
-  // Nova card (compute only)
   if (nd.is_compute) {
-    const novaColor = nd.compute_status === 'up' ? 'green' : nd.compute_status === 'disabled' ? 'yellow' : nd.compute_status === 'down' ? 'red' : 'gray';
-    const novaLabel = nd.compute_status === 'up' ? 'enabled' : nd.compute_status || '…';
-    const vms  = nd.vm_count      !== null && nd.vm_count      !== undefined ? nd.vm_count      : '…';
-    const amps = nd.amphora_count  !== null && nd.amphora_count  !== undefined ? nd.amphora_count  : '…';
+    const nc = nd.compute_status==='up'?'green':nd.compute_status==='disabled'?'yellow':nd.compute_status==='down'?'red':'gray';
+    const nl = nd.compute_status==='up'?'enabled':nd.compute_status||'…';
+    const v  = nd.vm_count!==null&&nd.vm_count!==undefined?nd.vm_count:'…';
+    const a  = nd.amphora_count!==null&&nd.amphora_count!==undefined?nd.amphora_count:'…';
     h += `<div class="card">
-      <div class="card-title">Nova (OpenStack Compute)</div>
+      <div class="card-title">Nova Compute <span class="hint">VMware Cluster</span></div>
       <div class="card-body">
-        <div class="mrow"><span class="ml">Service state</span><span class="mv ${novaColor}">${escHtml(novaLabel)}</span></div>
-        <div class="mrow"><span class="ml">Running instances</span><span class="mv">${vms}</span></div>
-        <div class="mrow"><span class="ml">Amphora (LB) instances</span><span class="mv ${amps > 0 ? 'yellow' : ''}">${amps}</span></div>
-        <div class="mrow"><span class="ml">Hypervisor hostname</span><span class="mv dim">${escHtml(nd.hypervisor)}</span></div>
+        <div class="mrow"><span class="ml">Service state</span><span class="mv ${nc}">${escHtml(nl)}</span></div>
+        <div class="mrow"><span class="ml">Instances (VMs) <span class="hint">VMs</span></span><span class="mv">${v}</span></div>
+        <div class="mrow"><span class="ml">Amphora LBs <span class="hint">NSX LB</span></span><span class="mv ${a>0?'yellow':''}">${a}</span></div>
+        <div class="mrow"><span class="ml">Hypervisor</span><span class="mv dim">${escHtml(nd.hypervisor)}</span></div>
       </div>
     </div>`;
   }
-
-  // K8s card
-  const readyLabel = nd.k8s_cordoned ? 'Cordoned' : nd.k8s_ready ? 'Ready' : 'Not Ready';
-  const readyColor = nd.k8s_cordoned ? 'gray'     : nd.k8s_ready ? 'green' : 'red';
+  const rl = nd.k8s_cordoned?'Cordoned':nd.k8s_ready?'Ready':'Not Ready';
+  const rc = nd.k8s_cordoned?'gray':nd.k8s_ready?'green':'red';
   h += `<div class="card">
-    <div class="card-title">Kubernetes Node</div>
+    <div class="card-title">Kubernetes Node <span class="hint">ESXi Host</span></div>
     <div class="card-body">
-      <div class="mrow"><span class="ml">Status</span><span class="mv ${readyColor}">${readyLabel}</span></div>
-      <div class="mrow"><span class="ml">Cordoned</span><span class="mv ${nd.k8s_cordoned ? 'yellow' : 'green'}">${nd.k8s_cordoned ? 'Yes' : 'No'}</span></div>
-      <div class="mrow"><span class="ml">etcd role</span><span class="mv ${nd.is_etcd ? 'red' : 'dim'}">${nd.is_etcd ? 'Yes' : 'No'}</span></div>
-      ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>` : ''}
-      ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${escHtml(nd.kernel_version)}</span></div>` : ''}
+      <div class="mrow"><span class="ml">Status</span><span class="mv ${rc}">${rl}</span></div>
+      <div class="mrow"><span class="ml">Cordoned <span class="hint">In Maintenance</span></span><span class="mv ${nd.k8s_cordoned?'yellow':'green'}">${nd.k8s_cordoned?'Yes':'No'}</span></div>
+      <div class="mrow"><span class="ml">etcd role</span><span class="mv ${nd.is_etcd?'red':'dim'}">${nd.is_etcd?'Yes':'No'}</span></div>
+      ${nd.uptime?`<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>`:''}
+      ${nd.kernel_version?`<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${escHtml(nd.kernel_version)}</span></div>`:''}
     </div>
   </div>`;
+  h += `</div>`;
 
-  h += `</div>`; // /summary-grid
-
-  // ── Idle compute: preflight preview ──
-  if (nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
+  // ── Idle compute preflight preview ──
+  if (nd.is_compute && nd.phase==='idle' && (!nd.steps||!nd.steps.length)) {
     if (nd.preflight_loading) {
       h += `<div style="color:var(--vc-dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Fetching instances on this hypervisor…</div>`;
     } else if (nd.preflight_instances && nd.preflight_instances.length) {
-      const vms  = nd.preflight_instances.filter(i => !i.is_amphora);
-      const amps = nd.preflight_instances.filter(i =>  i.is_amphora);
+      const vms  = nd.preflight_instances.filter(i=>!i.is_amphora);
+      const amps = nd.preflight_instances.filter(i=>i.is_amphora);
       if (vms.length) {
         h += `<div class="steps-section">
-          <div class="steps-title">Instances on this hypervisor (pre-flight preview)</div>
+          <div class="steps-title">Instances on this hypervisor <span class="hint">VMs on ESXi</span></div>
           <table class="inst-table">
-            <thead><tr><th>Name</th><th>Status</th><th>Storage</th></tr></thead>
+            <thead><tr><th>Name <span class="hint">VM Name</span></th><th>Status</th><th>Storage <span class="hint">Datastore</span></th></tr></thead>
             <tbody>`;
-        for (const inst of vms) {
-          const st = inst.is_volume_backed
-            ? `<span class="vol-tag">Volume-backed</span>`
-            : `<span class="eph-tag">Ephemeral</span>`;
-          h += `<tr><td>${escHtml(inst.name)}</td><td>${escHtml(inst.status)}</td><td>${st}</td></tr>`;
+        for (const i of vms) {
+          const st = i.is_volume_backed ? `<span class="tag-vol">Volume-backed</span>` : `<span class="tag-eph">Ephemeral</span>`;
+          h += `<tr><td>${escHtml(i.name)}</td><td>${escHtml(i.status)}</td><td>${st}</td></tr>`;
         }
         h += `</tbody></table>`;
-        if (amps.length) h += `<div style="font-size:11px;color:var(--vc-dim);margin-top:6px">+ ${amps.length} Amphora (load balancer) instance(s)</div>`;
+        if (amps.length) h += `<div style="font-size:11px;color:var(--vc-dim);margin-top:6px">+ ${amps.length} Amphora (Octavia LB) instance(s)</div>`;
         h += `</div>`;
-      } else if (amps.length) {
+      } else {
         h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">${amps.length} Amphora instance(s) only — no regular VMs.</div>`;
       }
     } else if (nd.preflight_instances && !nd.preflight_instances.length) {
       h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">No instances running on this hypervisor.</div>`;
     }
-    if (!nd.steps || !nd.steps.length) {
-      h += `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow.</div>`;
-      if (nd.k8s_cordoned || nd.compute_status === 'disabled')
+    if (!nd.steps||!nd.steps.length) {
+      h += `<div class="idle-hint">Click <strong>Evacuate</strong> to start the full evacuation workflow.</div>`;
+      if (nd.k8s_cordoned||nd.compute_status==='disabled')
         h += `<div class="idle-hint">Node is partially drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
     }
   }
-
-  // Non-compute idle
-  if (!nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
-    h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Non-compute node — no OpenStack evacuation needed.</div>`;
-    if (nd.k8s_cordoned)
-      h += `<div class="idle-hint">Node is cordoned — click <strong>Drain (Undrain)</strong> to uncordon.</div>`;
+  if (!nd.is_compute && nd.phase==='idle' && (!nd.steps||!nd.steps.length)) {
+    h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Non-compute node — no OpenStack evacuation required.</div>`;
+    if (nd.k8s_cordoned) h += `<div class="idle-hint">Node is cordoned — click <strong>Drain (Undrain)</strong> to uncordon.</div>`;
   }
 
   document.getElementById('summary-content').innerHTML = h;
@@ -1024,191 +1135,170 @@ function renderSummaryTab(nd) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Instances & Pods tab
 // ─────────────────────────────────────────────────────────────────────────────
-
 function renderInstancesTab(nd) {
   let h = '';
 
-  // ── Live migration instances (workflow running) ──
+  // ── Toolbar ──
+  h += `<div class="inst-toolbar">
+    <button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>
+    <button class="btn" onclick="actionDrainOrUndrain()">${(nd.k8s_cordoned||nd.compute_status==='disabled')?'↺ Undrain':'▽ Drain'}</button>
+    <button class="btn" id="inst-pods-btn" onclick="actionPodsInline()">⬡ ${showPods&&lastPodsCache?'Refresh':'Load'} Pods</button>
+    <span style="flex:1"></span>
+    <input class="toolbar-filter" type="text" placeholder="Filter…" id="inst-filter" oninput="filterInstTable()">
+  </div>`;
+
+  // ── Instances ──
   if (nd.instances && nd.instances.length) {
-    h += `<div class="tab-section-title">
-      <span>Nova Instances — Migration Status</span>
-    </div>
-    <table class="data-table">
+    // Live migration table
+    h += `<div class="tab-section-title"><span>Nova Instances — Migration Status <span class="hint">vMotion Progress</span></span></div>
+    <table class="data-table" id="inst-data-table">
       <thead><tr>
-        <th>Name</th><th>Type</th><th>Nova State</th><th>Operation Status</th>
+        <th>Name <span class="hint">VM Name</span></th>
+        <th>Type</th>
+        <th>Nova State <span class="hint">Power State</span></th>
+        <th>Operation <span class="hint">vMotion</span></th>
       </tr></thead>
       <tbody>`;
     for (const inst of nd.instances) {
-      const tp  = inst.is_amphora ? `<span class="amp-tag">Amphora LB</span>` : 'VM';
-      const op  = inst.is_amphora ? (inst.failover_status || 'pending') : (inst.migration_status || 'pending');
-      const cls = OP_COLOR[op] || '';
-      const phCls = op === 'complete' ? 'ph-complete' : op === 'failed' ? 'ph-failed' :
-                    (op === 'migrating' || op === 'cold-migrating' || op === 'confirming' || op === 'failing_over') ? 'ph-migrating' : 'ph-queued';
-      h += `<tr>
-        <td>${escHtml(inst.name)}</td>
-        <td>${tp}</td>
-        <td><span class="sdot ${inst.status === 'ACTIVE' ? 'green' : inst.status === 'ERROR' ? 'red' : 'gray'}"></span>${escHtml(inst.status)}</td>
-        <td><span class="phase-badge ${phCls}">${escHtml(op)}</span></td>
-      </tr>`;
+      const tp  = inst.is_amphora ? `<span class="tag-amp">Amphora LB</span>` : 'VM';
+      const op  = inst.is_amphora ? (inst.failover_status||'pending') : (inst.migration_status||'pending');
+      const phc = op==='complete'?'ph-complete':op==='failed'?'ph-failed':(op==='migrating'||op==='cold-migrating'||op==='confirming'||op==='failing_over')?'ph-migrate':'ph-queued';
+      const dotc= inst.status==='ACTIVE'?'green':inst.status==='ERROR'?'red':'gray';
+      h += `<tr><td>${escHtml(inst.name)}</td><td>${tp}</td>
+        <td><span class="sdot ${dotc}"></span>${escHtml(inst.status)}</td>
+        <td><span class="ph-badge ${phc}">${escHtml(op)}</span></td></tr>`;
     }
     h += `</tbody></table>`;
-
-  // ── Preflight instances (idle compute) ──
   } else if (nd.is_compute) {
-    h += `<div class="tab-section-title"><span>Nova Instances</span></div>`;
+    h += `<div class="tab-section-title"><span>Nova Instances <span class="hint">VMs &amp; Templates</span></span></div>`;
     if (nd.preflight_loading) {
-      h += `<div style="color:var(--vc-dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Loading instances…</div>`;
+      h += `<div style="color:var(--vc-dim);padding:8px 0;font-size:12px"><span class="spinner">⟳</span> Loading instances…</div>`;
     } else if (nd.preflight_instances && nd.preflight_instances.length) {
-      h += `<table class="data-table">
-        <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Storage</th></tr></thead>
-        <tbody>`;
-      for (const inst of nd.preflight_instances) {
-        const tp = inst.is_amphora
-          ? `<span class="amp-tag">Amphora LB</span>` : 'VM';
-        const st = inst.is_volume_backed
-          ? `<span class="vol-tag">Volume</span>` : `<span class="eph-tag">Ephemeral</span>`;
-        h += `<tr>
-          <td>${escHtml(inst.name)}</td>
-          <td><span class="sdot green"></span>${escHtml(inst.status)}</td>
-          <td>${tp}</td>
-          <td>${st}</td>
-        </tr>`;
+      h += `<table class="data-table" id="inst-data-table">
+        <thead><tr>
+          <th>Name <span class="hint">VM Name</span></th>
+          <th>Status <span class="hint">Power State</span></th>
+          <th>Type</th>
+          <th>Storage <span class="hint">Datastore</span></th>
+        </tr></thead><tbody>`;
+      for (const i of nd.preflight_instances) {
+        const tp = i.is_amphora ? `<span class="tag-amp">Amphora LB</span>` : 'VM';
+        const st = i.is_volume_backed ? `<span class="tag-vol">Volume</span>` : `<span class="tag-eph">Ephemeral</span>`;
+        h += `<tr><td>${escHtml(i.name)}</td><td><span class="sdot green"></span>${escHtml(i.status)}</td><td>${tp}</td><td>${st}</td></tr>`;
       }
       h += `</tbody></table>`;
     } else {
       h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">No instances running on this hypervisor.</div>`;
     }
   } else {
-    h += `<div class="tab-section-title"><span>Nova Instances</span></div>
+    h += `<div class="tab-section-title"><span>Nova Instances <span class="hint">VMs</span></span></div>
       <div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Non-compute node — no Nova instances.</div>`;
   }
 
-  // ── Pods section ──
-  h += `<div class="tab-section-title" style="margin-top:8px">
-    <span>Kubernetes Pods</span>
-    <button class="btn" id="btn-pods-inline" onclick="actionPodsInline()">
-      ${showPods ? '↺ Refresh Pods' : '⬡ Load Pods'}
-    </button>
-  </div>
+  // ── Pods ──
+  h += `<div class="tab-section-title" style="margin-top:10px"><span>Kubernetes Pods <span class="hint">VMs (containerised workloads)</span></span></div>
   <div id="pods-section">`;
-  if (!showPods && !lastPodsCache) {
-    h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Click "Load Pods" to fetch current pods on this node.</div>`;
-  } else if (lastPodsCache && lastPodsCache.node === nd.k8s_name) {
-    h += buildPodsTableHtml(lastPodsCache.pods);
-  } else {
+  if (showPods && lastPodsCache && lastPodsCache.node===nd.k8s_name) {
+    h += buildPodsTableHtml(nd.k8s_name, lastPodsCache.pods);
+  } else if (showPods) {
     h += `<div style="color:var(--vc-dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
+  } else {
+    h += `<div style="color:var(--vc-dim);font-size:12px">Click <strong>Load Pods</strong> above to fetch current pods on this node.</div>`;
   }
   h += `</div>`;
 
   document.getElementById('instances-content').innerHTML = h;
 }
 
-function renderPodsSection(nodeName, pods) {
-  lastPodsCache = { node: nodeName, pods };
-  const sec = document.getElementById('pods-section');
-  if (sec) sec.innerHTML = buildPodsTableHtml(pods);
+function filterInstTable() {
+  const q = (document.getElementById('inst-filter')?.value||'').toLowerCase();
+  const tbl = document.getElementById('inst-data-table');
+  if (!tbl) return;
+  for (const row of tbl.tBodies[0].rows) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  }
 }
 
-function buildPodsTableHtml(allPods) {
-  if (allPods.length === 1 && allPods[0].error)
+function buildPodsTableHtml(nodeName, allPods) {
+  if (allPods.length===1 && allPods[0].error)
     return `<div style="color:var(--red);font-size:12px">${escHtml(allPods[0].error)}</div>`;
   if (!allPods.length)
     return `<div style="color:var(--vc-dim);font-size:12px">No pods scheduled on this node.</div>`;
-
-  const succeeded = allPods.filter(p => p.phase === 'Succeeded');
-  const visible   = hideSucceeded ? allPods.filter(p => p.phase !== 'Succeeded') : allPods;
-  const sorted    = [...visible].sort((a,b) => (a.namespace+a.name).localeCompare(b.namespace+b.name));
-
+  const succeeded = allPods.filter(p=>p.phase==='Succeeded');
+  const visible   = hideSucceeded ? allPods.filter(p=>p.phase!=='Succeeded') : allPods;
+  const sorted    = [...visible].sort((a,b)=>(a.namespace+a.name).localeCompare(b.namespace+b.name));
   let rows = '';
   for (const p of sorted) {
-    const ready    = `${p.ready_count}/${p.total_count}`;
-    const phase    = p.phase || 'Unknown';
-    const age      = p.created_at ? podAge(p.created_at) : '?';
-    const rCls     = p.ready_count === p.total_count ? 'green' : 'yellow';
-    const pCls     = phase === 'Running' ? 'green' : phase === 'Pending' ? 'yellow' : phase === 'Succeeded' ? '' : 'red';
-    rows += `<tr>
-      <td style="color:var(--vc-dim)">${escHtml(p.namespace)}</td>
+    const ready = `${p.ready_count}/${p.total_count}`;
+    const phase = p.phase||'Unknown';
+    const age   = p.created_at ? podAge(p.created_at) : '?';
+    const rCls  = p.ready_count===p.total_count?'green':'yellow';
+    const pCls  = phase==='Running'?'green':phase==='Pending'?'yellow':phase==='Succeeded'?'gray':'red';
+    rows += `<tr><td style="color:var(--vc-dim)">${escHtml(p.namespace)}</td>
       <td>${escHtml(p.name)}</td>
-      <td><span style="color:var(--${rCls === 'green' ? 'green' : 'yellow-lt'})">${escHtml(ready)}</span></td>
+      <td><span class="sdot ${rCls}"></span>${escHtml(ready)}</td>
       <td><span class="sdot ${pCls}"></span>${escHtml(phase)}</td>
       <td>${p.restarts}</td>
-      <td style="color:var(--vc-dim)">${escHtml(age)}</td>
-    </tr>`;
+      <td style="color:var(--vc-dim)">${escHtml(age)}</td></tr>`;
   }
-
   let footer = `${visible.length} pod(s)`;
-  let toggleHtml = '';
+  let toggle = '';
   if (succeeded.length) {
-    if (hideSucceeded) {
-      footer += ` &nbsp;·&nbsp; ${succeeded.length} Succeeded hidden`;
-      toggleHtml = `<a href="#" onclick="toggleSucceeded();return false" style="color:var(--vc-blue);margin-left:6px">show</a>`;
-    } else {
-      footer += ` (${succeeded.length} Succeeded shown)`;
-      toggleHtml = `<a href="#" onclick="toggleSucceeded();return false" style="color:var(--vc-blue);margin-left:6px">hide</a>`;
-    }
+    footer += hideSucceeded ? ` · ${succeeded.length} Succeeded hidden` : ` (${succeeded.length} Succeeded)`;
+    toggle = ` <a href="#" onclick="toggleSucceeded();return false" style="color:var(--vc-blue)">${hideSucceeded?'show':'hide'}</a>`;
   }
-
   return `<table class="data-table">
-    <thead><tr>
-      <th>Namespace</th><th>Name</th><th>Ready</th><th>Status</th><th>Restarts</th><th>Age</th>
-    </tr></thead>
+    <thead><tr><th>Namespace</th><th>Name</th><th>Ready</th><th>Status</th><th>Restarts</th><th>Age</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div style="font-size:11px;color:var(--vc-dim);margin-top:4px">${footer}${toggleHtml}</div>`;
+  <div style="font-size:11px;color:var(--vc-dim);margin-top:4px">${footer}${toggle}</div>`;
 }
 
 function toggleSucceeded() {
   hideSucceeded = !hideSucceeded;
-  if (lastPodsCache && selectedNode === lastPodsCache.node) {
+  if (lastPodsCache && selectedNode===lastPodsCache.node) {
     const sec = document.getElementById('pods-section');
-    if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
+    if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.node, lastPodsCache.pods);
   }
 }
-
 function podAge(iso) {
-  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  const s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+  const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);
+  return d>0?`${d}d ${h}h`:h>0?`${h}h ${m}m`:`${m}m`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configure tab
 // ─────────────────────────────────────────────────────────────────────────────
-
 function renderConfigureTab(nd) {
   let h = `<div class="summary-grid" style="margin-bottom:16px">
     <div class="card">
       <div class="card-title">Node Details</div>
       <div class="card-body">
         <div class="mrow"><span class="ml">K8s node name</span><span class="mv">${escHtml(nd.k8s_name)}</span></div>
-        <div class="mrow"><span class="ml">Nova hypervisor</span><span class="mv">${escHtml(nd.hypervisor)}</span></div>
-        ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv">${escHtml(nd.kernel_version)}</span></div>` : ''}
-        ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>` : ''}
-        <div class="mrow"><span class="ml">Is compute</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
-        <div class="mrow"><span class="ml">Is etcd</span><span class="mv ${nd.is_etcd ? 'red' : ''}">${nd.is_etcd ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">Nova hypervisor <span class="hint">ESXi FQDN</span></span><span class="mv dim">${escHtml(nd.hypervisor)}</span></div>
+        ${nd.kernel_version?`<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${escHtml(nd.kernel_version)}</span></div>`:''}
+        ${nd.uptime?`<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>`:''}
+        <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute?'Yes':'No'}</span></div>
+        <div class="mrow"><span class="ml">Carries etcd role</span><span class="mv ${nd.is_etcd?'red':''}">${nd.is_etcd?'Yes':'No'}</span></div>
       </div>
     </div>`;
-
   if (nd.is_etcd) {
-    const peers = Object.values(nodes).filter(n => n.is_etcd);
-    const healthyCount = peers.filter(n => n.etcd_healthy === true).length;
+    const peers = Object.values(nodes).filter(n=>n.is_etcd);
+    const hc = peers.filter(n=>n.etcd_healthy===true).length;
     h += `<div class="card">
-      <div class="card-title">etcd Cluster</div>
+      <div class="card-title">etcd Cluster <span class="hint">vCenter HA</span></div>
       <div class="card-body">
-        <div class="mrow"><span class="ml">Total etcd members</span><span class="mv">${peers.length}</span></div>
-        <div class="mrow"><span class="ml">Healthy members</span><span class="mv green">${healthyCount}</span></div>
+        <div class="mrow"><span class="ml">Total members</span><span class="mv">${peers.length}</span></div>
+        <div class="mrow"><span class="ml">Healthy</span><span class="mv green">${hc}</span></div>
         <div class="mrow"><span class="ml">Quorum needed</span><span class="mv">${Math.floor(peers.length/2)+1}</span></div>
-        <div class="mrow"><span class="ml">This node health</span><span class="mv ${nd.etcd_healthy === true ? 'green' : nd.etcd_healthy === false ? 'red' : 'gray'}">${nd.etcd_healthy === true ? '✓ Healthy' : nd.etcd_healthy === false ? '✗ Unhealthy' : 'Unknown'}</span></div>
+        <div class="mrow"><span class="ml">This node</span><span class="mv ${nd.etcd_healthy===true?'green':nd.etcd_healthy===false?'red':'gray'}">${nd.etcd_healthy===true?'✓ Healthy':nd.etcd_healthy===false?'✗ Unhealthy':'Unknown'}</span></div>
       </div>
     </div>`;
   }
-  h += `</div>`;
-
-  // VMware reference table
-  h += `<div class="card">
-    <div class="card-title">💡 VMware → OpenStack / Kubernetes Reference</div>
+  h += `</div>
+  <div class="card">
+    <div class="card-title">💡 VMware vSphere → OpenStack / Kubernetes Reference</div>
     <div class="card-body" style="padding:0">
       <table class="concept-table">
         <thead><tr><th>VMware vSphere</th><th>OpenStack / Kubernetes equivalent</th></tr></thead>
@@ -1219,171 +1309,129 @@ function renderConfigureTab(nd) {
           <tr><td>VM</td><td>Nova Instance (QEMU/KVM) or K8s Pod</td></tr>
           <tr><td>Enter Maintenance Mode</td><td>Disable Nova service + Cordon K8s + Drain pods</td></tr>
           <tr><td>vMotion (live migration)</td><td>Nova live-migrate</td></tr>
-          <tr><td>vApp (templated multi-tier app)</td><td>Helm Chart / K8s Deployment</td></tr>
+          <tr><td>vApp</td><td>Helm Chart / K8s Deployment</td></tr>
           <tr><td>VM Template</td><td>Glance Image</td></tr>
           <tr><td>Datastore</td><td>Ceph / Cinder Volume (RBD-backed)</td></tr>
           <tr><td>vDS Port Group</td><td>Neutron Network / OVN logical port</td></tr>
           <tr><td>NSX-T</td><td>Neutron + OVN (or Calico for K8s)</td></tr>
           <tr><td>Resource Pool / Quota</td><td>K8s Namespace + ResourceQuota</td></tr>
-          <tr><td>HA Restart (VM HA)</td><td>K8s Pod restart policy / Nova evacuate</td></tr>
-          <tr><td>vSphere HA Cluster</td><td>K8s cluster (multi-master) + Nova availability zones</td></tr>
+          <tr><td>VM HA Restart</td><td>K8s Pod restart policy / Nova evacuate</td></tr>
+          <tr><td>Load Balancer (NSX LB / VIP)</td><td>Octavia (Amphora)</td></tr>
           <tr><td>Snapshot</td><td>Cinder Volume Snapshot / etcd backup</td></tr>
-          <tr><td>Load Balancer (NSX LB)</td><td>Octavia (Amphora)</td></tr>
         </tbody>
       </table>
     </div>
   </div>`;
-
   document.getElementById('configure-content').innerHTML = h;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Action buttons
 // ─────────────────────────────────────────────────────────────────────────────
-
 function updateActionButtons(nd) {
-  const phase = nd ? nd.phase : null;
-  const evBtn    = document.getElementById('btn-evacuate');
-  const drBtn    = document.getElementById('btn-drain');
-  const podsBtn  = document.getElementById('btn-pods');
-  const rebootBtn= document.getElementById('btn-reboot');
+  const phase   = nd ? nd.phase : null;
+  const drained = nd && (nd.k8s_cordoned || nd.compute_status==='disabled');
+  const busy    = phase==='running'||phase==='rebooting'||phase==='undraining';
+  const noSel   = !nd;
 
-  if (!nd) {
-    evBtn.disabled = drBtn.disabled = podsBtn.disabled = rebootBtn.disabled = true;
-    return;
+  function setBtn(id, dis, txt, cls) {
+    const el = document.getElementById(id); if (!el) return;
+    el.disabled   = dis;
+    el.textContent = txt;
+    el.className  = `btn${cls?' '+cls:''}`;
   }
 
-  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
-  const busy    = phase === 'running' || phase === 'rebooting' || phase === 'undraining';
+  const evTxt    = phase==='running'?'▶ Evacuating…':'▶ Evacuate';
+  const drTxt    = phase==='undraining'?'↺ Undraining…':drained?'↺ Undrain':'▽ Drain';
+  const rbTxt    = phase==='rebooting'?'⏻ Rebooting…':'⏻ Reboot';
 
-  // Evacuate
-  evBtn.disabled    = busy || !nd.is_compute;
-  evBtn.textContent = phase === 'running' ? '▶ Evacuating…' : '▶ Evacuate';
+  setBtn('btn-evacuate', noSel||busy||!nd?.is_compute, evTxt, 'primary');
+  setBtn('btn-drain',    noSel||busy, drTxt, drained&&!busy?'warning':'');
+  setBtn('btn-pods',     noSel, '⬡ Pods', '');
+  setBtn('btn-reboot',   noSel||busy, rbTxt, 'danger');
 
-  // Drain / Undrain
-  if (phase === 'undraining') {
-    drBtn.textContent = '↺ Undraining…'; drBtn.disabled = true;
-  } else if (busy) {
-    drBtn.textContent = drained ? '↺ Undrain' : '▽ Drain'; drBtn.disabled = true;
-  } else if (drained) {
-    drBtn.textContent = '↺ Undrain'; drBtn.disabled = false;
-  } else {
-    drBtn.textContent = '▽ Drain'; drBtn.disabled = false;
-  }
-  drBtn.className = 'btn ' + (drained && !busy ? 'warning' : '');
-
-  // Pods
-  podsBtn.disabled = false;
-
-  // Reboot
-  rebootBtn.disabled    = busy;
-  rebootBtn.textContent = phase === 'rebooting' ? '⏻ Rebooting…' : '⏻ Reboot';
+  setBtn('bc-evacuate', noSel||busy||!nd?.is_compute, evTxt, 'primary');
+  setBtn('bc-drain',    noSel||busy, drTxt, drained&&!busy?'warning':'');
+  setBtn('bc-pods',     noSel, '⬡ Pods', '');
+  setBtn('bc-reboot',   noSel||busy, rbTxt, 'danger');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Actions → WebSocket
+// Actions
 // ─────────────────────────────────────────────────────────────────────────────
-
 function actionRefresh()  { send({ action: 'refresh' }); }
-function actionEvacuate() { if (selectedNode) send({ action: 'evacuate', node: selectedNode }); }
+function actionEvacuate() { if (selectedNode) send({ action: 'evacuate',       node: selectedNode }); }
 function actionReboot()   { if (selectedNode) send({ action: 'reboot_request', node: selectedNode }); }
-
 function actionDrainOrUndrain() {
   if (!selectedNode) return;
-  const nd = nodes[selectedNode];
-  if (!nd) return;
-  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
-  send({ action: drained ? 'undrain' : 'drain_quick', node: selectedNode });
+  const nd = nodes[selectedNode]; if (!nd) return;
+  send({ action: (nd.k8s_cordoned||nd.compute_status==='disabled') ? 'undrain' : 'drain_quick', node: selectedNode });
 }
-
 function actionPods() {
-  // Toggle pods in the Instances tab
   showTab('instances');
   actionPodsInline();
 }
-
 function actionPodsInline() {
   if (!selectedNode) return;
   showPods = true;
-  lastPodsCache = null; // force fresh fetch
+  lastPodsCache = null;
   send({ action: 'get_pods', node: selectedNode });
-  // Show loading state
+  document.getElementById('btn-pods').textContent = '✕ Pods';
+  document.getElementById('bc-pods').textContent  = '✕ Pods';
   const sec = document.getElementById('pods-section');
   if (sec) sec.innerHTML = `<div style="color:var(--vc-dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
-  // Update button text
-  const btn = document.getElementById('btn-pods-inline');
-  if (btn) btn.textContent = '↺ Refresh Pods';
-  document.getElementById('btn-pods').textContent = '✕ Pods';
 }
-
 function cancelReboot() {
   document.getElementById('modal-overlay').classList.remove('open');
   if (pendingReboot) { send({ action: 'reboot_cancel', node: pendingReboot }); pendingReboot = null; }
 }
-
 function confirmReboot() {
-  const val = document.getElementById('modal-input').value.trim();
-  if (val !== 'YES') {
+  if (document.getElementById('modal-input').value.trim() !== 'YES') {
     const inp = document.getElementById('modal-input');
-    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake'); inp.focus();
-    return;
+    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake'); inp.focus(); return;
   }
   document.getElementById('modal-overlay').classList.remove('open');
   if (pendingReboot) { send({ action: 'reboot_confirm', node: pendingReboot }); pendingReboot = null; }
 }
-
-function closeBlocked() { document.getElementById('blocked-banner').classList.remove('open'); }
+function closeBlocked() { document.getElementById('blocked-overlay').classList.remove('open'); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyboard shortcuts
 // ─────────────────────────────────────────────────────────────────────────────
-
 document.getElementById('modal-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter')  confirmReboot();
-  if (e.key === 'Escape') cancelReboot();
+  if (e.key==='Enter')  confirmReboot();
+  if (e.key==='Escape') cancelReboot();
 });
-
 document.addEventListener('keydown', e => {
   if (document.getElementById('modal-overlay').classList.contains('open')) return;
-  if (document.getElementById('blocked-banner').classList.contains('open')) {
-    if (e.key === 'Escape') closeBlocked(); return;
-  }
-  if (e.target.tagName === 'INPUT') return;
-  if (e.key === 's' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionEvacuate(); }
-  if (e.key === 'u')                              { e.preventDefault(); actionDrainOrUndrain(); }
-  if (e.key === 'p')                              { e.preventDefault(); actionPods(); }
-  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionRefresh(); }
-  if (e.key === 'r' &&  e.ctrlKey)               { e.preventDefault(); actionReboot(); }
+  if (document.getElementById('blocked-overlay').classList.contains('open')) { if (e.key==='Escape') closeBlocked(); return; }
+  if (e.target.tagName==='INPUT') return;
+  if (e.key==='s'&&!e.ctrlKey&&!e.metaKey) { e.preventDefault(); actionEvacuate(); }
+  if (e.key==='u')                          { e.preventDefault(); actionDrainOrUndrain(); }
+  if (e.key==='p')                          { e.preventDefault(); actionPods(); }
+  if (e.key==='r'&&!e.ctrlKey&&!e.metaKey) { e.preventDefault(); actionRefresh(); }
+  if (e.key==='r'&&e.ctrlKey)              { e.preventDefault(); actionReboot(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clock + live downtime ticker
 // ─────────────────────────────────────────────────────────────────────────────
-
 setInterval(() => {
-  document.getElementById('clock').textContent =
-    new Date().toLocaleTimeString('en-GB', { hour12: false });
-  // Refresh summary tab if rebooting (live downtime counter)
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
   if (selectedNode && nodes[selectedNode]) {
     const nd = nodes[selectedNode];
-    if (nd.phase === 'rebooting' && activeTab === 'summary') renderSummaryTab(nd);
+    if (nd.phase==='rebooting' && activeTab==='summary') renderSummaryTab(nd);
+    if (nd.phase==='rebooting') renderTasksPanel();
   }
 }, 1000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+function escHtml(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s??'').replace(/'/g,"\\'"); }
 
-function escHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function escAttr(s) { return String(s ?? '').replace(/'/g,"\\'"); }
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Boot
-// ─────────────────────────────────────────────────────────────────────────────
-
 wsConnect();
 </script>
 </body>
