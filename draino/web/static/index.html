@@ -2218,9 +2218,17 @@ function cfgRemoveBridge(i) {
   const name = netEdit.bridges[i];
   const usedM = netEdit.mappings.some(m => m.bridge === name);
   const usedP = netEdit.ports.some(p => p.bridge === name);
-  if (usedM || usedP) {
-    if (!confirm(`Bridge "${name}" is referenced in ${[usedM && 'Mappings', usedP && 'Ports'].filter(Boolean).join(' and ')}. Remove anyway?`)) return;
+  const isLast = netEdit.bridges.length === 1;
+  const refs = [usedM && 'Mappings', usedP && 'Ports'].filter(Boolean).join(' and ');
+  let msg = null;
+  if (isLast && (usedM || usedP)) {
+    msg = `"${name}" is the last bridge and is referenced in ${refs}.\n\nRemoving it will leave Mappings and Ports with no valid bridge, which will break data plane connectivity.\n\nRemove anyway?`;
+  } else if (isLast) {
+    msg = `"${name}" is the last bridge.\n\nRemoving all bridges will break data plane connectivity on this node.\n\nRemove anyway?`;
+  } else if (usedM || usedP) {
+    msg = `Bridge "${name}" is referenced in ${refs}. Remove anyway?`;
   }
+  if (msg && !confirm(msg)) return;
   netEdit.bridges.splice(i, 1);
   netEdit.bridgesDirty = true;
   renderConfigureTab(nodes[netEdit.node]);
@@ -2246,6 +2254,9 @@ function cfgAddMapping() {
 }
 
 function cfgRemoveMapping(i) {
+  if (netEdit.mappings.length === 1) {
+    if (!confirm('This is the last mapping entry.\n\nRemoving it will leave no physical network to bridge mappings, which will break data plane connectivity.\n\nRemove anyway?')) return;
+  }
   netEdit.mappings.splice(i, 1);
   netEdit.mappingsDirty = true;
   renderConfigureTab(nodes[netEdit.node]);
@@ -2272,6 +2283,9 @@ function cfgAddPort() {
 }
 
 function cfgRemovePort(i) {
+  if (netEdit.ports.length === 1) {
+    if (!confirm('This is the last port mapping entry.\n\nRemoving it will leave no bridge to physical interface assignments, which will break data plane connectivity.\n\nRemove anyway?')) return;
+  }
   netEdit.ports.splice(i, 1);
   netEdit.portsDirty = true;
   renderConfigureTab(nodes[netEdit.node]);
