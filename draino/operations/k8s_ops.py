@@ -587,6 +587,133 @@ def get_ovn_logical_switch(network_id: str) -> dict:
     return {"ls_name": ls_name, "ls_uuid": ls_uuid, "ports": ports}
 
 
+# ── Cluster-wide resource listings ───────────────────────────────────────────
+
+def _ts(obj) -> str | None:
+    ts = obj.metadata.creation_timestamp if obj and obj.metadata else None
+    return ts.isoformat() if ts else None
+
+
+def list_k8s_namespaces() -> list[dict]:
+    _load_config()
+    v1 = client.CoreV1Api()
+    return [
+        {"name": ns.metadata.name, "status": ns.status.phase or "Active", "created": _ts(ns),
+         "labels": dict(ns.metadata.labels or {})}
+        for ns in v1.list_namespace().items
+    ]
+
+
+def list_k8s_pods(namespace: str | None = None) -> list[dict]:
+    _load_config()
+    v1 = client.CoreV1Api()
+    raw = v1.list_pod_for_all_namespaces() if not namespace else v1.list_namespaced_pod(namespace)
+    result = []
+    for pod in raw.items:
+        total    = len(pod.spec.containers or [])
+        ready    = 0
+        restarts = 0
+        if pod.status.container_statuses:
+            for cs in pod.status.container_statuses:
+                if cs.ready: ready += 1
+                restarts += cs.restart_count or 0
+        result.append({
+            "namespace": pod.metadata.namespace,
+            "name":      pod.metadata.name,
+            "phase":     pod.status.phase or "Unknown",
+            "ready":     f"{ready}/{total}",
+            "restarts":  restarts,
+            "node":      pod.spec.node_name or "",
+            "created":   _ts(pod),
+        })
+    return result
+
+
+def list_k8s_services(namespace: str | None = None) -> list[dict]:
+    _load_config()
+    v1 = client.CoreV1Api()
+    raw = v1.list_service_for_all_namespaces() if not namespace else v1.list_namespaced_service(namespace)
+    result = []
+    for svc in raw.items:
+        ports = ", ".join(
+            f"{p.port}{'/' + p.protocol if p.protocol != 'TCP' else ''}"
+            + (f":{p.node_port}" if p.node_port else "")
+            for p in (svc.spec.ports or [])
+        )
+        ext_ips: list[str] = []
+        if svc.status.load_balancer and svc.status.load_balancer.ingress:
+            ext_ips = [i.ip or i.hostname or "" for i in svc.status.load_balancer.ingress]
+        result.append({
+            "namespace":    svc.metadata.namespace,
+            "name":         svc.metadata.name,
+            "type":         svc.spec.type or "ClusterIP",
+            "cluster_ip":   svc.spec.cluster_ip or "",
+            "external_ips": [x for x in ext_ips if x],
+            "ports":        ports,
+            "created":      _ts(svc),
+        })
+    return result
+
+
+def list_k8s_pvs() -> list[dict]:
+    _load_config()
+    v1 = client.CoreV1Api()
+    result = []
+    for pv in v1.list_persistent_volume().items:
+        claim = ""
+        if pv.spec.claim_ref:
+            claim = f"{pv.spec.claim_ref.namespace}/{pv.spec.claim_ref.name}"
+        result.append({
+            "name":           pv.metadata.name,
+            "capacity":       (pv.spec.capacity or {}).get("storage", ""),
+            "access_modes":   ",".join(pv.spec.access_modes or []),
+            "reclaim_policy": pv.spec.persistent_volume_reclaim_policy or "",
+            "status":         pv.status.phase or "",
+            "claim":          claim,
+            "storageclass":   pv.spec.storage_class_name or "",
+            "created":        _ts(pv),
+        })
+    return result
+
+
+def list_k8s_pvcs(namespace: str | None = None) -> list[dict]:
+    _load_config()
+    v1 = client.CoreV1Api()
+    raw = (v1.list_persistent_volume_claim_for_all_namespaces() if not namespace
+           else v1.list_namespaced_persistent_volume_claim(namespace))
+    result = []
+    for pvc in raw.items:
+        result.append({
+            "namespace":    pvc.metadata.namespace,
+            "name":         pvc.metadata.name,
+            "status":       pvc.status.phase or "",
+            "volume":       pvc.spec.volume_name or "",
+            "capacity":     (pvc.status.capacity or {}).get("storage", ""),
+            "access_modes": ",".join(pvc.spec.access_modes or []),
+            "storageclass": pvc.spec.storage_class_name or "",
+            "created":      _ts(pvc),
+        })
+    return result
+
+
+def list_k8s_crds() -> list[dict]:
+    _load_config()
+    api = client.ApiextensionsV1Api()
+    result = []
+    for crd in api.list_custom_resource_definition().items:
+        spec = crd.spec
+        versions = [v.name for v in (spec.versions or []) if v.served]
+        result.append({
+            "name":     crd.metadata.name,
+            "group":    spec.group,
+            "kind":     spec.names.kind,
+            "scope":    spec.scope,
+            "versions": versions,
+            "created":  _ts(crd),
+        })
+    return result
+
+
 def drain_node(name: str, log: LogFn, timeout: int = 300) -> None:
     """Evict all non-DaemonSet pods from a node and wait for termination."""
     _load_config()

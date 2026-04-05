@@ -128,8 +128,29 @@ body {
 .view { display: none; flex: 1; overflow: hidden; }
 .view.active { display: flex; }
 #view-infrastructure { flex-direction: row; }
-#view-networking { flex-direction: row; }
-#view-storage    { flex-direction: column; }
+#view-kubernetes     { flex-direction: row; }
+#view-networking     { flex-direction: row; }
+#view-storage        { flex-direction: column; }
+#k8s-sidebar { width: 220px; min-width: 220px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+#k8s-content { flex: 1; overflow-y: auto; padding: 16px; }
+.k8s-cluster-row { padding: 10px 12px 6px; font-size: 12px; font-weight: 700; color: var(--dim); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.k8s-res-item { display: flex; align-items: center; gap: 6px; padding: 5px 14px; font-size: 12px; cursor: pointer; border-radius: 3px; margin: 1px 6px; }
+.k8s-res-item:hover { background: var(--hover); }
+.k8s-res-item.selected { background: var(--blue); color: #fff; }
+.k8s-res-item.selected .hint { color: rgba(255,255,255,.6); }
+.k8s-res-item.selected .tree-badge { background: rgba(255,255,255,.2); color: #fff; }
+.k8s-res-item .hint { margin-left: auto; font-size: 10px; }
+.k8s-res-item .tree-badge { margin-left: auto; }
+.k8s-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+.k8s-badge.running  { background: #e8f5e9; color: #2e7d32; }
+.k8s-badge.pending  { background: #fff8e1; color: #f57f17; }
+.k8s-badge.failed   { background: #ffebee; color: #c62828; }
+.k8s-badge.lb       { background: #e3f2fd; color: #1565c0; }
+.k8s-badge.nodeport { background: #f3e5f5; color: #6a1b9a; }
+.k8s-badge.clusterip{ background: #f5f5f5; color: #555; }
+.k8s-badge.bound    { background: #e8f5e9; color: #2e7d32; }
+.k8s-badge.released { background: #fff8e1; color: #f57f17; }
+.k8s-badge.active   { background: #e8f5e9; color: #2e7d32; }
 #net-detail-wrap {
   width: 370px;
   flex-shrink: 0;
@@ -489,6 +510,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </div>
   <nav class="top-nav">
     <a data-view="infrastructure" class="active" onclick="switchView('infrastructure')">Infrastructure</a>
+    <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
     <a data-view="networking"                    onclick="switchView('networking')">Networking</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
   </nav>
@@ -529,6 +551,9 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="loadVolumes(true)">⟳ Refresh Volumes</button>
+  </div>
+  <div class="bc-actions" id="bc-k8s-actions" style="display:none">
+    <button class="btn" onclick="refreshK8sResource()">⟳ Refresh</button>
   </div>
 </div>
 
@@ -581,6 +606,51 @@ body.no-hints .vmware-ref-card { display: none !important; }
             <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its configuration.</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Kubernetes view ── -->
+  <div class="view" id="view-kubernetes">
+    <div id="k8s-sidebar">
+      <div class="sidebar-head">Navigator — Kubernetes</div>
+      <div id="k8s-tree">
+        <div class="k8s-cluster-row">
+          <span>☸️</span> K8s Cluster <span class="hint">vApp</span>
+        </div>
+        <div class="k8s-res-item" data-res="namespaces"  onclick="selectK8sResource('namespaces')">
+          <span>📦</span> Namespaces
+          <span class="tree-badge" id="k8s-cnt-namespaces"></span>
+        </div>
+        <div class="k8s-res-item" data-res="pods"        onclick="selectK8sResource('pods')">
+          <span>⬡</span> Pods <span class="hint">VMs</span>
+          <span class="tree-badge" id="k8s-cnt-pods"></span>
+        </div>
+        <div class="k8s-res-item" data-res="services"    onclick="selectK8sResource('services')">
+          <span>🔗</span> Services <span class="hint">Port Groups</span>
+          <span class="tree-badge" id="k8s-cnt-services"></span>
+        </div>
+        <div class="k8s-res-item" data-res="lbs"         onclick="selectK8sResource('lbs')">
+          <span>⚡</span> LoadBalancers <span class="hint">LBaaS</span>
+          <span class="tree-badge" id="k8s-cnt-lbs"></span>
+        </div>
+        <div class="k8s-res-item" data-res="pvcs"        onclick="selectK8sResource('pvcs')">
+          <span>📋</span> PV Claims <span class="hint">Disk Mounts</span>
+          <span class="tree-badge" id="k8s-cnt-pvcs"></span>
+        </div>
+        <div class="k8s-res-item" data-res="pvs"         onclick="selectK8sResource('pvs')">
+          <span>💾</span> Persistent Vols <span class="hint">Datastores</span>
+          <span class="tree-badge" id="k8s-cnt-pvs"></span>
+        </div>
+        <div class="k8s-res-item" data-res="crds"        onclick="selectK8sResource('crds')">
+          <span>🔧</span> Custom Resources <span class="hint">Extensions</span>
+          <span class="tree-badge" id="k8s-cnt-crds"></span>
+        </div>
+      </div>
+    </div>
+    <div id="k8s-content">
+      <div id="k8s-content-inner">
+        <div style="color:var(--dim);text-align:center;padding:40px 16px">Select a resource type from the navigator.</div>
       </div>
     </div>
   </div>
@@ -883,6 +953,7 @@ function switchView(name) {
   const bcSep  = document.getElementById('bc-sep');
   const bcNode = document.getElementById('bc-node');
   document.getElementById('bc-infra-actions').style.display = name === 'infrastructure' ? '' : 'none';
+  document.getElementById('bc-k8s-actions').style.display   = name === 'kubernetes'     ? '' : 'none';
   document.getElementById('bc-net-actions').style.display   = name === 'networking'     ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display   = name === 'storage'        ? '' : 'none';
   document.getElementById('tasks-panel').style.display      = name === 'infrastructure' ? '' : 'none';
@@ -899,11 +970,16 @@ function switchView(name) {
     }
     renderInfraDetail();  // re-render content panel when returning from other views
   } else {
-    const label = name === 'networking' ? 'Networking' : 'Volumes';
+    const label = name === 'networking' ? 'Networking' : name === 'storage' ? 'Volumes' : name === 'kubernetes' ? 'Kubernetes' : name;
     bcRoot.textContent  = 'Draino';
     bcSep.style.display = '';
     bcNode.textContent  = label;
     // Lazy-load on first visit
+    if (name === 'kubernetes') {
+      bcRoot.textContent = 'Draino';
+      bcSep.style.display = '';
+      bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
+    }
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     // Restore network detail panel visibility when returning
@@ -1968,6 +2044,242 @@ function renderOvnPortDetail(portId, cached) {
   }
   h += `</div>`;
   return h;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// § KUBERNETES VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+const K8S_RES_META = {
+  namespaces: { label: 'Namespaces',        icon: '📦', url: '/api/k8s/namespaces' },
+  pods:       { label: 'Pods',              icon: '⬡',  url: '/api/k8s/pods'       },
+  services:   { label: 'Services',          icon: '🔗', url: '/api/k8s/services'   },
+  lbs:        { label: 'LoadBalancers',     icon: '⚡', url: '/api/k8s/services'   }, // filtered client-side
+  pvcs:       { label: 'PV Claims',         icon: '📋', url: '/api/k8s/pvcs'       },
+  pvs:        { label: 'Persistent Vols',   icon: '💾', url: '/api/k8s/pvs'        },
+  crds:       { label: 'Custom Resources',  icon: '🔧', url: '/api/k8s/crds'       },
+};
+
+const k8sResCache = {}; // type → { loading, data, error }
+let k8sActiveResource = null;
+const k8sPageState = {}; // type → { page, filter }
+const K8S_PAGE_SIZE = 50;
+
+function getK8sPage(type) {
+  if (!k8sPageState[type]) k8sPageState[type] = { page: 1, filter: '' };
+  return k8sPageState[type];
+}
+
+function k8sAge(isoStr) {
+  if (!isoStr) return '—';
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60)         return `${diff}s`;
+  if (diff < 3600)       return `${Math.floor(diff/60)}m`;
+  if (diff < 86400)      return `${Math.floor(diff/3600)}h`;
+  if (diff < 86400 * 30) return `${Math.floor(diff/86400)}d`;
+  if (diff < 86400 * 365)return `${Math.floor(diff/86400/30)}mo`;
+  return `${Math.floor(diff/86400/365)}y`;
+}
+
+async function selectK8sResource(type) {
+  k8sActiveResource = type;
+  // Highlight sidebar
+  document.querySelectorAll('.k8s-res-item').forEach(el =>
+    el.classList.toggle('selected', el.dataset.res === type));
+  // Update breadcrumb node label
+  const bcNode = document.getElementById('bc-node');
+  if (bcNode) bcNode.textContent = K8S_RES_META[type]?.label || type;
+  renderK8sContent();
+  if (!k8sResCache[type]) await loadK8sResource(type);
+  renderK8sContent();
+}
+
+async function loadK8sResource(type, force = false) {
+  if (!force && k8sResCache[type]?.loading) return;
+  const meta = K8S_RES_META[type];
+  if (!meta) return;
+  k8sResCache[type] = { loading: true, data: null, error: null };
+  renderK8sContent();
+  try {
+    const resp = await fetch(meta.url);
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error);
+    let data = json.items || [];
+    // LoadBalancers is a client-side filter of services
+    if (type === 'lbs') data = data.filter(s => s.type === 'LoadBalancer');
+    k8sResCache[type] = { loading: false, data, error: null };
+    // Also update services cache if we fetched services for lbs
+    if (type === 'lbs' && !k8sResCache['services']) {
+      k8sResCache['services'] = { loading: false, data: json.items || [], error: null };
+    }
+    updateK8sCountBadges();
+  } catch (e) {
+    k8sResCache[type] = { loading: false, data: null, error: String(e) };
+  }
+  if (k8sActiveResource === type) renderK8sContent();
+}
+
+async function refreshK8sResource() {
+  if (!k8sActiveResource) return;
+  delete k8sResCache[k8sActiveResource];
+  await loadK8sResource(k8sActiveResource);
+}
+
+function updateK8sCountBadges() {
+  for (const [type, cached] of Object.entries(k8sResCache)) {
+    const el = document.getElementById(`k8s-cnt-${type}`);
+    if (el && cached.data) el.textContent = cached.data.length;
+  }
+}
+
+function renderK8sContent() {
+  const wrap = document.getElementById('k8s-content-inner');
+  if (!k8sActiveResource) {
+    wrap.innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 16px">Select a resource type from the navigator.</div>`;
+    return;
+  }
+  const type   = k8sActiveResource;
+  const cached = k8sResCache[type];
+  const meta   = K8S_RES_META[type];
+  const ps     = getK8sPage(type);
+
+  if (!cached || cached.loading) {
+    wrap.innerHTML = `<div class="data-view-toolbar"><h2>${meta.icon} ${meta.label}</h2></div>
+      <div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div>`;
+    return;
+  }
+  if (cached.error) {
+    wrap.innerHTML = `<div class="data-view-toolbar"><h2>${meta.icon} ${meta.label}</h2></div>
+      <div style="color:var(--red);font-size:12px;padding:8px 0">${esc(cached.error)}</div>`;
+    return;
+  }
+
+  const all      = cached.data || [];
+  const filter   = ps.filter.toLowerCase();
+  const filtered = filter ? all.filter(r => JSON.stringify(r).toLowerCase().includes(filter)) : all;
+  const total    = filtered.length;
+  const pages    = Math.max(1, Math.ceil(total / K8S_PAGE_SIZE));
+  ps.page        = Math.min(ps.page, pages);
+  const slice    = filtered.slice((ps.page-1)*K8S_PAGE_SIZE, ps.page*K8S_PAGE_SIZE);
+
+  let h = `<div class="data-view-toolbar">
+    <h2>${meta.icon} ${meta.label}</h2>
+    <input class="dv-filter" type="text" placeholder="Filter…"
+      value="${esc(ps.filter)}" oninput="getK8sPage('${type}').filter=this.value;getK8sPage('${type}').page=1;renderK8sContent()">
+    <span style="font-size:11px;color:var(--dim)">${total} of ${all.length}</span>
+  </div>`;
+
+  h += renderK8sTable(type, slice);
+  h += buildPager({ page: ps.page, pageSize: K8S_PAGE_SIZE }, total,
+    `getK8sPage('${type}')`, 'renderK8sContent');
+
+  wrap.innerHTML = h;
+}
+
+function renderK8sTable(type, rows) {
+  if (!rows.length) return `<div style="color:var(--dim);padding:12px 0;font-size:12px">No items match the filter.</div>`;
+
+  const badge = (text, cls) => `<span class="k8s-badge ${cls}">${esc(text)}</span>`;
+
+  switch (type) {
+    case 'namespaces':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Status</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td><strong>${esc(r.name)}</strong></td>
+          <td>${badge(r.status, r.status === 'Active' ? 'active' : 'failed')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'pods':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Phase</th><th>Ready</th><th>Restarts</th><th>Node</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => {
+          const phCls = r.phase === 'Running' ? 'running' : r.phase === 'Pending' ? 'pending' : 'failed';
+          return `<tr>
+            <td style="color:var(--dim)">${esc(r.namespace)}</td>
+            <td>${esc(r.name)}</td>
+            <td>${badge(r.phase, phCls)}</td>
+            <td style="font-family:monospace">${esc(r.ready)}</td>
+            <td style="text-align:center${r.restarts > 10 ? ';color:var(--red)' : ''}">${r.restarts}</td>
+            <td style="color:var(--dim);font-size:10px">${esc(r.node)}</td>
+            <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+          </tr>`;
+        }).join('') + `</tbody></table>`;
+
+    case 'services':
+    case 'lbs':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Type</th><th>Cluster IP</th><th>External IP</th><th>Ports</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => {
+          const tCls = r.type === 'LoadBalancer' ? 'lb' : r.type === 'NodePort' ? 'nodeport' : 'clusterip';
+          const extIp = r.external_ips?.length ? r.external_ips.join(', ') : '—';
+          return `<tr>
+            <td style="color:var(--dim)">${esc(r.namespace)}</td>
+            <td>${esc(r.name)}</td>
+            <td>${badge(r.type, tCls)}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(r.cluster_ip)}</td>
+            <td style="font-family:monospace;font-size:10px${r.external_ips?.length ? '' : ';color:var(--dim)'}">${esc(extIp)}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(r.ports)}</td>
+            <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+          </tr>`;
+        }).join('') + `</tbody></table>`;
+
+    case 'pvs':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Capacity</th><th>Access</th><th>Reclaim</th><th>Status</th><th>Claim</th><th>StorageClass</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => {
+          const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Released' ? 'released' : 'pending';
+          return `<tr>
+            <td>${esc(r.name)}</td>
+            <td style="font-family:monospace">${esc(r.capacity)}</td>
+            <td style="font-size:10px;color:var(--dim)">${esc(r.access_modes)}</td>
+            <td style="font-size:10px">${esc(r.reclaim_policy)}</td>
+            <td>${badge(r.status, stCls)}</td>
+            <td style="font-size:10px;color:var(--dim)">${esc(r.claim) || '—'}</td>
+            <td style="font-size:10px">${esc(r.storageclass) || '—'}</td>
+            <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+          </tr>`;
+        }).join('') + `</tbody></table>`;
+
+    case 'pvcs':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Status</th><th>Volume</th><th>Capacity</th><th>Access</th><th>StorageClass</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => {
+          const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Pending' ? 'pending' : 'failed';
+          return `<tr>
+            <td style="color:var(--dim)">${esc(r.namespace)}</td>
+            <td>${esc(r.name)}</td>
+            <td>${badge(r.status, stCls)}</td>
+            <td style="font-size:10px;color:var(--dim)">${esc(r.volume) || '—'}</td>
+            <td style="font-family:monospace">${esc(r.capacity) || '—'}</td>
+            <td style="font-size:10px;color:var(--dim)">${esc(r.access_modes)}</td>
+            <td style="font-size:10px">${esc(r.storageclass) || '—'}</td>
+            <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+          </tr>`;
+        }).join('') + `</tbody></table>`;
+
+    case 'crds':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Group</th><th>Kind</th><th>Scope</th><th>Versions</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td style="font-size:10px;font-family:monospace">${esc(r.name)}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc(r.group)}</td>
+          <td>${esc(r.kind)}</td>
+          <td><span class="k8s-badge ${r.scope === 'Namespaced' ? 'clusterip' : 'lb'}">${esc(r.scope)}</span></td>
+          <td style="font-size:10px;color:var(--dim)">${(r.versions || []).join(', ')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    default:
+      return `<div style="color:var(--dim)">Unknown resource type.</div>`;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -650,6 +650,60 @@ async def api_node_detail(node_name: str):
     return {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
 
 
+@fastapi_app.get("/api/k8s/namespaces")
+async def api_k8s_namespaces():
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_namespaces), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/k8s/pods")
+async def api_k8s_pods(namespace: Optional[str] = None):
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pods, namespace), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/k8s/services")
+async def api_k8s_services(namespace: Optional[str] = None):
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_services, namespace), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/k8s/pvs")
+async def api_k8s_pvs():
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvs), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/k8s/pvcs")
+async def api_k8s_pvcs(namespace: Optional[str] = None):
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvcs, namespace), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/k8s/crds")
+async def api_k8s_crds():
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_crds), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
 @fastapi_app.get("/api/networks/{network_id}")
 async def api_network_detail(network_id: str):
     """Return subnets and segments for a single network."""
