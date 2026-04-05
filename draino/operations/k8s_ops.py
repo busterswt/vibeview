@@ -57,6 +57,102 @@ def get_nodes() -> list[dict]:
     return result
 
 
+def get_node_k8s_detail(node_name: str) -> dict:
+    """Return detailed K8s node info for the summary tab.
+
+    Fetches node_info (kubelet version, container runtime, OS image,
+    architecture), capacity/allocatable (cpu, memory, pods), and live
+    pod count.  All values default to None on failure.
+    """
+    _load_config()
+    v1 = client.CoreV1Api()
+
+    result: dict = {
+        "kubelet_version":     None,
+        "container_runtime":   None,
+        "os_image":            None,
+        "architecture":        None,
+        "cpu_capacity":        None,
+        "memory_capacity_kb":  None,
+        "pods_capacity":       None,
+        "cpu_allocatable":     None,
+        "memory_allocatable_kb": None,
+        "pods_allocatable":    None,
+        "pod_count":           None,
+        "roles":               [],
+    }
+
+    try:
+        node = v1.read_node(node_name)
+    except Exception:
+        return result
+
+    # node_info
+    ni = node.status.node_info
+    if ni:
+        result["kubelet_version"]   = ni.kubelet_version
+        result["container_runtime"] = ni.container_runtime_version
+        result["os_image"]          = ni.os_image
+        result["architecture"]      = ni.architecture
+
+    def _parse_ki(s: str | None) -> int | None:
+        """Convert K8s memory string like '263928792Ki' → KiB int."""
+        if not s:
+            return None
+        s = s.strip()
+        if s.endswith("Ki"):
+            try:
+                return int(s[:-2])
+            except Exception:
+                return None
+        if s.endswith("Mi"):
+            try:
+                return int(s[:-2]) * 1024
+            except Exception:
+                return None
+        if s.endswith("Gi"):
+            try:
+                return int(s[:-2]) * 1024 * 1024
+            except Exception:
+                return None
+        try:
+            return int(s) // 1024  # bytes → KiB
+        except Exception:
+            return None
+
+    cap  = node.status.capacity    or {}
+    alloc = node.status.allocatable or {}
+    result["cpu_capacity"]           = cap.get("cpu")
+    result["memory_capacity_kb"]     = _parse_ki(cap.get("memory"))
+    result["pods_capacity"]          = cap.get("pods")
+    result["cpu_allocatable"]        = alloc.get("cpu")
+    result["memory_allocatable_kb"]  = _parse_ki(alloc.get("memory"))
+    result["pods_allocatable"]       = alloc.get("pods")
+
+    # Roles from labels  (node-role.kubernetes.io/<role>)
+    labels = node.metadata.labels or {}
+    roles = [
+        k.split("/", 1)[1]
+        for k in labels
+        if k.startswith("node-role.kubernetes.io/")
+    ]
+    result["roles"] = roles or ["worker"]
+
+    # Live pod count (non-terminated)
+    try:
+        pods = v1.list_pod_for_all_namespaces(
+            field_selector=f"spec.nodeName={node_name}"
+        )
+        result["pod_count"] = sum(
+            1 for p in pods.items
+            if p.status.phase not in ("Succeeded", "Failed")
+        )
+    except Exception:
+        pass
+
+    return result
+
+
 def check_etcd_service(hostname: str) -> Optional[bool]:
     """SSH to *hostname* and check whether the etcd systemd service is active.
 

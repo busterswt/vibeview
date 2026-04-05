@@ -278,6 +278,12 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .etcd-peers { font-size: 11px; color: #78909c; margin-top: 4px; }
 
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.pbw { margin: 6px 0 2px; }
+.pb-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-bottom: 2px; }
+.pb-track { height: 5px; background: #e0e7ef; border-radius: 3px; overflow: hidden; }
+.pb-fill  { height: 5px; border-radius: 3px; background: var(--blue); transition: width .3s; }
+.pb-fill.warn { background: #f59e0b; }
+.pb-fill.crit { background: var(--red-lt); }
 .card { background: var(--white); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 .card-title {
   background: var(--gray-bg); padding: 6px 12px;
@@ -697,6 +703,9 @@ const instanceMigrateTasks  = {};
 // Sidebar collapse state
 const collapsedGroups = new Set();
 
+// Node detail cache (summary tab)
+const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
+
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedNetwork  = null;
@@ -1036,7 +1045,22 @@ function selectNode(name) {
     }
     if (nd.is_compute && nd.phase === 'idle') wsSend({ action: 'get_preflight', node: name });
   }
+  // Load rich node detail if not already cached
+  if (!nodeDetailCache[name]) loadNodeDetail(name);
   renderInfraDetail();
+}
+
+async function loadNodeDetail(name) {
+  nodeDetailCache[name] = { loading: true, k8s: null, nova: null, error: null };
+  if (activeTab === 'summary') renderSummaryTab(nodes[name]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail`);
+    const json = await resp.json();
+    nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, error: json.error || null };
+  } catch (e) {
+    nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, error: String(e) };
+  }
+  if (selectedNode === name && activeTab === 'summary') renderSummaryTab(nodes[name]);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1200,35 +1224,121 @@ function renderSummaryTab(nd) {
     }
   }
 
-  // Status cards
+  // ── Status / resource cards ───────────────────────────────────────────────
+  const det  = nodeDetailCache[nd.k8s_name] || {};
+  const k8sd = det.k8s  || {};
+  const novd = det.nova || {};
+  const detLoading = det.loading;
+
+  function pb(label, used, total, unit, warnPct = 70, critPct = 90) {
+    if (used == null || total == null || total === 0) return '';
+    const pct = Math.round(used / total * 100);
+    const cls = pct >= critPct ? 'crit' : pct >= warnPct ? 'warn' : '';
+    const usedFmt  = unit === 'GB' ? `${(used/1024).toFixed(0)} GB`  : unit === 'MB' ? `${(used/1024).toFixed(0)} GB`  : used;
+    const totalFmt = unit === 'GB' ? `${(total/1024).toFixed(0)} GB` : unit === 'MB' ? `${(total/1024).toFixed(0)} GB` : total;
+    return `<div class="pbw"><div class="pb-label"><span>${esc(label)}</span><span>${usedFmt} / ${totalFmt} (${pct}%)</span></div>
+      <div class="pb-track"><div class="pb-fill ${cls}" style="width:${pct}%"></div></div></div>`;
+  }
+  function pbPct(label, pct, extra = '') {
+    if (pct == null) return '';
+    const cls = pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : '';
+    return `<div class="pbw"><div class="pb-label"><span>${esc(label)}</span><span>${pct}%${extra ? ' · ' + extra : ''}</span></div>
+      <div class="pb-track"><div class="pb-fill ${cls}" style="width:${pct}%"></div></div></div>`;
+  }
+
   h += `<div class="summary-grid">`;
+
+  // ── Nova Compute card ────────────────────────────────────────────────────
   if (nd.is_compute) {
     const nc = { up:'green', disabled:'yellow', down:'red' }[nd.compute_status] || 'gray';
-    const nl = { up:'enabled', disabled:'disabled', down:'DOWN' }[nd.compute_status] || '…';
-    const v  = nd.vm_count       != null ? nd.vm_count       : '…';
-    const a  = nd.amphora_count  != null ? nd.amphora_count  : '…';
+    const nl = { up:'up · enabled', disabled:'disabled', down:'DOWN' }[nd.compute_status] || '…';
+    const v  = nd.vm_count      != null ? nd.vm_count      : '…';
+    const a  = nd.amphora_count != null ? nd.amphora_count : '…';
+    const vcpuUsed  = novd.vcpus_used;
+    const vcpuTotal = novd.vcpus;
+    const ramUsed   = novd.memory_mb_used;
+    const ramTotal  = novd.memory_mb;
+    const vcpuPct   = vcpuTotal ? Math.round(vcpuUsed / vcpuTotal * 100) : null;
+    const ramPct    = ramTotal  ? Math.round(ramUsed  / ramTotal  * 100) : null;
+    const vcpuCls   = vcpuPct >= 90 ? 'crit' : vcpuPct >= 70 ? 'warn' : '';
+    const ramCls    = ramPct  >= 90 ? 'crit' : ramPct  >= 70 ? 'warn' : '';
     h += `<div class="card">
       <div class="card-title">Nova Compute <span class="hint">VMware Cluster</span></div>
       <div class="card-body">
         <div class="mrow"><span class="ml">Service state</span><span class="mv ${nc}">${esc(nl)}</span></div>
         <div class="mrow"><span class="ml">Instances <span class="hint">VMs</span></span><span class="mv">${v}</span></div>
         <div class="mrow"><span class="ml">Amphora LBs <span class="hint">NSX LB</span></span><span class="mv ${a > 0 ? 'yellow' : ''}">${a}</span></div>
-        <div class="mrow"><span class="ml">Hypervisor</span><span class="mv dim">${esc(nd.hypervisor)}</span></div>
+        ${vcpuTotal != null ? `<div class="mrow"><span class="ml">vCPUs</span><span class="mv">${vcpuUsed ?? '…'} / ${vcpuTotal}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">vCPUs</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
+        ${ramTotal  != null ? `<div class="mrow"><span class="ml">RAM</span><span class="mv">${ramUsed != null ? Math.round(ramUsed/1024) : '…'} / ${Math.round(ramTotal/1024)} GB</span></div>` : ''}
+        ${vcpuTotal != null && vcpuPct != null ? `<div class="pbw"><div class="pb-label"><span>vCPU allocation</span><span>${vcpuPct}%</span></div><div class="pb-track"><div class="pb-fill ${vcpuCls}" style="width:${vcpuPct}%"></div></div></div>` : ''}
+        ${ramTotal  != null && ramPct  != null ? `<div class="pbw"><div class="pb-label"><span>RAM allocation</span><span>${ramPct}%</span></div><div class="pb-track"><div class="pb-fill ${ramCls}"  style="width:${ramPct}%"></div></div></div>` : ''}
       </div>
     </div>`;
   }
-  const rc = nd.k8s_cordoned ? 'gray' : nd.k8s_ready ? 'green' : 'red';
-  const rl = nd.k8s_cordoned ? 'Cordoned' : nd.k8s_ready ? 'Ready' : 'Not Ready';
-  h += `<div class="card">
-    <div class="card-title">Kubernetes Node <span class="hint">ESXi Host</span></div>
-    <div class="card-body">
-      <div class="mrow"><span class="ml">Status</span><span class="mv ${rc}">${rl}</span></div>
-      <div class="mrow"><span class="ml">Cordoned <span class="hint">In Maintenance</span></span><span class="mv ${nd.k8s_cordoned?'yellow':'green'}">${nd.k8s_cordoned?'Yes':'No'}</span></div>
-      <div class="mrow"><span class="ml">etcd role</span><span class="mv ${nd.is_etcd?'red':'dim'}">${nd.is_etcd?'Yes':'No'}</span></div>
-      ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
-      ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${esc(nd.kernel_version)}</span></div>` : ''}
-    </div>
-  </div>`;
+
+  // ── Kubernetes Node card ─────────────────────────────────────────────────
+  {
+    const rc = nd.k8s_cordoned ? 'gray' : nd.k8s_ready ? 'green' : 'red';
+    const rl = nd.k8s_cordoned ? 'Cordoned' : nd.k8s_ready ? 'Ready' : 'Not Ready';
+    const podCount = k8sd.pod_count;
+    const podCap   = k8sd.pods_allocatable ? parseInt(k8sd.pods_allocatable) : null;
+    const podPct   = podCount != null && podCap ? Math.round(podCount / podCap * 100) : null;
+    const podCls   = podPct >= 90 ? 'crit' : podPct >= 70 ? 'warn' : '';
+    const roles    = (k8sd.roles || []).join(', ') || '—';
+    h += `<div class="card">
+      <div class="card-title">Kubernetes Node <span class="hint">ESXi Host</span></div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Status</span><span class="mv ${rc}">${rl}</span></div>
+        <div class="mrow"><span class="ml">Cordoned <span class="hint">In Maintenance</span></span><span class="mv ${nd.k8s_cordoned?'yellow':'green'}">${nd.k8s_cordoned?'Yes':'No'}</span></div>
+        <div class="mrow"><span class="ml">Role</span><span class="mv">${esc(roles)}</span></div>
+        ${nd.is_etcd ? `<div class="mrow"><span class="ml">etcd</span><span class="mv red">member</span></div>` : ''}
+        ${podCount != null ? `<div class="mrow"><span class="ml">Running pods</span><span class="mv">${podCount}${podCap ? ' / ' + podCap : ''}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">Pods</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
+        ${k8sd.kubelet_version   ? `<div class="mrow"><span class="ml">Kubelet</span><span class="mv dim">${esc(k8sd.kubelet_version)}</span></div>` : ''}
+        ${k8sd.container_runtime ? `<div class="mrow"><span class="ml">Runtime</span><span class="mv dim">${esc(k8sd.container_runtime)}</span></div>` : ''}
+        ${podPct != null ? `<div class="pbw"><div class="pb-label"><span>Pod capacity</span><span>${podPct}%</span></div><div class="pb-track"><div class="pb-fill ${podCls}" style="width:${podPct}%"></div></div></div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // ── Hardware / Host Info card ────────────────────────────────────────────
+  {
+    const cpuInfo  = novd.cpu_info || {};
+    const topo     = cpuInfo.topology || {};
+    const sockets  = topo.sockets;
+    const cores    = topo.cores;
+    const threads  = topo.threads;
+    const cpuModel = cpuInfo.model || cpuInfo.vendor || null;
+    const physCores = (sockets && cores) ? sockets * cores : null;
+    const physThreads = (physCores && threads) ? physCores * threads : null;
+    const memKb    = k8sd.memory_capacity_kb;
+    const memGb    = memKb ? Math.round(memKb / 1024 / 1024) : null;
+    h += `<div class="card">
+      <div class="card-title">Hardware / Host Info</div>
+      <div class="card-body">
+        ${cpuModel      ? `<div class="mrow"><span class="ml">CPU model</span><span class="mv dim" style="font-size:10px">${esc(cpuModel)}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">CPU</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
+        ${physCores     ? `<div class="mrow"><span class="ml">Physical cores</span><span class="mv">${sockets}s × ${cores}c${threads > 1 ? ' × ' + threads + 't = ' + physThreads + ' threads' : ''}</span></div>` : ''}
+        ${novd.vcpus    ? `<div class="mrow"><span class="ml">vCPUs (Nova)</span><span class="mv">${novd.vcpus}</span></div>` : ''}
+        ${memGb         ? `<div class="mrow"><span class="ml">RAM</span><span class="mv">${memGb} GB</span></div>` : ''}
+        ${k8sd.os_image ? `<div class="mrow"><span class="ml">OS</span><span class="mv dim" style="font-size:10px">${esc(k8sd.os_image)}</span></div>` : ''}
+        ${nd.kernel_version || k8sd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim" style="font-size:10px">${esc(nd.kernel_version || k8sd.kernel_version)}</span></div>` : ''}
+        ${k8sd.architecture ? `<div class="mrow"><span class="ml">Architecture</span><span class="mv">${esc(k8sd.architecture)}</span></div>` : ''}
+        ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // ── Availability Zone / Aggregates card ─────────────────────────────────
+  if (nd.is_compute && (nd.availability_zone || nd.aggregates?.length)) {
+    h += `<div class="card">
+      <div class="card-title">Placement</div>
+      <div class="card-body">
+        ${nd.availability_zone ? `<div class="mrow"><span class="ml">Availability Zone</span><span class="mv">${esc(nd.availability_zone)}</span></div>` : ''}
+        ${nd.hypervisor        ? `<div class="mrow"><span class="ml">Hypervisor</span><span class="mv dim" style="font-size:10px">${esc(nd.hypervisor)}</span></div>` : ''}
+        ${nd.aggregates?.length ? `<div class="mrow"><span class="ml">Aggregates</span><span class="mv" style="font-size:10px">${nd.aggregates.map(a => `<span class="tree-badge agg">${esc(a)}</span>`).join(' ')}</span></div>` : ''}
+      </div>
+    </div>`;
+  }
+
   h += `</div>`;
 
   if (nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {

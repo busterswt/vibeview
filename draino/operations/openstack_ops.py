@@ -228,6 +228,64 @@ def get_host_summary(hypervisor: str) -> dict:
     }
 
 
+# ── Hypervisor detail (for summary tab) ──────────────────────────────────────
+
+def get_hypervisor_detail(hypervisor: str) -> dict:
+    """Return Nova hypervisor resource stats for the summary tab.
+
+    Returns a dict with vcpus, vcpus_used, memory_mb, memory_mb_used,
+    local_disk_gb, local_disk_gb_used, running_vms, cpu_info (dict).
+    All values are None on failure.
+    """
+    import json as _json
+
+    conn = _conn()
+    result: dict = {
+        "vcpus":             None,
+        "vcpus_used":        None,
+        "memory_mb":         None,
+        "memory_mb_used":    None,
+        "local_disk_gb":     None,
+        "local_disk_gb_used": None,
+        "running_vms":       None,
+        "cpu_info":          {},
+    }
+    try:
+        hvs = list(conn.compute.hypervisors(hypervisor_hostname_pattern=hypervisor))
+        if not hvs:
+            return result
+        hv = hvs[0]
+        # Fetch full detail (some fields only available via get)
+        try:
+            hv = conn.compute.get_hypervisor(hv.id)
+        except Exception:
+            pass
+        d = hv.to_dict() if hasattr(hv, "to_dict") else {}
+
+        result["vcpus"]              = d.get("vcpus")              or getattr(hv, "vcpus",              None)
+        result["vcpus_used"]         = d.get("vcpus_used")         or getattr(hv, "vcpus_used",         None)
+        result["memory_mb"]          = d.get("memory_size")        or getattr(hv, "memory_size",        None) \
+                                    or d.get("memory_mb")          or getattr(hv, "memory_mb",          None)
+        result["memory_mb_used"]     = d.get("memory_used")        or getattr(hv, "memory_used",        None) \
+                                    or d.get("memory_mb_used")     or getattr(hv, "memory_mb_used",     None)
+        result["local_disk_gb"]      = d.get("local_disk_size")    or getattr(hv, "local_disk_size",    None) \
+                                    or d.get("disk_available_least") and None  # don't use available
+        result["local_disk_gb_used"] = d.get("local_disk_used")    or getattr(hv, "local_disk_used",    None)
+        result["running_vms"]        = d.get("running_vms")        or getattr(hv, "running_vms",        None)
+
+        raw_cpu = d.get("cpu_info") or getattr(hv, "cpu_info", None)
+        if isinstance(raw_cpu, str):
+            try:
+                raw_cpu = _json.loads(raw_cpu)
+            except Exception:
+                raw_cpu = {}
+        if isinstance(raw_cpu, dict):
+            result["cpu_info"] = raw_cpu
+    except Exception:
+        pass
+    return result
+
+
 # ── Compute service ───────────────────────────────────────────────────────────
 
 def disable_compute_service(hypervisor: str, log: LogFn) -> None:
