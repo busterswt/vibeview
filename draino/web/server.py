@@ -609,6 +609,17 @@ async def api_networks():
         return {"networks": [], "error": str(exc)}
 
 
+@fastapi_app.get("/api/networks/{network_id}/ovn")
+async def api_network_ovn(network_id: str):
+    """Return OVN logical switch and ports for a Neutron network."""
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id)
+        return {"ovn": data, "error": None}
+    except Exception as exc:
+        return {"ovn": None, "error": str(exc)}
+
+
 @fastapi_app.get("/api/networks/{network_id}")
 async def api_network_detail(network_id: str):
     """Return subnets and segments for a single network."""

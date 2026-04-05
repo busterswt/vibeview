@@ -149,6 +149,96 @@ def uncordon_node(name: str, log: LogFn) -> None:
     log(f"Node '{name}' uncordoned successfully")
 
 
+def get_ovn_logical_switch(network_id: str) -> dict:
+    """Run `kubectl ko nbctl show neutron-<network_id>` and return parsed data.
+
+    Returns:
+        {
+            "ls_name": "neutron-<uuid>",
+            "ls_uuid": "<ovn-internal-uuid>",
+            "ports": [
+                {
+                    "id":          "<port-name>",   # Neutron port UUID for VM/router ports
+                    "type":        "",              # "" | "router" | "localnet" | ...
+                    "addresses":   ["mac ip", ...],
+                    "router_port": "",
+                }
+            ]
+        }
+    Raises RuntimeError if kubectl is not available or the command fails.
+    """
+    import json as _json
+
+    ls_name = f"neutron-{network_id}"
+    cmd = ["kubectl"]
+    if _CONTEXT:
+        cmd += ["--context", _CONTEXT]
+    cmd += ["ko", "nbctl", "show", ls_name]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError:
+        raise RuntimeError("kubectl not found in PATH")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("kubectl ko nbctl show timed out")
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"kubectl ko exited with code {result.returncode}")
+
+    # ── Parse the nbctl show output ──────────────────────────────────────────
+    # Format:
+    #   switch <ovn-uuid> (neutron-<network-id>)
+    #       port <port-name>
+    #           type: router
+    #           addresses: ["fa:16:3e:... 10.0.0.1"]
+    lines = result.stdout.splitlines()
+    ls_uuid = ""
+    ports: list[dict] = []
+    current: dict | None = None
+
+    for line in lines:
+        content = line.rstrip()
+        stripped = content.lstrip()
+        if not stripped:
+            continue
+        indent = len(content) - len(stripped)
+
+        if indent == 0 and stripped.startswith("switch "):
+            parts = stripped.split(None, 2)
+            ls_uuid = parts[1] if len(parts) > 1 else ""
+            current = None
+
+        elif indent == 4 and stripped.startswith("port "):
+            if current is not None:
+                ports.append(current)
+            current = {
+                "id":          stripped[len("port "):],
+                "type":        "",
+                "addresses":   [],
+                "router_port": "",
+            }
+
+        elif indent == 8 and current is not None and ":" in stripped:
+            key, _, val = stripped.partition(":")
+            key = key.strip()
+            val = val.strip()
+            if key == "type":
+                current["type"] = val
+            elif key == "router-port":
+                current["router_port"] = val.strip('"')
+            elif key == "addresses":
+                try:
+                    current["addresses"] = _json.loads(val)
+                except Exception:
+                    current["addresses"] = [val.strip('"')]
+
+    if current is not None:
+        ports.append(current)
+
+    return {"ls_name": ls_name, "ls_uuid": ls_uuid, "ports": ports}
+
+
 def drain_node(name: str, log: LogFn, timeout: int = 300) -> None:
     """Evict all non-DaemonSet pods from a node and wait for termination."""
     _load_config()

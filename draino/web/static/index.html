@@ -700,7 +700,7 @@ const collapsedGroups = new Set();
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedNetwork  = null;
-const netDetailState   = { loading: false, data: null, selectedSubnet: null };
+const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null } };
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
@@ -1540,6 +1540,7 @@ function appendNetError(msg) {
 async function selectNetwork(id) {
   selectedNetwork = id;
   netDetailState.selectedSubnet = null;
+  netDetailState.ovn = { loading: false, data: null, error: null };
   // Highlight row in list (immediately, before async fetch)
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => {
     r.classList.toggle('selected', r.dataset.netId === id);
@@ -1561,12 +1562,29 @@ async function selectNetwork(id) {
     netDetailState.loading = false;
     renderNetworkDetail();
   }
+  // Load OVN data in parallel (non-blocking — renders separately when done)
+  loadNetworkOvn(id);
+}
+
+async function loadNetworkOvn(id) {
+  netDetailState.ovn = { loading: true, data: null, error: null };
+  renderNetworkDetail();
+  try {
+    const resp = await fetch(`/api/networks/${encodeURIComponent(id)}/ovn`);
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error);
+    netDetailState.ovn = { loading: false, data: json.ovn, error: null };
+  } catch (e) {
+    netDetailState.ovn = { loading: false, data: null, error: String(e) };
+  }
+  renderNetworkDetail();
 }
 
 function closeNetworkDetail() {
   selectedNetwork = null;
   netDetailState.data = null;
   netDetailState.selectedSubnet = null;
+  netDetailState.ovn = { loading: false, data: null, error: null };
   document.getElementById('net-detail-wrap').classList.remove('open');
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
 }
@@ -1656,6 +1674,55 @@ function renderNetworkDetail() {
     }
     h += `</tbody></table></div></div>`;
   }
+
+  // OVN Logical Switch
+  const ovn = netDetailState.ovn;
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">OVN Logical Switch</div>`;
+  if (ovn.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
+  } else if (ovn.error) {
+    h += `<div class="card-body" style="color:var(--red);font-size:11px">${esc(ovn.error)}</div>`;
+  } else if (ovn.data) {
+    const ls = ovn.data;
+    h += `<div class="card-body">
+      <div class="mrow"><span class="ml">Name</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ls.ls_name)}</span></div>
+      <div class="mrow"><span class="ml">UUID</span><span class="mv uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(ls.ls_uuid)}" onclick="navigator.clipboard?.writeText('${escAttr(ls.ls_uuid)}')">${ls.ls_uuid.slice(0,8)}…</span></div>
+    </div>`;
+    if (ls.ports?.length) {
+      h += `<div style="padding:0">
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Neutron Port ID</th><th>Type</th><th>MAC / IP</th></tr></thead>
+          <tbody>`;
+      for (const p of ls.ports) {
+        const typeLabel = p.type === 'router' ? 'Router' : p.type === 'localnet' ? 'Localnet' : 'VM';
+        let mac = '', ipList = [];
+        for (const addr of (p.addresses || [])) {
+          if (addr === 'unknown') { mac = 'unknown'; break; }
+          const parts = addr.trim().split(/\s+/);
+          if (!mac && parts[0]) mac = parts[0];
+          if (parts.length > 1) ipList.push(...parts.slice(1));
+        }
+        if (!mac) mac = '—';
+        const ipStr = ipList.length ? ipList.join(', ') : '—';
+        const isSpecial = p.id.startsWith('provnet-') || p.type === 'localnet';
+        const portIdCell = isSpecial
+          ? `<span style="color:var(--dim);font-size:10px;font-family:monospace">${esc(p.id)}</span>`
+          : `<span class="uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(p.id)}" onclick="navigator.clipboard?.writeText('${escAttr(p.id)}')">${p.id.slice(0,8)}…</span>`;
+        h += `<tr>
+          <td>${portIdCell}</td>
+          <td>${esc(typeLabel)}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(mac)}<br><span style="color:var(--dim)">${esc(ipStr)}</span></td>
+        </tr>`;
+      }
+      h += `</tbody></table></div>`;
+    } else {
+      h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No logical ports found.</div>`;
+    }
+  } else {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">Not loaded.</div>`;
+  }
+  h += `</div>`;
 
   h += `</div>`;
   wrap.innerHTML = h;
