@@ -2044,28 +2044,46 @@ function renderOvnSection(nd) {
         <th style="width:32px"></th>
       </tr></thead>
       <tbody id="cfg-ports-body">
-        ${ports.map((p, i) => `<tr>
-          <td style="color:var(--dim);font-size:11px">${i+1}</td>
-          <td>
-            <select onchange="netEdit.ports[${i}].bridge=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">
-              ${bridges.length ? bridges.map(b => `<option value="${esc(b)}" ${b===p.bridge?'selected':''}>${esc(b)}</option>`).join('') : `<option value="${esc(p.bridge)}">${esc(p.bridge)||'(no bridges)'}</option>`}
-            </select>
-            ${p.bridge && !bridges.includes(p.bridge) ? `<span class="err-chip" style="margin-left:4px" title="Bridge not in bridges list">⚠ not in bridges</span>` : ''}
-          </td>
-          <td style="color:var(--dim);text-align:center;padding:0">:</td>
-          <td id="cfg-port-iface-${i}">
-            ${ifaceLoading
-              ? `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`
-              : ifaceNames.length > 0
-                ? `<select onchange="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">${ifaceNames.map(n => `<option value="${esc(n)}" ${n===p.iface?'selected':''}>${esc(n)}</option>`).join('')}</select>`
-                : `<input type="text" value="${esc(p.iface)}" style="width:160px;font-family:monospace" oninput="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">`
-            }
-          </td>
-          <td><button class="del-btn" onclick="cfgRemovePort(${i})" title="Remove">🗑</button></td>
-        </tr>`).join('')}
+        ${ports.map((p, i) => {
+          // Bridges already used by OTHER rows
+          const usedByOthers = new Set(ports.filter((_, j) => j !== i).map(x => x.bridge));
+          const isDupeBridge = p.bridge && usedByOthers.has(p.bridge);
+          // For this row's select: show all bridges but mark duplicates disabled
+          const bridgeOpts = bridges.length
+            ? bridges.map(b => {
+                const taken = usedByOthers.has(b);
+                return `<option value="${esc(b)}" ${b===p.bridge?'selected':''} ${taken?'disabled':''}>
+                  ${esc(b)}${taken?' (in use)':''}
+                </option>`;
+              }).join('')
+            : `<option value="${esc(p.bridge)}">${esc(p.bridge)||'(no bridges)'}</option>`;
+          return `<tr ${isDupeBridge ? 'style="background:#fff8f8"' : ''}>
+            <td style="color:var(--dim);font-size:11px">${i+1}</td>
+            <td>
+              <select onchange="netEdit.ports[${i}].bridge=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">
+                ${bridgeOpts}
+              </select>
+              ${isDupeBridge ? `<span class="err-chip" style="margin-left:4px" title="Each bridge can only have one port">⚠ duplicate bridge</span>` : ''}
+              ${p.bridge && !bridges.includes(p.bridge) ? `<span class="err-chip" style="margin-left:4px" title="Bridge not in bridges list">⚠ not in bridges</span>` : ''}
+            </td>
+            <td style="color:var(--dim);text-align:center;padding:0">:</td>
+            <td>
+              ${ifaceLoading
+                ? `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`
+                : ifaceNames.length > 0
+                  ? `<select onchange="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">${ifaceNames.map(n => `<option value="${esc(n)}" ${n===p.iface?'selected':''}>${esc(n)}</option>`).join('')}</select>`
+                  : `<input type="text" value="${esc(p.iface)}" style="width:160px;font-family:monospace" oninput="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">`
+              }
+            </td>
+            <td><button class="del-btn" onclick="cfgRemovePort(${i})" title="Remove">🗑</button></td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>
-    <div class="add-row-btn" onclick="cfgAddPort()">+ Add port mapping</div>
+    ${bridges.length > ports.length
+      ? `<div class="add-row-btn" onclick="cfgAddPort()">+ Add port mapping</div>`
+      : `<div style="padding:6px 10px 5px;font-size:11px;color:var(--dim);border-top:1px solid #f0f2f5">All bridges already have a port assigned.</div>`
+    }
   </div>`;
 
   return h;
@@ -2244,8 +2262,11 @@ function cfgSaveMappings() {
 // ── Port operations ──────────────────────────────────────────────────────────
 
 function cfgAddPort() {
+  const usedBridges = new Set(netEdit.ports.map(p => p.bridge));
+  const freeBridge  = netEdit.bridges.find(b => !usedBridges.has(b));
+  if (!freeBridge) return; // button should be hidden, but guard anyway
   const ifaces = ((nodeNetworkCache[netEdit.node] || {}).ifaces || []).filter(i => i.type === 'physical' || i.type === 'bond');
-  netEdit.ports.push({ bridge: netEdit.bridges[0] || '', iface: ifaces[0]?.name || '' });
+  netEdit.ports.push({ bridge: freeBridge, iface: ifaces[0]?.name || '' });
   netEdit.portsDirty = true;
   renderConfigureTab(nodes[netEdit.node]);
 }
@@ -2257,7 +2278,14 @@ function cfgRemovePort(i) {
 }
 
 function cfgSavePorts() {
-  const val = netEdit.ports.filter(p => p.bridge && p.iface).map(p => `${p.bridge}:${p.iface}`).join(',');
+  const valid = netEdit.ports.filter(p => p.bridge && p.iface);
+  const bridgeCounts = valid.reduce((m, p) => { m[p.bridge] = (m[p.bridge] || 0) + 1; return m; }, {});
+  const dupes = Object.entries(bridgeCounts).filter(([, n]) => n > 1).map(([b]) => b);
+  if (dupes.length) {
+    alert(`Cannot save: bridge(s) ${dupes.map(b => `"${b}"`).join(', ')} appear more than once. Each bridge may only have one port.`);
+    return;
+  }
+  const val = valid.map(p => `${p.bridge}:${p.iface}`).join(',');
   _annWarnAndSave('ovn.openstack.org/ports', val, () => {
     netEdit.portsDirty = false;
     _cfgMarkDirty();
