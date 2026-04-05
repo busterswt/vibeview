@@ -312,7 +312,7 @@ def get_ovn_logical_switch(network_id: str) -> dict:
             if current is not None:
                 ports.append(current)
             current = {
-                "id":          stripped[len("port "):],
+                "id":          stripped[len("port "):].split()[0],
                 "type":        "",
                 "addresses":   [],
                 "router_port": "",
