@@ -404,6 +404,63 @@ class DrainoServer:
         self._push({"type": "log", "node": node_name, "message": "Reboot cancelled.", "color": "dim"})
 
 
+# ── OpenStack resource helpers (called in thread pool) ───────────────────────
+
+def _get_networks() -> list[dict]:
+    """Return all Neutron networks visible to the configured credential."""
+    conn = openstack_ops._conn()
+    result = []
+    for n in conn.network.networks():
+        d = n.to_dict() if hasattr(n, "to_dict") else {}
+        result.append({
+            "id":           n.id,
+            "name":         n.name or "(unnamed)",
+            "status":       n.status or "UNKNOWN",
+            "admin_state":  "up" if n.is_admin_state_up else "down",
+            "shared":       bool(n.is_shared),
+            "external":     bool(d.get("router:external", False)),
+            "network_type": d.get("provider:network_type") or "",
+            "project_id":   n.project_id or "",
+            "subnet_count": len(list(n.subnet_ids or [])),
+        })
+    return result
+
+
+def _get_volumes() -> tuple[list[dict], bool]:
+    """Return all Cinder volumes.  Falls back to project-scope on permission error.
+
+    Returns (volumes, all_projects_succeeded).
+    """
+    conn = openstack_ops._conn()
+    all_projects = False
+    try:
+        vols = list(conn.volume.volumes(all_projects=True))
+        all_projects = True
+    except Exception:
+        vols = list(conn.volume.volumes())
+
+    result = []
+    for v in vols:
+        att = getattr(v, "attachments", []) or []
+        project_id = (
+            getattr(v, "os-vol-tenant-attr:tenant_id", None)
+            or getattr(v, "project_id", None)
+            or ""
+        )
+        result.append({
+            "id":          v.id,
+            "name":        v.name or "(no name)",
+            "status":      v.status or "UNKNOWN",
+            "size_gb":     v.size or 0,
+            "volume_type": v.volume_type or "",
+            "project_id":  project_id,
+            "attached_to": [a.get("server_id", "") for a in att],
+            "bootable":    bool(getattr(v, "is_bootable", False)),
+            "encrypted":   bool(getattr(v, "encrypted", False)),
+        })
+    return result, all_projects
+
+
 # ── FastAPI application ───────────────────────────────────────────────────────
 
 _server: Optional[DrainoServer] = None
@@ -423,6 +480,28 @@ fastapi_app = FastAPI(title="Draino", lifespan=_lifespan)
 @fastapi_app.get("/")
 async def index() -> FileResponse:
     return FileResponse(_STATIC / "index.html")
+
+
+@fastapi_app.get("/api/networks")
+async def api_networks():
+    """List Neutron networks (admin sees all; non-admin sees project scope)."""
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, _get_networks)
+        return {"networks": data, "error": None}
+    except Exception as exc:
+        return {"networks": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/volumes")
+async def api_volumes():
+    """List Cinder volumes (admin sees all projects; non-admin sees own project)."""
+    loop = asyncio.get_running_loop()
+    try:
+        data, all_projects = await loop.run_in_executor(None, _get_volumes)
+        return {"volumes": data, "all_projects": all_projects, "error": None}
+    except Exception as exc:
+        return {"volumes": [], "all_projects": False, "error": str(exc)}
 
 
 @fastapi_app.websocket("/ws")
