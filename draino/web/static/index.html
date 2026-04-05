@@ -760,6 +760,19 @@ function onFullState(msg) {
   nodes = msg.nodes;
   rebuildSidebar();
   renderInfraDetail();
+  // Pre-fetch node details for all nodes in the background so hardware/K8s
+  // info is ready by the time the user clicks any node.
+  prefetchAllNodeDetails();
+}
+
+function prefetchAllNodeDetails() {
+  const names = Object.keys(nodes);
+  // Stagger fetches 200 ms apart to avoid hammering the server on load
+  names.forEach((name, i) => {
+    if (!nodeDetailCache[name]) {
+      setTimeout(() => loadNodeDetail(name), i * 200);
+    }
+  });
 }
 
 function onStateUpdate(msg) {
