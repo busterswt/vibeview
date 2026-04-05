@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Set
@@ -407,6 +408,61 @@ class DrainoServer:
         self._audit.log("reboot", node_name, "cancelled")
         self._push({"type": "log", "node": node_name, "message": "Reboot cancelled.", "color": "dim"})
 
+    # ── Individual instance migration ─────────────────────────────────────────
+
+    def action_migrate_instance(self, node_name: str, instance_id: str) -> None:
+        """Live-migrate a single instance outside of a full evacuation workflow."""
+        state = self.node_states.get(node_name)
+        if not state or state.phase.name.lower() != "idle":
+            self._push({"type": "log", "node": node_name,
+                        "message": "Cannot migrate: node is not idle.", "color": "warn"})
+            return
+        self._push({
+            "type": "instance_migrate_status",
+            "node": node_name,
+            "instance_id": instance_id,
+            "status": "migrating",
+        })
+        threading.Thread(
+            target=self._migrate_instance_bg,
+            args=(node_name, instance_id),
+            daemon=True,
+        ).start()
+
+    def _migrate_instance_bg(self, node_name: str, instance_id: str) -> None:
+        log = self._log_cb(node_name)
+        try:
+            openstack_ops.live_migrate_server(instance_id, log)
+        except Exception as exc:
+            log(f"Migration trigger failed for {instance_id}: {exc}")
+            self._push({"type": "instance_migrate_status", "node": node_name,
+                        "instance_id": instance_id, "status": "error"})
+            return
+
+        # Poll for completion (up to 10 minutes)
+        deadline = time.time() + 600
+        time.sleep(3)
+        while time.time() < deadline:
+            task_state = openstack_ops.get_server_task_state(instance_id)
+            srv_status = openstack_ops.get_server_status(instance_id)
+            if srv_status == "ERROR":
+                log(f"Instance {instance_id} entered ERROR state during migration")
+                self._push({"type": "instance_migrate_status", "node": node_name,
+                            "instance_id": instance_id, "status": "error"})
+                return
+            if task_state is None and srv_status == "ACTIVE":
+                log(f"Instance {instance_id} migrated successfully")
+                self._push({"type": "instance_migrate_status", "node": node_name,
+                            "instance_id": instance_id, "status": "complete"})
+                # Refresh the preflight list so the moved instance disappears
+                self.start_preflight(node_name)
+                return
+            time.sleep(5)
+
+        log(f"Timeout waiting for instance {instance_id} to finish migrating")
+        self._push({"type": "instance_migrate_status", "node": node_name,
+                    "instance_id": instance_id, "status": "error"})
+
 
 # ── OpenStack resource helpers (called in thread pool) ───────────────────────
 
@@ -588,6 +644,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif action == "reboot_cancel"  and node:             _server.action_reboot_cancel(node)
             elif action == "check_etcd":                          _server.start_etcd_check()
             elif action == "get_preflight"  and node:             _server.start_preflight(node)
+            elif action == "migrate_instance" and node:
+                iid = msg.get("instance_id")
+                if iid: _server.action_migrate_instance(node, iid)
             elif action == "get_pods"       and node:
                 threading.Thread(
                     target=_serve_pods, args=(_server, ws, node), daemon=True

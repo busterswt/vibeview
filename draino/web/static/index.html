@@ -688,6 +688,9 @@ const stepTimes = {};
 // Hints toggle
 let showHints = true;
 
+// Per-instance migration state (outside full evacuation): instance_id → 'migrating'|'error'
+const instanceMigrateStates = {};
+
 // Sidebar collapse state
 const collapsedGroups = new Set();
 
@@ -734,9 +737,10 @@ function wsConnect() {
       full_state:            () => onFullState(msg),
       state_update:          () => onStateUpdate(msg),
       log:                   () => onLog(msg),
-      reboot_confirm_needed: () => onRebootConfirmNeeded(msg),
-      reboot_blocked:        () => onRebootBlocked(msg),
-      pods:                  () => onPods(msg),
+      reboot_confirm_needed:    () => onRebootConfirmNeeded(msg),
+      reboot_blocked:           () => onRebootBlocked(msg),
+      pods:                     () => onPods(msg),
+      instance_migrate_status:  () => onInstanceMigrateStatus(msg),
     };
     dispatch[msg.type]?.();
   };
@@ -762,7 +766,11 @@ function onFullState(msg) {
 }
 
 function onStateUpdate(msg) {
+  const prevPhase = nodes[msg.node]?.phase;
   nodes[msg.node] = msg.data;
+  // Clear individual migrate state when a full workflow kicks off
+  if (msg.data.phase === 'running' && prevPhase !== 'running')
+    Object.keys(instanceMigrateStates).forEach(k => delete instanceMigrateStates[k]);
   trackStepTimes(msg.node, msg.data.steps || []);
   updateSidebarRow(msg.node);
   if (msg.node === selectedNode) renderInfraDetail();
@@ -819,6 +827,16 @@ function onPods(msg) {
     const sec = document.getElementById('pods-section');
     if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
   }
+}
+
+function onInstanceMigrateStatus(msg) {
+  if (msg.status === 'complete') {
+    delete instanceMigrateStates[msg.instance_id];
+  } else {
+    instanceMigrateStates[msg.instance_id] = msg.status;
+  }
+  if (activeTab === 'instances' && selectedNode === msg.node && nodes[selectedNode])
+    renderInstancesTab(nodes[selectedNode]);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1258,12 +1276,22 @@ function renderInstancesTab(nd) {
     } else if (nd.preflight_instances?.length) {
       h += `<table class="data-table" id="inst-data-table">
         <thead><tr>
-          <th>Name</th><th>Status</th><th>Type</th><th>Storage <span class="hint">Datastore</span></th>
+          <th>Name</th><th>Status</th><th>Type</th><th>Storage <span class="hint">Datastore</span></th><th>Action</th>
         </tr></thead><tbody>`;
       for (const i of nd.preflight_instances) {
         const tp = i.is_amphora ? `<span class="tag-amp">Amphora LB</span>` : 'VM';
         const st = i.is_volume_backed ? `<span class="tag-vol">Volume</span>` : `<span class="tag-eph">Ephemeral</span>`;
-        h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${st}</td></tr>`;
+        const ms = instanceMigrateStates[i.id];
+        let action = '';
+        if (!i.is_amphora) {
+          if (ms === 'migrating')
+            action = `<button class="btn" disabled style="font-size:11px"><span class="spinner">⟳</span> Migrating…</button>`;
+          else if (ms === 'error')
+            action = `<button class="btn danger" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↺ Retry</button>`;
+          else
+            action = `<button class="btn" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↗ Migrate</button>`;
+        }
+        h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${st}</td><td>${action}</td></tr>`;
       }
       h += `</tbody></table>`;
     } else {
@@ -1896,6 +1924,13 @@ function updateActionButtons(nd) {
 function actionRefresh()  { wsSend({ action: 'refresh' }); }
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }
 function actionReboot()   { if (selectedNode) wsSend({ action: 'reboot_request', node: selectedNode }); }
+
+function migrateInstance(instanceId) {
+  if (!selectedNode) return;
+  instanceMigrateStates[instanceId] = 'migrating';
+  wsSend({ action: 'migrate_instance', node: selectedNode, instance_id: instanceId });
+  if (nodes[selectedNode]) renderInstancesTab(nodes[selectedNode]);
+}
 
 function actionDrainOrUndrain() {
   if (!selectedNode) return;
