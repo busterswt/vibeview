@@ -690,6 +690,9 @@ let showHints = true;
 
 // Per-instance migration state (outside full evacuation): instance_id → 'migrating'|'error'
 const instanceMigrateStates = {};
+// Per-instance migration task records for the Recent Tasks panel
+// instance_id → { name, nodeName, status, startTime }
+const instanceMigrateTasks  = {};
 
 // Sidebar collapse state
 const collapsedGroups = new Set();
@@ -769,8 +772,10 @@ function onStateUpdate(msg) {
   const prevPhase = nodes[msg.node]?.phase;
   nodes[msg.node] = msg.data;
   // Clear individual migrate state when a full workflow kicks off
-  if (msg.data.phase === 'running' && prevPhase !== 'running')
+  if (msg.data.phase === 'running' && prevPhase !== 'running') {
     Object.keys(instanceMigrateStates).forEach(k => delete instanceMigrateStates[k]);
+    Object.keys(instanceMigrateTasks).forEach(k => delete instanceMigrateTasks[k]);
+  }
   trackStepTimes(msg.node, msg.data.steps || []);
   updateSidebarRow(msg.node);
   if (msg.node === selectedNode) renderInfraDetail();
@@ -831,11 +836,16 @@ function onPods(msg) {
 }
 
 function onInstanceMigrateStatus(msg) {
+  // Update button/row state (complete means the instance has moved — remove from states)
   if (msg.status === 'complete') {
     delete instanceMigrateStates[msg.instance_id];
   } else {
     instanceMigrateStates[msg.instance_id] = msg.status;
   }
+  // Update the task record for the Recent Tasks panel
+  if (instanceMigrateTasks[msg.instance_id])
+    instanceMigrateTasks[msg.instance_id].status = msg.status;
+  renderTasksPanel();
   if (activeTab === 'instances' && selectedNode === msg.node && nodes[selectedNode])
     renderInstancesTab(nodes[selectedNode]);
 }
@@ -1844,40 +1854,68 @@ function renderTasksPanel() {
   const tbody = document.getElementById('tasks-tbody');
   const nd    = selectedNode ? nodes[selectedNode] : null;
 
-  // Find any actively running node if selected node has no steps
+  // Workflow steps: prefer selected node, fall back to any running node
   const source = (nd?.steps?.length) ? nd
     : Object.values(nodes).find(n => n.steps?.length && n.phase !== 'idle');
 
-  if (!source?.steps?.length) {
+  // Individual instance migrations
+  const migTasks = Object.values(instanceMigrateTasks);
+
+  if (!source?.steps?.length && !migTasks.length) {
     tbody.innerHTML = `<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:10px">No active tasks.</td></tr>`;
     return;
   }
 
   let html = '';
-  for (const s of source.steps) {
-    const prog = stepProgress(s.status);
-    const ts   = stepTime(source.k8s_name, s.key, s.status);
-    const statusHtml = {
-      running: `<span style="display:flex;align-items:center;gap:4px"><span class="spinner">⟳</span> Running…</span>`,
-      success: `<span style="color:var(--green)">✓ Done</span>`,
-      failed:  `<span style="color:var(--red)">✗ Failed</span>`,
-      skipped: `<span style="color:var(--dim)">— Skipped</span>`,
-      pending: `<span style="color:var(--dim)">○ Pending</span>`,
-    }[s.status] || `<span style="color:var(--dim)">${esc(s.status)}</span>`;
 
-    html += `<tr>
-      <td>${esc(s.label)}</td>
-      <td>${esc(source.k8s_name)}</td>
-      <td>${statusHtml}</td>
-      <td>
-        <div class="progress-inline">
+  // ── Workflow steps ────────────────────────────────────────────────────────
+  if (source?.steps?.length) {
+    for (const s of source.steps) {
+      const prog = stepProgress(s.status);
+      const ts   = stepTime(source.k8s_name, s.key, s.status);
+      const statusHtml = {
+        running: `<span style="display:flex;align-items:center;gap:4px"><span class="spinner">⟳</span> Running…</span>`,
+        success: `<span style="color:var(--green)">✓ Done</span>`,
+        failed:  `<span style="color:var(--red)">✗ Failed</span>`,
+        skipped: `<span style="color:var(--dim)">— Skipped</span>`,
+        pending: `<span style="color:var(--dim)">○ Pending</span>`,
+      }[s.status] || `<span style="color:var(--dim)">${esc(s.status)}</span>`;
+      html += `<tr>
+        <td>${esc(s.label)}</td>
+        <td>${esc(source.k8s_name)}</td>
+        <td>${statusHtml}</td>
+        <td><div class="progress-inline">
           <div class="prog-bar"><div class="prog-fill ${prog.cls}" style="width:${prog.pct}%"></div></div>
           <span style="color:var(--dim)">${prog.pct}%</span>
-        </div>
-      </td>
+        </div></td>
+        <td style="color:var(--dim)">${ts}</td>
+      </tr>`;
+    }
+  }
+
+  // ── Individual instance migrations ────────────────────────────────────────
+  for (const t of migTasks) {
+    const prog = t.status === 'complete' ? { pct: 100, cls: 'done' }
+               : t.status === 'error'    ? { pct: 100, cls: 'fail' }
+               : { pct: 55, cls: '' };
+    const ts   = t.startTime ? t.startTime.toLocaleTimeString('en-GB', { hour12: false }) : '—';
+    const statusHtml = t.status === 'migrating'
+      ? `<span style="display:flex;align-items:center;gap:4px"><span class="spinner">⟳</span> Migrating…</span>`
+      : t.status === 'complete'
+      ? `<span style="color:var(--green)">✓ Done</span>`
+      : `<span style="color:var(--red)">✗ Failed</span>`;
+    html += `<tr>
+      <td>↗ Migrate: ${esc(t.name)}</td>
+      <td>${esc(t.nodeName)}</td>
+      <td>${statusHtml}</td>
+      <td><div class="progress-inline">
+        <div class="prog-bar"><div class="prog-fill ${prog.cls}" style="width:${prog.pct}%"></div></div>
+        <span style="color:var(--dim)">${prog.pct}%</span>
+      </div></td>
       <td style="color:var(--dim)">${ts}</td>
     </tr>`;
   }
+
   tbody.innerHTML = html;
 }
 
@@ -1942,9 +1980,18 @@ function syncPodsButton() {
 
 function migrateInstance(instanceId) {
   if (!selectedNode) return;
+  const nd   = nodes[selectedNode];
+  const inst = nd?.preflight_instances?.find(i => i.id === instanceId);
   instanceMigrateStates[instanceId] = 'migrating';
+  instanceMigrateTasks[instanceId]  = {
+    name:      inst?.name || instanceId.slice(0, 8),
+    nodeName:  selectedNode,
+    status:    'migrating',
+    startTime: new Date(),
+  };
   wsSend({ action: 'migrate_instance', node: selectedNode, instance_id: instanceId });
-  if (nodes[selectedNode]) renderInstancesTab(nodes[selectedNode]);
+  if (nd) renderInstancesTab(nd);
+  renderTasksPanel();
 }
 
 function actionDrainOrUndrain() {
