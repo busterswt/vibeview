@@ -713,6 +713,7 @@ class OpenStackLoginPayload(BaseModel):
     project_domain_name: str = "Default"
     region_name: str | None = None
     interface: str | None = None
+    skip_tls_verify: bool = False
     application_credential_id: str | None = None
     application_credential_secret: str | None = None
     clouds_yaml: str | None = None
@@ -826,6 +827,7 @@ def _build_openstack_auth(payload: OpenStackLoginPayload) -> openstack_ops.OpenS
             project_domain_name=(payload.project_domain_name or "").strip() or "Default",
             region_name=(payload.region_name or "").strip() or None,
             interface=(payload.interface or "").strip() or None,
+            skip_tls_verify=payload.skip_tls_verify,
         )
     if mode == "application_credential":
         return openstack_ops.OpenStackAuth(
@@ -841,6 +843,7 @@ def _build_openstack_auth(payload: OpenStackLoginPayload) -> openstack_ops.OpenS
             ),
             region_name=(payload.region_name or "").strip() or None,
             interface=(payload.interface or "").strip() or None,
+            skip_tls_verify=payload.skip_tls_verify,
         )
     if mode == "clouds_yaml":
         config_data = _parse_yaml_document(
@@ -878,6 +881,7 @@ def _build_openstack_auth_from_clouds_yaml(
 
     region_name = str(cloud.get("region_name", "")).strip() or None
     interface = str(cloud.get("interface", "")).strip() or None
+    skip_tls_verify = cloud.get("verify") is False
     if auth.get("application_credential_id") and auth.get("application_credential_secret"):
         return openstack_ops.OpenStackAuth(
             mode="application_credential",
@@ -892,6 +896,7 @@ def _build_openstack_auth_from_clouds_yaml(
             ),
             region_name=region_name,
             interface=interface,
+            skip_tls_verify=skip_tls_verify,
         )
 
     return openstack_ops.OpenStackAuth(
@@ -904,6 +909,7 @@ def _build_openstack_auth_from_clouds_yaml(
         project_domain_name=str(auth.get("project_domain_name", "Default")).strip() or "Default",
         region_name=region_name,
         interface=interface,
+        skip_tls_verify=skip_tls_verify,
     )
 
 

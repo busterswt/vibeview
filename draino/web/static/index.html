@@ -1070,6 +1070,10 @@ body.auth-locked { overflow: hidden; }
               <label for="auth-os-interface">Interface</label>
               <input id="auth-os-interface" type="text" value="public" placeholder="Optional, e.g. public">
             </div>
+            <label class="auth-check">
+              <input id="auth-os-skip-tls" type="checkbox">
+              <span>Skip TLS verification</span>
+            </label>
           </div>
           <div class="auth-mode-pane" id="auth-os-mode-application_credential">
             <div class="auth-field">
@@ -1094,6 +1098,10 @@ body.auth-locked { overflow: hidden; }
                 <input id="auth-os-app-interface" type="text" value="public" placeholder="Optional, e.g. public">
               </div>
             </div>
+            <label class="auth-check">
+              <input id="auth-os-app-skip-tls" type="checkbox">
+              <span>Skip TLS verification</span>
+            </label>
             <div class="auth-help">
               <strong>Recommended alternative:</strong> application credentials are better suited than raw username/password for a web UI session because they can be scoped and rotated independently.
             </div>
@@ -1388,6 +1396,7 @@ function buildOpenStackAuthPayload() {
       project_domain_name: document.getElementById('auth-os-project-domain').value.trim(),
       region_name: document.getElementById('auth-os-region').value.trim(),
       interface: document.getElementById('auth-os-interface').value.trim(),
+      skip_tls_verify: document.getElementById('auth-os-skip-tls').checked,
     };
   }
   if (authMode.os === 'application_credential') {
@@ -1398,6 +1407,7 @@ function buildOpenStackAuthPayload() {
       application_credential_secret: document.getElementById('auth-os-app-secret').value,
       region_name: document.getElementById('auth-os-app-region').value.trim(),
       interface: document.getElementById('auth-os-app-interface').value.trim(),
+      skip_tls_verify: document.getElementById('auth-os-app-skip-tls').checked,
     };
   }
   return {

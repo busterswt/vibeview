@@ -24,6 +24,7 @@ class OpenStackAuth:
     project_domain_name: str = "Default"
     region_name: str | None = None
     interface: str | None = None
+    skip_tls_verify: bool = False
     application_credential_id: str | None = None
     application_credential_secret: str | None = None
 
@@ -52,6 +53,8 @@ def _conn(auth: OpenStackAuth | None = None) -> openstack.connection.Connection:
         kwargs["region_name"] = auth.region_name
     if auth.interface:
         kwargs["interface"] = auth.interface
+    if auth.skip_tls_verify:
+        kwargs["verify"] = False
     return openstack.connection.Connection(**kwargs)
 
 
