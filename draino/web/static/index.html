@@ -204,6 +204,9 @@ body {
   border: 1px solid #fff176; font-style: italic; flex-shrink: 0;
 }
 body.no-hints .hint { display: none !important; }
+body.no-hints .concept-map { display: none !important; }
+body.no-hints .concept-table { display: none !important; }
+body.no-hints .vmware-ref-card { display: none !important; }
 .hint-toggle {
   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
   color: #b0bec5; padding: 3px 9px; border-radius: 3px; font-size: 11px;
@@ -1383,7 +1386,7 @@ function renderConfigureTab(nd) {
     </div>`;
   }
   h += `</div>
-  <div class="card">
+  <div class="card vmware-ref-card">
     <div class="card-title">💡 VMware vSphere → OpenStack / Kubernetes Reference</div>
     <div class="card-body" style="padding:0">
       <table class="concept-table">
