@@ -700,7 +700,7 @@ const collapsedGroups = new Set();
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedNetwork  = null;
-const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null } };
+const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null }, ovnSelectedPort: null, ovnPortCache: {} };
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
@@ -1541,6 +1541,8 @@ async function selectNetwork(id) {
   selectedNetwork = id;
   netDetailState.selectedSubnet = null;
   netDetailState.ovn = { loading: false, data: null, error: null };
+  netDetailState.ovnSelectedPort = null;
+  netDetailState.ovnPortCache = {};
   // Highlight row in list (immediately, before async fetch)
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => {
     r.classList.toggle('selected', r.dataset.netId === id);
@@ -1585,6 +1587,8 @@ function closeNetworkDetail() {
   netDetailState.data = null;
   netDetailState.selectedSubnet = null;
   netDetailState.ovn = { loading: false, data: null, error: null };
+  netDetailState.ovnSelectedPort = null;
+  netDetailState.ovnPortCache = {};
   document.getElementById('net-detail-wrap').classList.remove('open');
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
 }
@@ -1706,16 +1710,22 @@ function renderNetworkDetail() {
         if (!mac) mac = '—';
         const ipStr = ipList.length ? ipList.join(', ') : '—';
         const isSpecial = p.id.startsWith('provnet-') || p.type === 'localnet';
+        const isSel = netDetailState.ovnSelectedPort === p.id;
         const portIdCell = isSpecial
           ? `<span style="color:var(--dim);font-size:10px;font-family:monospace">${esc(p.id)}</span>`
-          : `<span class="uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(p.id)}" onclick="navigator.clipboard?.writeText('${escAttr(p.id)}')">${p.id.slice(0,8)}…</span>`;
-        h += `<tr>
+          : `<span style="font-family:monospace;font-size:10px" title="${escAttr(p.id)}">${p.id.slice(0,8)}…</span>`;
+        h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectOvnPort('${escAttr(p.id)}')">
           <td>${portIdCell}</td>
           <td>${esc(typeLabel)}</td>
           <td style="font-family:monospace;font-size:10px">${esc(mac)}<br><span style="color:var(--dim)">${esc(ipStr)}</span></td>
         </tr>`;
       }
       h += `</tbody></table></div>`;
+      // Port detail card (shown when a port row is clicked)
+      if (netDetailState.ovnSelectedPort) {
+        const cached = netDetailState.ovnPortCache[netDetailState.ovnSelectedPort];
+        if (cached) h += renderOvnPortDetail(netDetailState.ovnSelectedPort, cached);
+      }
     } else {
       h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No logical ports found.</div>`;
     }
@@ -1754,6 +1764,90 @@ function renderSubnetDetail(sub) {
     h += `<div class="mrow"><span class="ml">Host routes</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(routes)}</span></div>`;
   }
   h += `</div></div>`;
+  return h;
+}
+
+async function selectOvnPort(portId) {
+  // Toggle: same port deselects
+  if (netDetailState.ovnSelectedPort === portId) {
+    netDetailState.ovnSelectedPort = null;
+    renderNetworkDetail();
+    return;
+  }
+  netDetailState.ovnSelectedPort = portId;
+  // If already cached, just re-render
+  if (netDetailState.ovnPortCache[portId]) {
+    renderNetworkDetail();
+    return;
+  }
+  // Show spinner in detail slot while fetching
+  netDetailState.ovnPortCache[portId] = { loading: true, data: null, error: null };
+  renderNetworkDetail();
+  try {
+    const resp = await fetch(`/api/ovn/lsp/${encodeURIComponent(portId)}`);
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error);
+    netDetailState.ovnPortCache[portId] = { loading: false, data: json.port, error: null };
+  } catch (e) {
+    netDetailState.ovnPortCache[portId] = { loading: false, data: null, error: String(e) };
+  }
+  renderNetworkDetail();
+}
+
+function renderOvnPortDetail(portId, cached) {
+  let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
+    <div class="card-title" style="color:var(--blue)">LSP: ${portId.slice(0,8)}…</div>`;
+  if (cached.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
+  } else if (cached.error) {
+    h += `<div class="card-body" style="color:var(--red);font-size:11px">${esc(cached.error)}</div>`;
+  } else if (cached.data) {
+    const d = cached.data;
+    const ext = d.external_ids || {};
+    const opts = d.options || {};
+    h += `<div class="card-body">`;
+    // Full UUID (copyable)
+    h += `<div class="mrow"><span class="ml">UUID</span><span class="mv" style="font-family:monospace;font-size:10px;cursor:pointer;word-break:break-all" title="Click to copy" onclick="navigator.clipboard?.writeText('${escAttr(portId)}')">${esc(portId)}</span></div>`;
+    // Status
+    if (d.up !== null)      h += `<div class="mrow"><span class="ml">Up</span><span class="mv ${d.up ? 'green' : 'red'}">${d.up ? 'true' : 'false'}</span></div>`;
+    if (d.enabled !== null) h += `<div class="mrow"><span class="ml">Enabled</span><span class="mv ${d.enabled ? 'green' : 'red'}">${d.enabled ? 'true' : 'false'}</span></div>`;
+    if (d.tag !== null)     h += `<div class="mrow"><span class="ml">Tag (VLAN)</span><span class="mv" style="font-family:monospace">${d.tag}</span></div>`;
+    // Chassis binding
+    if (opts['requested-chassis']) h += `<div class="mrow"><span class="ml">Chassis</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(opts['requested-chassis'])}</span></div>`;
+    // Port security
+    if (d.port_security?.length) {
+      h += `<div class="mrow"><span class="ml">Port security</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(d.port_security.join(', '))}</span></div>`;
+    }
+    // Dynamic addresses
+    if (d.dynamic_addresses) h += `<div class="mrow"><span class="ml">Dynamic addr</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(d.dynamic_addresses)}</span></div>`;
+    // Neutron external_ids
+    const neutronKeys = ['neutron:port_name','neutron:device_owner','neutron:device_id',
+                         'neutron:project_id','neutron:network_id','neutron:subnet_id',
+                         'neutron:revision_number'];
+    const labelMap = {
+      'neutron:port_name':       'Port name',
+      'neutron:device_owner':    'Device owner',
+      'neutron:device_id':       'Device ID',
+      'neutron:project_id':      'Project ID',
+      'neutron:network_id':      'Network ID',
+      'neutron:subnet_id':       'Subnet ID',
+      'neutron:revision_number': 'Revision',
+    };
+    const isUuidKey = new Set(['neutron:device_id','neutron:project_id','neutron:network_id','neutron:subnet_id']);
+    for (const k of neutronKeys) {
+      if (!ext[k]) continue;
+      const val = ext[k];
+      const mono = isUuidKey.has(k) ? `style="font-family:monospace;font-size:10px;cursor:pointer;word-break:break-all" title="Click to copy" onclick="navigator.clipboard?.writeText('${escAttr(val)}')"` : `style="font-size:11px"`;
+      h += `<div class="mrow"><span class="ml">${labelMap[k]}</span><span class="mv" ${mono}>${esc(val)}</span></div>`;
+    }
+    // Any remaining external_ids not in the known list
+    for (const [k, v] of Object.entries(ext)) {
+      if (neutronKeys.includes(k)) continue;
+      h += `<div class="mrow"><span class="ml" style="font-size:10px">${esc(k)}</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(v)}</span></div>`;
+    }
+    h += `</div>`;
+  }
+  h += `</div>`;
   return h;
 }
 

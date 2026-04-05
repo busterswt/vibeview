@@ -149,6 +149,96 @@ def uncordon_node(name: str, log: LogFn) -> None:
     log(f"Node '{name}' uncordoned successfully")
 
 
+def get_ovn_port_detail(port_id: str) -> dict:
+    """Run `kubectl ko nbctl lsp-show <port_id>` and return parsed data.
+
+    Returns a dict with keys: id, type, addresses, port_security,
+    up, enabled, tag, external_ids, options, dynamic_addresses.
+    Raises RuntimeError if kubectl is unavailable or the command fails.
+    """
+    import json as _json
+    import re as _re
+
+    cmd = ["kubectl"]
+    if _CONTEXT:
+        cmd += ["--context", _CONTEXT]
+    cmd += ["ko", "nbctl", "lsp-show", port_id]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError:
+        raise RuntimeError("kubectl not found in PATH")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("kubectl ko nbctl lsp-show timed out")
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"lsp-show exited with code {result.returncode}")
+
+    def _parse_ovn_map(s: str) -> dict:
+        """Parse OVN map format: {key="value", key2=value2}"""
+        s = s.strip().strip("{}")
+        out: dict = {}
+        for m in _re.finditer(r'([\w:.\-]+)\s*=\s*"([^"]*)"', s):
+            out[m.group(1)] = m.group(2)
+        for m in _re.finditer(r'([\w:.\-]+)\s*=\s*([^",}\s]+)', s):
+            if m.group(1) not in out:
+                out[m.group(1)] = m.group(2)
+        return out
+
+    data: dict = {
+        "id":               port_id,
+        "type":             "",
+        "addresses":        [],
+        "port_security":    [],
+        "up":               None,
+        "enabled":          None,
+        "tag":              None,
+        "external_ids":     {},
+        "options":          {},
+        "dynamic_addresses": "",
+    }
+
+    for line in result.stdout.splitlines():
+        content = line.rstrip()
+        stripped = content.lstrip()
+        if not stripped or stripped.startswith("port "):
+            continue
+        if ":" not in stripped:
+            continue
+        key, _, val = stripped.partition(":")
+        key = key.strip()
+        val = val.strip()
+
+        if key == "type":
+            data["type"] = val.strip('"')
+        elif key == "addresses":
+            try:
+                data["addresses"] = _json.loads(val)
+            except Exception:
+                data["addresses"] = [val.strip('"')] if val else []
+        elif key == "port_security":
+            try:
+                data["port_security"] = _json.loads(val)
+            except Exception:
+                data["port_security"] = [val.strip('"')] if val else []
+        elif key == "up":
+            data["up"] = (val == "true")
+        elif key == "enabled":
+            data["enabled"] = (val == "true")
+        elif key == "tag":
+            try:
+                data["tag"] = int(val)
+            except Exception:
+                pass
+        elif key == "dynamic_addresses":
+            data["dynamic_addresses"] = val.strip('"')
+        elif key in ("external_ids", "options"):
+            data[key] = _parse_ovn_map(val)
+
+    return data
+
+
 def get_ovn_logical_switch(network_id: str) -> dict:
     """Run `kubectl ko nbctl show neutron-<network_id>` and return parsed data.
 
