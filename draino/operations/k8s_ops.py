@@ -485,6 +485,8 @@ for d in /sys/class/net/*/; do
   printf 'mac=%s\n'       "$(cat ${d}address 2>/dev/null)"
   printf 'speed_mbps=%s\n' "$(cat ${d}speed 2>/dev/null)"
   printf 'duplex=%s\n'    "$(cat ${d}duplex 2>/dev/null)"
+  printf 'ipv4=%s\n'     "$(ip -4 addr show "$name" 2>/dev/null | awk '/inet /{print $2}' | paste -sd, -)"
+  printf 'ipv6=%s\n'     "$(ip -6 addr show "$name" 2>/dev/null | awk '/inet6 / && $2 !~ /^fe80/{print $2}' | paste -sd, -)"
   if [ "$is_bond" = "1" ]; then
     printf 'type=bond\n'
     printf 'slaves=%s\n'  "$(cat ${d}bonding/slaves 2>/dev/null)"
@@ -559,6 +561,8 @@ done
                 "vendor": None,
                 "members": [],
                 "mode": None,
+                "ipv4": [],
+                "ipv6": [],
             }
         elif line == "__END_NIC__":
             if current is not None:
@@ -589,6 +593,10 @@ done
                 current["members"] = [s for s in val.split() if s]
             elif key == "mode":
                 current["mode"] = val or None
+            elif key == "ipv4":
+                current["ipv4"] = [a for a in val.split(",") if a.strip()]
+            elif key == "ipv6":
+                current["ipv6"] = [a for a in val.split(",") if a.strip()]
 
     # Sort: bonds first, then physicals alphabetically
     interfaces.sort(key=lambda x: (0 if x["type"] == "bond" else 1, x["name"]))

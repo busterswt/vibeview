@@ -2015,11 +2015,15 @@ function renderOvnSection(nd) {
   </div>`;
 
   // ── Ports ─────────────────────────────────────────────────────────────────
-  const ifaceSelectOrLoading = (selectedIface) => {
-    if (ifaceLoading) return `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`;
-    if (ifaceNames.length === 0) return `<input type="text" value="${esc(selectedIface)}" style="width:160px;font-family:monospace"
-        oninput="this.dataset.pendingIface=this.value">`;
-    return `<select>${ifaceNames.map(n => `<option value="${esc(n)}" ${n===selectedIface?'selected':''}>${esc(n)}</option>`).join('')}</select>`;
+  // Build interface <option> list: disabled+grayed if the interface has an IP configured
+  const buildIfaceOptions = (selectedIface) => {
+    if (!ifaces.length) return `<option value="${esc(selectedIface)}">${esc(selectedIface) || '—'}</option>`;
+    return ifaces.map(n => {
+      const ips = [...(n.ipv4 || []), ...(n.ipv6 || [])];
+      const hasIp = ips.length > 0;
+      const reason = hasIp ? ` — has IP: ${ips.join(', ')}` : '';
+      return `<option value="${esc(n.name)}" ${n.name === selectedIface ? 'selected' : ''} ${hasIp ? 'disabled style="color:#bdbdbd"' : ''}>${esc(n.name)}${esc(reason)}</option>`;
+    }).join('');
   };
 
   h += `<div class="card" style="margin-bottom:16px">
@@ -2071,8 +2075,8 @@ function renderOvnSection(nd) {
             <td>
               ${ifaceLoading
                 ? `<span style="color:var(--dim);font-size:11px"><span class="spinner">⟳</span> Loading…</span>`
-                : ifaceNames.length > 0
-                  ? `<select onchange="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">${ifaceNames.map(n => `<option value="${esc(n)}" ${n===p.iface?'selected':''}>${esc(n)}</option>`).join('')}</select>`
+                : ifaces.length > 0
+                  ? `<select onchange="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">${buildIfaceOptions(p.iface)}</select>`
                   : `<input type="text" value="${esc(p.iface)}" style="width:160px;font-family:monospace" oninput="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">`
               }
             </td>
@@ -2286,7 +2290,9 @@ function cfgAddPort() {
   const freeBridge  = netEdit.bridges.find(b => !usedBridges.has(b));
   if (!freeBridge) return; // button should be hidden, but guard anyway
   const ifaces = ((nodeNetworkCache[netEdit.node] || {}).ifaces || []).filter(i => i.type === 'physical' || i.type === 'bond');
-  netEdit.ports.push({ bridge: freeBridge, iface: ifaces[0]?.name || '' });
+  // Prefer an interface with no IP configured as the default
+  const defaultIface = ifaces.find(i => !i.ipv4?.length && !i.ipv6?.length) || ifaces[0];
+  netEdit.ports.push({ bridge: freeBridge, iface: defaultIface?.name || '' });
   netEdit.portsDirty = true;
   renderConfigureTab(nodes[netEdit.node]);
 }
