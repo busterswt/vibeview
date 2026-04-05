@@ -1902,8 +1902,9 @@ function renderOvnSection(nd) {
   let h = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--dim);padding-bottom:6px;margin:16px 0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
     OVN Node Networking
     ${hasUnsaved ? `<span style="font-size:10px;font-weight:400;color:#f57f17;text-transform:none">● Unsaved changes</span>` : ''}
-    <span style="margin-left:auto">
-      <button class="btn sm" onclick="loadOvnAnnotations('${escAttr(name)}', true)" ${loading ? 'disabled' : ''} title="Refresh annotations">↺ Refresh</button>
+    <span style="margin-left:auto;display:flex;gap:5px">
+      ${hasUnsaved ? `<button class="btn sm" onclick="cfgRevertAll()" title="Discard all pending changes">✕ Revert</button>` : ''}
+      <button class="btn sm" onclick="loadOvnAnnotations('${escAttr(name)}', true)" ${loading ? 'disabled' : ''} title="Refresh annotations from cluster">↺ Refresh</button>
     </span>
   </div>`;
 
@@ -2006,7 +2007,7 @@ function renderOvnSection(nd) {
             </select>
             ${m.bridge && !bridges.includes(m.bridge) ? `<span class="err-chip" style="margin-left:4px" title="Bridge not in bridges list">⚠ not in bridges</span>` : ''}
           </td>
-          <td><button class="del-btn" onclick="cfgRemoveMapping(${i})" title="Remove">🗑</button></td>
+          <td><button class="del-btn" onclick="cfgRemoveMapping(${i})" title="Remove">✕</button></td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -2075,7 +2076,7 @@ function renderOvnSection(nd) {
                   : `<input type="text" value="${esc(p.iface)}" style="width:160px;font-family:monospace" oninput="netEdit.ports[${i}].iface=this.value;netEdit.portsDirty=true;_cfgMarkDirty()">`
               }
             </td>
-            <td><button class="del-btn" onclick="cfgRemovePort(${i})" title="Remove">🗑</button></td>
+            <td><button class="del-btn" onclick="cfgRemovePort(${i})" title="Remove">✕</button></td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -2199,6 +2200,14 @@ function _cfgMarkDirty() {
   if (saveB) saveB.disabled = !netEdit.bridgesDirty;
   if (saveM) saveM.disabled = !netEdit.mappingsDirty;
   if (saveP) saveP.disabled = !netEdit.portsDirty;
+}
+
+// ── Revert all pending changes ───────────────────────────────────────────────
+
+function cfgRevertAll() {
+  if (!confirm('Discard all pending changes to bridges, mappings, and ports?\n\nThis will restore the values currently stored in Kubernetes.')) return;
+  _initNetEdit(netEdit.node);
+  renderConfigureTab(nodes[netEdit.node]);
 }
 
 // ── Bridge operations ────────────────────────────────────────────────────────
