@@ -5,397 +5,553 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Draino — Node Evacuation Manager</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Reset & variables ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg:        #1a1a2e;
-    --surface:   #16213e;
-    --surface2:  #0f3460;
-    --border:    #2a4a7f;
-    --text:      #e0e0e0;
-    --dim:       #7a8a9a;
-    --green:     #4caf50;
-    --yellow:    #ffc107;
-    --red:       #f44336;
-    --cyan:      #00bcd4;
-    --magenta:   #e040fb;
-    --header-bg: #0d1b2a;
-  }
+:root {
+  --vc-navy:    #1a2332;
+  --vc-blue:    #0072c6;
+  --vc-blue-lt: #1e88e5;
+  --vc-blue-bg: #e3f2fd;
+  --vc-header:  #1a2332;
+  --vc-sidebar: #f4f6f8;
+  --vc-border:  #d1d9e0;
+  --vc-sel:     #bbdefb;
+  --vc-hover:   #e8f4fd;
+  --vc-text:    #1a2332;
+  --vc-dim:     #607d8b;
+  --vc-white:   #ffffff;
+  --gray-bg:    #f0f2f5;
+  --green:      #2e7d32;
+  --green-lt:   #4caf50;
+  --yellow:     #f57f17;
+  --yellow-lt:  #ffc107;
+  --red:        #c62828;
+  --red-lt:     #ef5350;
+  --magenta:    #7b1fa2;
+  --cyan:       #00838f;
+}
 
-  body {
-    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    font-size: 13px;
-    background: var(--bg);
-    color: var(--text);
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--vc-text);
+  background: var(--gray-bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
-  /* ── Header ── */
-  #header {
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 6px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
-  #header h1 { font-size: 15px; color: var(--cyan); letter-spacing: 1px; }
-  #header .clock { color: var(--dim); font-size: 12px; }
-  #ws-status { font-size: 11px; display: flex; align-items: center; gap: 6px; }
-  #ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); transition: background 0.3s; }
-  #ws-dot.live { background: var(--green); }
+/* ── Top bar ── */
+#top-bar {
+  background: var(--vc-header);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 16px;
+  flex-shrink: 0;
+  border-bottom: 2px solid var(--vc-blue);
+}
+.logo { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.logo-icon { width: 24px; height: 24px; background: var(--vc-blue); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: white; }
+.logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+#clock { color: #90a4ae; font-size: 12px; }
+#ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
+#ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red-lt); transition: background 0.3s; }
+#ws-dot.live { background: var(--green-lt); }
+.user-badge { color: #b0bec5; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.user-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--vc-blue); color: white; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 
-  /* ── Main layout ── */
-  #main { display: flex; flex: 1; overflow: hidden; }
+/* ── Body split ── */
+#body { display: flex; flex: 1; overflow: hidden; }
 
-  /* ── Left panel ── */
-  #node-panel {
-    width: 740px;
-    min-width: 480px;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border);
-    overflow: hidden;
-  }
+/* ── Sidebar ── */
+#sidebar {
+  width: 270px;
+  min-width: 200px;
+  background: var(--vc-sidebar);
+  border-right: 1px solid var(--vc-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-head {
+  background: var(--vc-white);
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vc-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--vc-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-refresh {
+  cursor: pointer; color: var(--vc-blue); font-size: 14px;
+  padding: 0 4px; line-height: 1;
+}
+.sidebar-refresh:hover { color: var(--vc-blue-lt); }
+#tree { overflow-y: auto; flex: 1; padding: 4px 0; }
+.tree-group-header {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vc-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-top: 1px solid var(--vc-border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tree-group-header:first-child { border-top: none; }
+.tree-count { background: #e0e0e0; color: var(--vc-dim); font-size: 10px; padding: 0 5px; border-radius: 8px; }
+.tree-item {
+  padding: 5px 10px 5px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+.tree-item:hover { background: var(--vc-hover); }
+.tree-item.selected { background: var(--vc-sel); border-left-color: var(--vc-blue); }
+.tree-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; background: #bdbdbd;
+}
+.tree-dot.green    { background: var(--green-lt); }
+.tree-dot.yellow   { background: var(--yellow-lt); animation: pulse 1.2s ease-in-out infinite; }
+.tree-dot.red      { background: var(--red-lt); }
+.tree-dot.gray     { background: #bdbdbd; }
+.tree-dot.magenta  { background: #ce93d8; animation: pulse 1.2s ease-in-out infinite; }
+.tree-dot.cyan     { background: #80deea; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+.tree-name { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-item.selected .tree-name { color: var(--vc-blue); font-weight: 500; }
+.tree-tag {
+  font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0;
+  background: #ffebee; color: var(--red); font-weight: 600;
+}
+.tree-counts { font-size: 10px; color: var(--vc-dim); flex-shrink: 0; }
+.tree-counts.active { color: var(--vc-blue); }
 
-  .section { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); overflow: hidden; }
-  #compute-section { flex: 1; }
-  #other-section   { max-height: 160px; }
+/* ── Content area ── */
+#content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-  .section-title {
-    background: var(--surface2);
-    color: var(--text);
-    padding: 4px 12px;
-    font-weight: bold;
-    font-size: 12px;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .table-scroll { overflow-y: auto; flex: 1; }
+/* Object header */
+#obj-header {
+  background: var(--vc-white);
+  border-bottom: 1px solid var(--vc-border);
+  padding: 10px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.obj-icon {
+  width: 38px; height: 38px; background: var(--vc-blue-bg); border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+}
+.obj-meta { flex: 1; min-width: 0; }
+.obj-meta h2 { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.obj-meta .obj-sub { font-size: 11px; color: var(--vc-dim); margin-top: 2px; }
+.obj-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 500;
+}
+.badge.green   { background: #e8f5e9; color: var(--green); }
+.badge.yellow  { background: #fff8e1; color: var(--yellow); }
+.badge.red     { background: #ffebee; color: var(--red); }
+.badge.blue    { background: var(--vc-blue-bg); color: var(--vc-blue); }
+.badge.gray    { background: #f5f5f5; color: #607d8b; }
+.badge.magenta { background: #f3e5f5; color: var(--magenta); }
+.badge.cyan    { background: #e0f7fa; color: var(--cyan); }
+.obj-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; }
 
-  table { width: 100%; border-collapse: collapse; }
-  thead th {
-    background: var(--surface);
-    color: var(--dim);
-    padding: 4px 8px;
-    text-align: left;
-    font-weight: normal;
-    font-size: 11px;
-    position: sticky;
-    top: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  tbody tr { cursor: pointer; border-bottom: 1px solid rgba(42,74,127,0.3); }
-  tbody tr:hover    { background: rgba(0,188,212,0.06); }
-  tbody tr.selected { background: rgba(0,188,212,0.14); }
-  tbody td {
-    padding: 5px 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 0;
-  }
+/* Buttons */
+.btn {
+  padding: 4px 11px; border: 1px solid var(--vc-border); background: var(--vc-white);
+  border-radius: 3px; cursor: pointer; font-size: 12px; color: var(--vc-text);
+  font-family: inherit; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--vc-hover); border-color: var(--vc-blue-lt); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--vc-blue); color: white; border-color: var(--vc-blue); }
+.btn.primary:hover:not(:disabled) { background: var(--vc-blue-lt); border-color: var(--vc-blue-lt); }
+.btn.warning { background: #e65100; color: white; border-color: #ef6c00; }
+.btn.warning:hover:not(:disabled) { background: #bf360c; }
+.btn.danger  { background: #b71c1c; color: white; border-color: #c62828; }
+.btn.danger:hover:not(:disabled)  { background: #7f0000; }
 
-  /* cell colours */
-  .tag-etcd      { color: var(--red); font-weight: bold; font-size: 11px; }
-  .tag-ready     { color: var(--green); }
-  .tag-cordoned  { color: var(--dim); }
-  .tag-notready  { color: var(--red); }
-  .nova-enabled  { color: var(--green); }
-  .nova-disabled { color: var(--yellow); }
-  .nova-down     { color: var(--red); font-weight: bold; }
-  .nova-loading  { color: var(--dim); }
-  .phase-idle      { color: var(--text); }
-  .phase-running   { color: var(--yellow); }
-  .phase-complete  { color: var(--green); font-weight: bold; }
-  .phase-error     { color: var(--red); font-weight: bold; }
-  .phase-rebooting { color: var(--magenta); font-weight: bold; }
-  .phase-undraining{ color: var(--cyan); }
-  .phase-cordoned  { color: var(--dim); }
-  .num-nonzero { color: var(--cyan); }
-  .num-zero    { color: var(--dim); }
-  .dim         { color: var(--dim); }
+/* Tabs */
+#tabs-bar {
+  background: var(--vc-white);
+  border-bottom: 1px solid var(--vc-border);
+  padding: 0 16px;
+  display: flex;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 8px 14px; cursor: pointer; font-size: 12px; color: var(--vc-dim);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--vc-blue); }
+.tab.active { color: var(--vc-blue); border-bottom-color: var(--vc-blue); font-weight: 500; }
 
-  /* ── Right panel ── */
-  #right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+/* Tab body */
+#tab-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
 
-  #workflow-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
-  }
+/* ── Summary tab ── */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.card {
+  background: var(--vc-white); border: 1px solid var(--vc-border);
+  border-radius: 4px; overflow: hidden;
+}
+.card-title {
+  background: var(--gray-bg); padding: 6px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--vc-dim); border-bottom: 1px solid var(--vc-border);
+}
+.card-body { padding: 10px 12px; }
+.mrow {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0; border-bottom: 1px solid #f0f2f5; font-size: 12px;
+}
+.mrow:last-child { border-bottom: none; }
+.mrow .ml { color: var(--vc-dim); }
+.mrow .mv { font-weight: 600; }
+.mv.green   { color: var(--green); }
+.mv.yellow  { color: var(--yellow); }
+.mv.red     { color: var(--red); }
+.mv.blue    { color: var(--vc-blue); }
+.mv.magenta { color: var(--magenta); }
+.mv.gray    { color: #9e9e9e; }
+.mv.dim     { color: var(--vc-dim); font-weight: 400; }
 
-  #log-panel { height: 130px; display: flex; flex-direction: column; flex-shrink: 0; }
-  #log-title {
-    background: var(--surface2);
-    padding: 4px 12px;
-    font-weight: bold;
-    font-size: 12px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  #log-view {
-    flex: 1;
-    overflow-y: auto;
-    padding: 6px 12px;
-    font-size: 12px;
-    line-height: 1.6;
-  }
+/* etcd alert box */
+.etcd-alert {
+  border: 1px solid #fff176; background: #fffde7; border-radius: 4px;
+  padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #5d4037; line-height: 1.6;
+}
+.etcd-alert.danger { border-color: #ef9a9a; background: #ffebee; color: var(--red); }
+.etcd-alert.checking { border-color: #b0bec5; background: #f5f5f5; color: var(--vc-dim); }
+.etcd-peers { font-size: 11px; color: #78909c; margin-top: 4px; }
 
-  /* ── Action bar ── */
-  #action-bar {
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 8px 14px;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  button {
-    font-family: inherit;
-    font-size: 12px;
-    padding: 6px 14px;
-    border: 1px solid;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: opacity 0.15s, filter 0.15s;
-  }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
-  button:not(:disabled):hover { filter: brightness(1.2); }
-  .btn-primary { background: #1565c0; border-color: #1976d2; color: white; }
-  .btn-warning { background: #e65100; border-color: #ef6c00; color: white; }
-  .btn-default { background: var(--surface2); border-color: var(--border); color: var(--text); }
-  .btn-danger  { background: #b71c1c; border-color: #c62828; color: white; }
-  #action-bar .spacer { flex: 1; }
-  #action-bar .hint { color: var(--dim); font-size: 11px; }
+/* Workflow steps */
+.steps-section { margin-bottom: 12px; }
+.steps-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--vc-dim); margin-bottom: 8px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--vc-border);
+}
+.step-row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 4px 8px; font-size: 12px; border-radius: 3px; margin-bottom: 2px;
+}
+.step-row.pending  { color: var(--vc-dim); }
+.step-row.running  { background: #fff8e1; color: var(--yellow); }
+.step-row.success  { color: var(--green); }
+.step-row.failed   { background: #ffebee; color: var(--red); font-weight: 600; }
+.step-row.skipped  { color: var(--vc-dim); }
+.step-icon { width: 16px; flex-shrink: 0; font-size: 12px; }
+.step-label { flex: 1; }
+.step-detail { color: var(--vc-dim); font-size: 11px; }
+.step-row.running .step-detail { color: #e65100; }
 
-  /* ── Workflow content ── */
-  .wf-node        { font-size: 16px; font-weight: bold; }
-  .wf-badge-etcd  { color: var(--red); font-weight: bold; font-size: 13px; margin-left: 8px; }
-  .wf-phase       { font-size: 12px; margin-left: 8px; padding: 2px 8px; border-radius: 3px; }
-  .wf-phase.idle       { background: rgba(224,224,224,0.12); color: var(--text); }
-  .wf-phase.running    { background: rgba(255,193,7,0.15);   color: var(--yellow); }
-  .wf-phase.complete   { background: rgba(76,175,80,0.15);   color: var(--green); }
-  .wf-phase.error      { background: rgba(244,67,54,0.15);   color: var(--red); }
-  .wf-phase.rebooting  { background: rgba(224,64,251,0.15);  color: var(--magenta); }
-  .wf-phase.undraining { background: rgba(0,188,212,0.15);   color: var(--cyan); }
-  .wf-meta        { color: var(--dim); font-size: 12px; margin: 8px 0 16px; }
+.downtime-counter {
+  background: #f3e5f5; border: 1px solid #ce93d8; border-radius: 4px;
+  padding: 6px 12px; color: var(--magenta); font-weight: 700;
+  font-size: 14px; margin-bottom: 12px;
+}
+.reboot-complete {
+  background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px;
+  padding: 6px 12px; color: var(--green); font-weight: 600; margin-top: 8px;
+}
+.idle-hint {
+  margin-top: 8px; font-size: 12px; color: var(--vc-dim);
+  padding: 6px 10px; background: var(--gray-bg); border-radius: 3px;
+}
 
-  .etcd-warning {
-    border: 1px solid rgba(255,193,7,0.3);
-    background: rgba(255,193,7,0.05);
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin-bottom: 14px;
-    font-size: 12px;
-    color: var(--yellow);
-    line-height: 1.6;
-  }
-  .etcd-warning.danger {
-    border-color: rgba(244,67,54,0.4);
-    background: rgba(244,67,54,0.07);
-    color: var(--red);
-  }
-  .etcd-nodes { color: var(--dim); font-size: 11px; margin-top: 4px; }
-  .etcd-spinner { display: inline-block; animation: spin 1s linear infinite; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+/* Preflight instances */
+.inst-table { width: 100%; border-collapse: collapse; }
+.inst-table th {
+  text-align: left; padding: 5px 8px; font-size: 11px; font-weight: 600;
+  color: var(--vc-dim); text-transform: uppercase; letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--vc-border); background: var(--gray-bg);
+}
+.inst-table td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f0f2f5; }
+.inst-table tr:last-child td { border-bottom: none; }
+.inst-table tr:hover td { background: var(--vc-hover); }
+.amp-tag { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+.vol-tag { background: var(--vc-blue-bg); color: var(--vc-blue); padding: 1px 5px; border-radius: 8px; font-size: 10px; }
+.eph-tag { background: #f5f5f5; color: #9e9e9e; padding: 1px 5px; border-radius: 8px; font-size: 10px; }
 
-  .steps-title { font-weight: bold; text-decoration: underline; margin-bottom: 8px; font-size: 13px; }
-  .step-row    { display: flex; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 13px; }
-  .step-icon   { width: 14px; flex-shrink: 0; }
-  .step-detail { color: var(--dim); font-size: 11px; }
-  .step-pending  { color: var(--dim); }
-  .step-running  { color: var(--yellow); }
-  .step-success  { color: var(--green); }
-  .step-failed   { color: var(--red); font-weight: bold; }
-  .step-skipped  { color: var(--dim); }
+/* op status colours (live migration) */
+.op-queued      { color: var(--vc-dim); }
+.op-migrating   { color: var(--yellow); font-weight: 600; }
+.op-complete    { color: var(--green); }
+.op-failed      { color: var(--red); font-weight: 700; }
 
-  .downtime-counter {
-    color: var(--magenta);
-    font-weight: bold;
-    font-size: 14px;
-    margin-bottom: 12px;
-  }
+/* ── Instances & Pods tab ── */
+.tab-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--vc-dim); padding-bottom: 6px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--vc-border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.data-table { width: 100%; border-collapse: collapse; background: var(--vc-white); border: 1px solid var(--vc-border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+.data-table thead th {
+  background: var(--gray-bg); padding: 6px 10px; text-align: left;
+  font-size: 11px; font-weight: 600; color: var(--vc-dim);
+  border-bottom: 1px solid var(--vc-border); text-transform: uppercase; letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.data-table tbody tr { border-bottom: 1px solid #f0f2f5; cursor: default; }
+.data-table tbody tr:hover { background: var(--vc-hover); }
+.data-table td { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.sdot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.sdot.green { background: var(--green-lt); }
+.sdot.yellow { background: var(--yellow-lt); }
+.sdot.red { background: var(--red-lt); }
+.sdot.gray { background: #bdbdbd; }
+.phase-badge {
+  padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600;
+  display: inline-block;
+}
+.ph-running   { background: #fff3e0; color: #e65100; }
+.ph-complete  { background: #e8f5e9; color: var(--green); }
+.ph-failed    { background: #ffebee; color: var(--red); }
+.ph-queued    { background: #f5f5f5; color: #9e9e9e; }
+.ph-migrating { background: #fff8e1; color: var(--yellow); }
 
-  .inst-header { color: var(--dim); font-size: 11px; margin: 4px 0; font-family: monospace; }
-  .inst-row    { display: flex; gap: 8px; padding: 2px 0; font-size: 12px; font-family: monospace; }
-  .inst-name   { width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .inst-type   { width: 70px;  color: var(--dim); }
-  .inst-stat   { width: 90px;  color: var(--dim); }
-  .op-migrating { color: var(--yellow); }
-  .op-complete  { color: var(--green); }
-  .op-failed    { color: var(--red); font-weight: bold; }
-  .op-queued    { color: var(--dim); }
-  .idle-hint    { color: var(--dim); font-size: 12px; margin-top: 6px; }
+/* ── Monitor tab (event log) ── */
+#monitor-log { font-size: 12px; line-height: 1.7; }
+.log-line { padding: 1px 0; }
+.log-ts { color: var(--vc-dim); }
+.log-node { color: var(--vc-blue); }
+.log-dim     { color: var(--vc-dim); }
+.log-info    { color: var(--vc-text); }
+.log-success { color: var(--green); font-weight: 600; }
+.log-warn    { color: var(--yellow); }
+.log-error   { color: var(--red); }
+.log-magenta { color: var(--magenta); }
 
-  /* ── Reboot modal ── */
-  #modal-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.65);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-  }
-  #modal-overlay.open { display: flex; }
-  #modal-box {
-    background: var(--surface);
-    border: 2px solid var(--red);
-    border-radius: 6px;
-    padding: 24px 28px;
-    width: 460px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-  }
-  #modal-box h2      { color: var(--red); margin-bottom: 6px; font-size: 15px; }
-  #modal-node-name   { font-weight: bold; font-size: 14px; margin-bottom: 14px; }
-  #modal-box p       { color: var(--dim); font-size: 12px; margin-bottom: 6px; line-height: 1.6; }
-  #modal-box label   { color: var(--text); font-size: 12px; display: block; margin: 14px 0 6px; }
-  #modal-input {
-    width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13px;
-    padding: 6px 10px;
-    border-radius: 3px;
-    outline: none;
-  }
-  #modal-input:focus { border-color: var(--cyan); }
-  #modal-input.shake {
-    border-color: var(--red);
-    animation: shake 0.3s ease;
-  }
-  @keyframes shake {
-    0%,100% { transform: translateX(0); }
-    25%      { transform: translateX(-6px); }
-    75%      { transform: translateX(6px); }
-  }
-  #modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+/* ── Configure tab ── */
+.concept-table { width: 100%; border-collapse: collapse; }
+.concept-table th {
+  background: var(--gray-bg); padding: 6px 12px; text-align: left;
+  font-size: 11px; font-weight: 700; color: var(--vc-dim);
+  border-bottom: 1px solid var(--vc-border); text-transform: uppercase;
+}
+.concept-table td { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #f0f2f5; }
+.concept-table td:first-child { font-weight: 600; color: #455a64; }
+.concept-table td:last-child  { color: var(--vc-blue); }
 
-  /* ── Footer ── */
-  #footer {
-    background: var(--header-bg);
-    border-top: 1px solid var(--border);
-    padding: 3px 14px;
-    font-size: 11px;
-    color: var(--dim);
-    display: flex;
-    gap: 20px;
-    flex-shrink: 0;
-  }
-  #footer span b { color: var(--text); }
+/* ── Bottom event log ── */
+#log-panel {
+  height: 120px; border-top: 1px solid var(--vc-border);
+  background: var(--vc-white); flex-shrink: 0; display: flex; flex-direction: column;
+}
+.log-panel-head {
+  background: var(--gray-bg); padding: 4px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--vc-dim); border-bottom: 1px solid var(--vc-border); flex-shrink: 0;
+}
+#log-view { flex: 1; overflow-y: auto; padding: 4px 12px; font-size: 11px; line-height: 1.7; }
 
-  /* ── Scrollbars ── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cfd8dc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #90a4ae; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.spinner { animation: spin 1s linear infinite; display: inline-block; }
+
+/* ── Reboot modal ── */
+#modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  z-index: 100; align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+#modal-box {
+  background: var(--vc-white); border: 1px solid var(--vc-border); border-top: 3px solid var(--red);
+  border-radius: 4px; padding: 24px 28px; width: 460px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+#modal-box h2 { color: var(--red); margin-bottom: 6px; font-size: 15px; }
+#modal-node-name { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+#modal-box p { color: var(--vc-dim); font-size: 12px; margin-bottom: 4px; line-height: 1.6; }
+#modal-box label { color: var(--vc-text); font-size: 12px; display: block; margin: 14px 0 6px; }
+#modal-input {
+  width: 100%; border: 1px solid var(--vc-border); background: white;
+  color: var(--vc-text); font-family: inherit; font-size: 13px;
+  padding: 6px 10px; border-radius: 3px; outline: none;
+}
+#modal-input:focus { border-color: var(--vc-blue); }
+#modal-input.shake { border-color: var(--red); animation: shake 0.3s ease; }
+@keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+#modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+
+/* ── Reboot blocked banner ── */
+#blocked-banner {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  z-index: 100; align-items: center; justify-content: center;
+}
+#blocked-banner.open { display: flex; }
+#blocked-box {
+  background: var(--vc-white); border: 1px solid var(--vc-border); border-top: 3px solid var(--red);
+  border-radius: 4px; padding: 24px 28px; width: 480px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+#blocked-box h2 { color: var(--red); margin-bottom: 10px; font-size: 15px; }
+#blocked-detail { font-size: 12px; color: var(--vc-dim); line-height: 1.6; margin-bottom: 16px; }
 </style>
 </head>
 <body>
 
-<!-- ── Header ── -->
-<div id="header">
-  <h1>⬡ DRAINO</h1>
-  <div id="ws-status">
-    <div id="ws-dot"></div>
-    <span id="ws-label">Connecting…</span>
+<!-- ── Top bar ── -->
+<div id="top-bar">
+  <div class="logo">
+    <div class="logo-icon">D</div>
+    <div>
+      <div>Draino</div>
+      <div class="logo-sub">Node Evacuation Manager</div>
+    </div>
   </div>
-  <div class="clock" id="clock"></div>
+  <div class="top-right">
+    <div id="clock"></div>
+    <div id="ws-pill">
+      <div id="ws-dot"></div>
+      <span id="ws-label">Connecting…</span>
+    </div>
+    <div class="user-badge">
+      <div class="user-dot">D</div>
+      admin
+    </div>
+  </div>
 </div>
 
-<!-- ── Main ── -->
-<div id="main">
+<!-- ── Body ── -->
+<div id="body">
 
-  <div id="node-panel">
-    <div class="section" id="compute-section">
-      <div class="section-title">  Compute Nodes</div>
-      <div class="table-scroll">
-        <table id="compute-table">
-          <thead><tr>
-            <th style="width:190px">Node</th>
-            <th style="width:80px">Nova Svc</th>
-            <th style="width:95px">Phase</th>
-            <th style="width:40px">AMP</th>
-            <th style="width:40px">VMs</th>
-            <th style="width:70px">Uptime</th>
-            <th>Kernel</th>
-          </tr></thead>
-          <tbody id="compute-tbody"></tbody>
-        </table>
-      </div>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-head">
+      Navigator
+      <span class="sidebar-refresh" title="Refresh nodes (R)" onclick="actionRefresh()">⟳</span>
     </div>
-
-    <div class="section" id="other-section">
-      <div class="section-title">  Other Nodes</div>
-      <div class="table-scroll">
-        <table id="other-table">
-          <thead><tr>
-            <th style="width:210px">Node</th>
-            <th style="width:50px">Role</th>
-            <th style="width:90px">Status</th>
-            <th style="width:70px">Uptime</th>
-            <th>Kernel</th>
-          </tr></thead>
-          <tbody id="other-tbody"></tbody>
-        </table>
-      </div>
+    <div id="tree">
+      <div class="tree-group-header">Loading nodes…</div>
     </div>
   </div>
 
-  <div id="right-panel">
-    <div id="workflow-scroll">
-      <div id="workflow-content">
-        <div class="dim" style="margin-top:40px;text-align:center">Connecting to server…</div>
+  <!-- Content -->
+  <div id="content">
+
+    <!-- Object header -->
+    <div id="obj-header">
+      <div class="obj-icon">🖥️</div>
+      <div class="obj-meta">
+        <h2 id="oh-name">Select a node</h2>
+        <div class="obj-sub" id="oh-sub">Choose a node from the inventory to view its status and manage operations.</div>
+        <div class="obj-badges" id="oh-badges"></div>
+      </div>
+      <div class="obj-actions" id="oh-actions">
+        <button class="btn primary" id="btn-evacuate" onclick="actionEvacuate()" disabled>▶ Evacuate</button>
+        <button class="btn warning" id="btn-drain"    onclick="actionDrainOrUndrain()" disabled>▽ Drain</button>
+        <button class="btn"         id="btn-pods"     onclick="actionPods()" disabled>⬡ Pods</button>
+        <button class="btn danger"  id="btn-reboot"   onclick="actionReboot()" disabled>⏻ Reboot</button>
       </div>
     </div>
-    <div id="log-panel">
-      <div id="log-title">  Event Log</div>
-      <div id="log-view"></div>
+
+    <!-- Tabs -->
+    <div id="tabs-bar">
+      <div class="tab active" id="tab-btn-summary"    onclick="showTab('summary')">Summary</div>
+      <div class="tab"        id="tab-btn-instances"  onclick="showTab('instances')">Instances &amp; Pods</div>
+      <div class="tab"        id="tab-btn-monitor"    onclick="showTab('monitor')">Monitor</div>
+      <div class="tab"        id="tab-btn-configure"  onclick="showTab('configure')">Configure</div>
     </div>
-  </div>
 
+    <!-- Tab bodies -->
+    <div id="tab-body">
+
+      <!-- Summary -->
+      <div id="tab-summary">
+        <div id="summary-content">
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
+            Select a node from the inventory to view its status.
+          </div>
+        </div>
+      </div>
+
+      <!-- Instances & Pods -->
+      <div id="tab-instances" style="display:none">
+        <div id="instances-content">
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
+            Select a node to view its instances and pods.
+          </div>
+        </div>
+      </div>
+
+      <!-- Monitor (event log) -->
+      <div id="tab-monitor" style="display:none">
+        <div class="tab-section-title">Event Log</div>
+        <div id="monitor-log"></div>
+      </div>
+
+      <!-- Configure -->
+      <div id="tab-configure" style="display:none">
+        <div id="configure-content">
+          <div style="text-align:center;padding:40px 0;color:var(--vc-dim)">
+            Select a node to view its configuration.
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-body -->
+  </div><!-- /content -->
+</div><!-- /body -->
+
+<!-- Bottom event log -->
+<div id="log-panel">
+  <div class="log-panel-head">Event Log &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">S: Evacuate &nbsp; U: Drain/Undrain &nbsp; P: Pods &nbsp; R: Refresh &nbsp; Ctrl+R: Reboot</span></div>
+  <div id="log-view"></div>
 </div>
 
-<!-- ── Action bar ── -->
-<div id="action-bar">
-  <button class="btn-primary" id="btn-start"   onclick="actionStart()">▶  Start Evacuation</button>
-  <button class="btn-warning" id="btn-drain"   onclick="actionDrainOrUndrain()">▽  Drain Node</button>
-  <button class="btn-default" id="btn-pods"    onclick="actionPods()">⬡  Pods</button>
-  <button class="btn-default" id="btn-refresh" onclick="actionRefresh()">⟳  Refresh Nodes</button>
-  <button class="btn-danger"  id="btn-reboot"  onclick="actionReboot()">⏻  Reboot Node</button>
-  <div class="spacer"></div>
-  <div class="hint">S: Evacuate &nbsp; U: Drain/Undrain &nbsp; Ctrl+R: Reboot &nbsp; R: Refresh</div>
-</div>
-
-<!-- ── Footer ── -->
-<div id="footer">
-  <span><b>s</b> Start Evacuation</span>
-  <span><b>u</b> Drain / Undrain</span>
-  <span><b>p</b> Pods</span>
-  <span><b>r</b> Refresh</span>
-  <span><b>ctrl+r</b> Reboot</span>
-</div>
-
-<!-- ── Reboot confirm modal ── -->
+<!-- Reboot confirm modal -->
 <div id="modal-overlay">
   <div id="modal-box">
-    <h2>⚠  REBOOT NODE</h2>
+    <h2>⚠ Reboot Node</h2>
     <div id="modal-node-name"></div>
-    <p>This will SSH into the node and issue <b>sudo reboot</b>.</p>
-    <p>Downtime will be measured until K8s reports the node Ready again.</p>
-    <label>Type <b>YES</b> and press Enter to confirm:</label>
+    <p>This will SSH into the node and issue <strong>sudo reboot</strong>.</p>
+    <p>Downtime is measured until K8s reports the node Ready again.</p>
+    <label>Type <strong>YES</strong> and press Enter to confirm:</label>
     <input id="modal-input" type="text" placeholder="YES" autocomplete="off">
     <div id="modal-actions">
-      <button class="btn-default" onclick="cancelReboot()">Cancel</button>
-      <button class="btn-danger"  onclick="confirmReboot()">Reboot</button>
+      <button class="btn" onclick="cancelReboot()">Cancel</button>
+      <button class="btn danger" onclick="confirmReboot()">Reboot</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reboot blocked modal -->
+<div id="blocked-banner">
+  <div id="blocked-box">
+    <h2>⛔ Reboot Blocked — etcd Quorum Risk</h2>
+    <div id="blocked-detail"></div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn" onclick="closeBlocked()">Dismiss</button>
     </div>
   </div>
 </div>
@@ -405,13 +561,21 @@
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 
-let nodes          = {};          // name → NodeDict (from server)
-let selectedNode   = null;
-let pendingReboot  = null;
-let showPods       = false;
-let hideSucceeded  = true;       // hide Succeeded pods by default
-let lastPodsCache  = null;       // {node, pods[]} — cached for toggle without re-fetch
-let ws             = null;
+let nodes         = {};
+let selectedNode  = null;
+let pendingReboot = null;
+let showPods      = false;
+let hideSucceeded = true;
+let lastPodsCache = null;
+let activeTab     = 'summary';
+let ws            = null;
+
+const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
+const OP_COLOR  = {
+  queued:'op-queued', migrating:'op-migrating', 'cold-migrating':'op-migrating',
+  confirming:'op-migrating', failing_over:'op-migrating',
+  complete:'op-complete', failed:'op-failed', pending:'op-queued',
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket
@@ -420,34 +584,29 @@ let ws             = null;
 function wsConnect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-
-  ws.onopen = () => {
-    document.getElementById("ws-dot").classList.add("live");
-    document.getElementById("ws-label").textContent = "Live";
+  ws.onopen  = () => {
+    document.getElementById('ws-dot').classList.add('live');
+    document.getElementById('ws-label').textContent = 'Live';
   };
-
   ws.onclose = () => {
-    document.getElementById("ws-dot").classList.remove("live");
-    document.getElementById("ws-label").textContent = "Reconnecting…";
+    document.getElementById('ws-dot').classList.remove('live');
+    document.getElementById('ws-label').textContent = 'Reconnecting…';
     setTimeout(wsConnect, 3000);
   };
-
   ws.onerror = () => ws.close();
-
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if      (msg.type === "full_state")          onFullState(msg);
-    else if (msg.type === "state_update")         onStateUpdate(msg);
-    else if (msg.type === "log")                  onLog(msg);
-    else if (msg.type === "reboot_confirm_needed") onRebootConfirmNeeded(msg);
-    else if (msg.type === "reboot_blocked")        onRebootBlocked(msg);
-    else if (msg.type === "pods")                  onPods(msg);
+    if      (msg.type === 'full_state')            onFullState(msg);
+    else if (msg.type === 'state_update')           onStateUpdate(msg);
+    else if (msg.type === 'log')                    onLog(msg);
+    else if (msg.type === 'reboot_confirm_needed')  onRebootConfirmNeeded(msg);
+    else if (msg.type === 'reboot_blocked')         onRebootBlocked(msg);
+    else if (msg.type === 'pods')                   onPods(msg);
   };
 }
 
 function send(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN)
-    ws.send(JSON.stringify(msg));
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,261 +615,144 @@ function send(msg) {
 
 function onFullState(msg) {
   nodes = msg.nodes;
-  rebuildTables();
-  renderWorkflow();
-  updateButtons();
-  if (!selectedNode) {
-    document.getElementById("workflow-content").innerHTML =
-      `<div class="dim" style="margin-top:40px;text-align:center">Select a node from the list to view its status.</div>`;
-  }
+  rebuildSidebar();
+  renderDetail();
 }
 
 function onStateUpdate(msg) {
   nodes[msg.node] = msg.data;
-  updateNodeRow(msg.node);
-  if (msg.node === selectedNode) {
-    renderWorkflow();
-    updateButtons();
-  }
+  updateSidebarRow(msg.node);
+  if (msg.node === selectedNode) renderDetail();
 }
 
 function onLog(msg) {
-  const colors = {
-    dim:       "color:var(--dim)",
-    cyan:      "color:var(--dim)",   // node-prefixed messages
-    magenta:   "color:var(--dim)",
-    important: "color:var(--text)",
-    success:   "color:var(--green);font-weight:bold",
-    warn:      "color:var(--yellow)",
-    error:     "color:var(--red)",
+  const colorMap = {
+    dim:       'log-dim',
+    cyan:      'log-dim',
+    magenta:   'log-magenta',
+    important: 'log-info',
+    success:   'log-success',
+    warn:      'log-warn',
+    error:     'log-error',
   };
-  const ts   = new Date().toLocaleTimeString("en-GB", { hour12: false });
-  const style = colors[msg.color] || "color:var(--dim)";
-  const nodeTag = (msg.node && msg.node !== "-")
-    ? `<span style="color:var(--cyan)">${msg.node}</span>  `
-    : "";
+  const ts    = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const cls   = colorMap[msg.color] || 'log-dim';
+  const nodeTag = (msg.node && msg.node !== '-')
+    ? `<span class="log-node">${escHtml(msg.node)}</span>  ` : '';
+  const line = `<span class="log-ts">[${ts}]</span> ${nodeTag}<span class="${cls}">${escHtml(msg.message)}</span>`;
 
-  const div = document.createElement("div");
-  div.innerHTML = `<span style="color:var(--dim)">[${ts}]</span> ${nodeTag}<span style="${style}">${escHtml(msg.message)}</span>`;
-  const log = document.getElementById("log-view");
-  log.appendChild(div);
-  // Keep last 200 lines
-  while (log.children.length > 200) log.removeChild(log.firstChild);
-  log.scrollTop = log.scrollHeight;
+  // Bottom event log (always visible)
+  const logDiv = document.createElement('div');
+  logDiv.className = 'log-line';
+  logDiv.innerHTML = line;
+  const logView = document.getElementById('log-view');
+  logView.appendChild(logDiv);
+  while (logView.children.length > 300) logView.removeChild(logView.firstChild);
+  logView.scrollTop = logView.scrollHeight;
+
+  // Monitor tab log (duplicate)
+  const monDiv = document.createElement('div');
+  monDiv.className = 'log-line';
+  monDiv.innerHTML = line;
+  const monLog = document.getElementById('monitor-log');
+  monLog.appendChild(monDiv);
+  while (monLog.children.length > 500) monLog.removeChild(monLog.firstChild);
+  if (activeTab === 'monitor') monLog.scrollTop = monLog.scrollHeight;
 }
 
 function onRebootConfirmNeeded(msg) {
   pendingReboot = msg.node;
-  document.getElementById("modal-node-name").textContent = msg.node;
-  document.getElementById("modal-input").value = "";
-  document.getElementById("modal-input").classList.remove("shake");
-  document.getElementById("modal-overlay").classList.add("open");
-  setTimeout(() => document.getElementById("modal-input").focus(), 50);
+  document.getElementById('modal-node-name').textContent = msg.node;
+  document.getElementById('modal-input').value = '';
+  document.getElementById('modal-input').classList.remove('shake');
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('modal-input').focus(), 50);
 }
 
 function onRebootBlocked(msg) {
-  onLog({ node: msg.node, message: `✗ Reboot blocked — ${msg.detail}`, color: "error" });
+  onLog({ node: msg.node, message: `✗ Reboot blocked — ${msg.detail}`, color: 'error' });
+  document.getElementById('blocked-detail').textContent = msg.detail;
+  document.getElementById('blocked-banner').classList.add('open');
 }
 
 function onPods(msg) {
-  // Only render if pods view is still active for this node.
-  if (!showPods || selectedNode !== msg.node) return;
+  if (selectedNode !== msg.node) return;
   lastPodsCache = { node: msg.node, pods: msg.pods || [] };
-  renderPodsList(msg.node, msg.pods || []);
-}
-
-function renderPodsList(nodeName, allPods) {
-  const el = document.getElementById("workflow-content");
-
-  if (allPods.length === 1 && allPods[0].error) {
-    el.innerHTML = `<div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-        ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
-      </div>
-      <div style="color:var(--red)">${escHtml(allPods[0].error)}</div>`;
-    return;
-  }
-
-  const succeeded = allPods.filter(p => p.phase === "Succeeded");
-  const visible   = hideSucceeded ? allPods.filter(p => p.phase !== "Succeeded") : allPods;
-
-  if (!allPods.length) {
-    el.innerHTML = `<div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-        ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
-      </div>
-      <div class="dim">No pods scheduled on this node.</div>`;
-    return;
-  }
-
-  const sorted = [...visible].sort((a, b) =>
-    (a.namespace + a.name).localeCompare(b.namespace + b.name)
-  );
-
-  let rows = "";
-  for (const p of sorted) {
-    const ready    = `${p.ready_count}/${p.total_count}`;
-    const phase    = p.phase || "Unknown";
-    const age      = p.created_at ? podAge(p.created_at) : "?";
-    const readyCls = p.ready_count === p.total_count ? "var(--green)" : "var(--yellow)";
-    const phaseCls = phase === "Running"   ? "var(--green)"
-                   : phase === "Pending"   ? "var(--yellow)"
-                   : phase === "Succeeded" ? "var(--dim)"
-                   : "var(--red)";
-    rows += `<tr>
-      <td style="color:var(--dim);padding:3px 6px;font-size:12px">${escHtml(p.namespace)}</td>
-      <td style="padding:3px 6px;font-size:12px">${escHtml(p.name)}</td>
-      <td style="color:${readyCls};padding:3px 6px;font-size:12px">${escHtml(ready)}</td>
-      <td style="color:${phaseCls};padding:3px 6px;font-size:12px">${escHtml(phase)}</td>
-      <td style="color:var(--dim);padding:3px 6px;font-size:12px">${p.restarts}</td>
-      <td style="color:var(--cyan);padding:3px 6px;font-size:12px">${escHtml(age)}</td>
-    </tr>`;
-  }
-
-  // Footer: count + toggle link
-  let footer = `${visible.length} pod(s)`;
-  let toggleLink = "";
-  if (succeeded.length) {
-    if (hideSucceeded) {
-      footer += ` &nbsp;·&nbsp; ${succeeded.length} Succeeded hidden`;
-      toggleLink = `<a href="#" onclick="toggleSucceeded();return false"
-        style="color:var(--cyan);text-decoration:none;margin-left:8px">show</a>`;
-    } else {
-      footer += ` (${succeeded.length} Succeeded)`;
-      toggleLink = `<a href="#" onclick="toggleSucceeded();return false"
-        style="color:var(--cyan);text-decoration:none;margin-left:8px">hide</a>`;
-    }
-  }
-
-  el.innerHTML = `
-    <div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-      ${escHtml(nodeName)} <span style="color:var(--cyan)">[ PODS ]</span>
-    </div>
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr style="color:var(--dim);font-size:11px;border-bottom:1px solid var(--border)">
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Namespace</th>
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Name</th>
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Ready</th>
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Status</th>
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Restarts</th>
-        <th style="text-align:left;padding:3px 6px;font-weight:normal">Age</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="dim" style="margin-top:12px">${footer}${toggleLink}</div>`;
-}
-
-function toggleSucceeded() {
-  hideSucceeded = !hideSucceeded;
-  if (lastPodsCache && showPods && selectedNode === lastPodsCache.node) {
-    renderPodsList(lastPodsCache.node, lastPodsCache.pods);
-  }
-}
-
-function podAge(iso) {
-  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  const d = Math.floor(secs / 86400);
-  const h = Math.floor((secs % 86400) / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (activeTab === 'instances') renderPodsSection(msg.node, msg.pods || []);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Table rendering
+// Sidebar tree
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STEP_ICON = { pending:"○", running:"◉", success:"✓", failed:"✗", skipped:"—" };
-const OP_COLOR  = {
-  queued:"op-queued", migrating:"op-migrating", "cold-migrating":"op-migrating",
-  confirming:"op-migrating", failing_over:"op-migrating",
-  complete:"op-complete", failed:"op-failed", pending:"op-queued",
-};
-
-function novaHtml(s) {
-  if (!s) return `<span class="nova-loading">…</span>`;
-  if (s === "up")       return `<span class="nova-enabled">enabled</span>`;
-  if (s === "disabled") return `<span class="nova-disabled">disabled</span>`;
-  if (s === "down")     return `<span class="nova-down">DOWN</span>`;
-  return `<span class="dim">${s}</span>`;
+function phaseColor(nd) {
+  if (nd.phase === 'error')     return 'red';
+  if (nd.phase === 'rebooting') return 'magenta';
+  if (nd.phase === 'undraining')return 'cyan';
+  if (nd.phase === 'running')   return 'yellow';
+  if (nd.phase === 'complete')  return 'green';
+  // idle
+  if (!nd.k8s_ready)   return 'red';
+  if (nd.k8s_cordoned) return 'gray';
+  if (nd.compute_status === 'down') return 'red';
+  if (nd.compute_status === 'disabled') return 'yellow';
+  return 'green';
 }
 
-function phaseHtml(nd) {
-  if (nd.phase === "idle") {
-    if (nd.k8s_cordoned) return `<span class="phase-cordoned">CORDONED</span>`;
-    if (!nd.k8s_ready)   return `<span class="tag-notready">NOT READY</span>`;
-    return `<span class="phase-idle">IDLE</span>`;
-  }
-  const map = { running:"phase-running", complete:"phase-complete", error:"phase-error",
-                rebooting:"phase-rebooting", undraining:"phase-undraining" };
-  const cls = map[nd.phase] || "dim";
-  return `<span class="${cls}">${nd.phase.toUpperCase()}</span>`;
-}
-
-function countHtml(n) {
-  if (n === null || n === undefined) return `<span class="dim">…</span>`;
-  return n > 0 ? `<span class="num-nonzero">${n}</span>` : `<span class="num-zero">${n}</span>`;
-}
-
-function statusHtml(nd) {
-  if (nd.k8s_cordoned) return `<span class="tag-cordoned">Cordoned</span>`;
-  if (!nd.k8s_ready)   return `<span class="tag-notready">Not Ready</span>`;
-  return `<span class="tag-ready">Ready</span>`;
-}
-
-function rebuildTables() {
-  const ct = document.getElementById("compute-tbody");
-  const ot = document.getElementById("other-tbody");
-  ct.innerHTML = "";
-  ot.innerHTML = "";
-
-  for (const [name, nd] of Object.entries(nodes)) {
-    const sel = name === selectedNode ? "selected" : "";
-    if (nd.is_compute) {
-      const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
-      ct.insertAdjacentHTML("beforeend", `
-        <tr class="${sel}" onclick="selectNode('${escAttr(name)}')">
-          <td style="width:190px">${escHtml(name)}${etcdBadge}</td>
-          <td style="width:80px">${novaHtml(nd.compute_status)}</td>
-          <td style="width:95px">${phaseHtml(nd)}</td>
-          <td style="width:40px">${countHtml(nd.amphora_count)}</td>
-          <td style="width:40px">${countHtml(nd.vm_count)}</td>
-          <td style="width:70px"><span class="dim">${nd.uptime || "…"}</span></td>
-          <td><span class="dim">${nd.kernel_version || "…"}</span></td>
-        </tr>`);
-    } else {
-      const etcd = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
-      const role = nd.is_etcd ? `<span class="tag-etcd">etcd</span>` : "";
-      ot.insertAdjacentHTML("beforeend", `
-        <tr class="${sel}" onclick="selectNode('${escAttr(name)}')">
-          <td style="width:210px">${escHtml(name)}${etcd}</td>
-          <td style="width:50px">${role}</td>
-          <td style="width:90px">${statusHtml(nd)}</td>
-          <td style="width:70px"><span class="dim">${nd.uptime || "…"}</span></td>
-          <td><span class="dim">${nd.kernel_version || "…"}</span></td>
-        </tr>`);
+function treeItemHtml(name, nd) {
+  const sel      = name === selectedNode ? ' selected' : '';
+  const etcTag   = nd.is_etcd ? `<span class="tree-tag">etcd</span>` : '';
+  const dotColor = phaseColor(nd);
+  let counts = '';
+  if (nd.is_compute) {
+    const a = nd.amphora_count;
+    const v = nd.vm_count;
+    if (a !== null && a !== undefined && v !== null && v !== undefined) {
+      const cls = (a > 0 || v > 0) ? 'active' : '';
+      counts = `<span class="tree-counts ${cls}">${v}vm ${a}amp</span>`;
+    } else if (nd.phase !== 'idle') {
+      counts = `<span class="tree-counts active">${nd.phase}</span>`;
     }
   }
+  return `<div class="tree-item${sel}" onclick="selectNode('${escAttr(name)}')" data-node="${escAttr(name)}">
+    <span class="tree-dot ${dotColor}"></span>
+    <span class="tree-name">${escHtml(name)}</span>
+    ${etcTag}${counts}
+  </div>`;
 }
 
-function updateNodeRow(name) {
-  // Find and update an existing row in-place without full rebuild.
+function rebuildSidebar() {
+  const tree = document.getElementById('tree');
+  const computeNodes = Object.entries(nodes).filter(([,nd]) => nd.is_compute);
+  const otherNodes   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
+
+  let html = '';
+  if (computeNodes.length) {
+    html += `<div class="tree-group-header">
+      🖥 Compute Nodes <span class="tree-count">${computeNodes.length}</span>
+    </div>`;
+    for (const [name, nd] of computeNodes) html += treeItemHtml(name, nd);
+  }
+  if (otherNodes.length) {
+    html += `<div class="tree-group-header">
+      ⚙ Other Nodes <span class="tree-count">${otherNodes.length}</span>
+    </div>`;
+    for (const [name, nd] of otherNodes) html += treeItemHtml(name, nd);
+  }
+  if (!computeNodes.length && !otherNodes.length) {
+    html = '<div class="tree-group-header">No nodes loaded</div>';
+  }
+  tree.innerHTML = html;
+}
+
+function updateSidebarRow(name) {
   const nd  = nodes[name];
   if (!nd) return;
-  const row = document.querySelector(`tr[onclick="selectNode('${escAttr(name)}')"]`);
-  if (!row) { rebuildTables(); return; }
-
-  if (nd.is_compute) {
-    const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
-    row.cells[0].innerHTML = escHtml(nd.k8s_name) + etcdBadge;
-    row.cells[1].innerHTML = novaHtml(nd.compute_status);
-    row.cells[2].innerHTML = phaseHtml(nd);
-    row.cells[3].innerHTML = countHtml(nd.amphora_count);
-    row.cells[4].innerHTML = countHtml(nd.vm_count);
-  } else {
-    const etcdBadge = nd.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
-    row.cells[0].innerHTML = escHtml(nd.k8s_name) + etcdBadge;
-    row.cells[2].innerHTML = statusHtml(nd);
-  }
+  const el = document.querySelector(`[data-node="${escAttr(name)}"]`);
+  if (!el) { rebuildSidebar(); return; }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = treeItemHtml(name, nd);
+  el.replaceWith(tmp.firstElementChild);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -719,308 +761,612 @@ function updateNodeRow(name) {
 
 function selectNode(name) {
   selectedNode = name;
-  // Update selected highlight without full rebuild
-  document.querySelectorAll("tbody tr.selected").forEach(r => r.classList.remove("selected"));
-  document.querySelectorAll(`tr[onclick="selectNode('${escAttr(name)}')"]`)
-    .forEach(r => r.classList.add("selected"));
-
+  // reset pods state on node switch
   showPods = false;
-  document.getElementById("btn-pods").textContent = "⬡  Pods";
+  lastPodsCache = null;
+  document.getElementById('btn-pods').textContent = '⬡ Pods';
 
   const nd = nodes[name];
   if (nd) {
     if (nd.is_etcd) {
-      // Only run the SSH check if health is not yet known for any etcd peer
       const peers = Object.values(nodes).filter(n => n.is_etcd);
-      const anyUnknown = peers.some(n => n.etcd_healthy === null || n.etcd_healthy === undefined);
-      if (anyUnknown) send({ action: "check_etcd" });
+      if (peers.some(n => n.etcd_healthy === null || n.etcd_healthy === undefined))
+        send({ action: 'check_etcd' });
     }
-    if (nd.is_compute && nd.phase === "idle") send({ action: "get_preflight", node: name });
+    if (nd.is_compute && nd.phase === 'idle') send({ action: 'get_preflight', node: name });
   }
-  renderWorkflow();
-  updateButtons();
+  renderDetail();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workflow panel
+// Detail rendering (header + active tab)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function renderWorkflow() {
-  const el = document.getElementById("workflow-content");
+function renderDetail() {
   if (!selectedNode || !nodes[selectedNode]) {
-    el.innerHTML = `<div class="dim" style="margin-top:40px;text-align:center">Select a node from the list to view its status.</div>`;
+    renderObjHeaderEmpty();
+    updateActionButtons(null);
     return;
   }
-
   const nd = nodes[selectedNode];
-  const phaseClass = nd.phase in
-    { idle:1, running:1, complete:1, error:1, rebooting:1, undraining:1 }
-    ? nd.phase : "idle";
-  const phaseLabel = nd.phase.toUpperCase();
+  renderObjHeader(nd);
+  updateActionButtons(nd);
+  renderActiveTab(nd);
+}
 
-  let h = `<div style="margin-bottom:12px">
-    <span class="wf-node">${escHtml(nd.k8s_name)}</span>`;
-  if (nd.is_etcd) h += `<span class="wf-badge-etcd">etcd</span>`;
-  h += `<span class="wf-phase ${phaseClass}">${phaseLabel}</span></div>`;
+function renderObjHeaderEmpty() {
+  document.getElementById('oh-name').textContent = 'Select a node';
+  document.getElementById('oh-sub').textContent  = 'Choose a node from the inventory to view its status and manage operations.';
+  document.getElementById('oh-badges').innerHTML = '';
+}
+
+function renderObjHeader(nd) {
+  document.getElementById('oh-name').textContent = nd.k8s_name;
+
+  const parts = [];
+  if (nd.hypervisor && nd.hypervisor !== nd.k8s_name) parts.push(`Hypervisor: ${nd.hypervisor}`);
+  if (nd.uptime)         parts.push(`Uptime: ${nd.uptime}`);
+  if (nd.kernel_version) parts.push(`Kernel: ${nd.kernel_version}`);
+  document.getElementById('oh-sub').textContent = parts.join('  ·  ') || '';
+
+  const badges = [];
+  // Phase badge
+  const phaseColors = {
+    idle:'', running:'yellow', complete:'green', error:'red',
+    rebooting:'magenta', undraining:'cyan',
+  };
+  const phaseLabels = {
+    idle:'', running:'Workflow Running', complete:'Complete', error:'Error',
+    rebooting:'Rebooting', undraining:'Undraining',
+  };
+  if (nd.phase !== 'idle') {
+    const pc = phaseColors[nd.phase] || 'gray';
+    badges.push(`<span class="badge ${pc}">${phaseLabels[nd.phase] || nd.phase.toUpperCase()}</span>`);
+  }
+  // K8s status
+  if (!nd.k8s_ready)         badges.push(`<span class="badge red">● K8s Not Ready</span>`);
+  else if (nd.k8s_cordoned)  badges.push(`<span class="badge gray">Cordoned</span>`);
+  else if (nd.phase === 'idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
+  // Nova status
+  if (nd.is_compute) {
+    if (nd.compute_status === 'up')       badges.push(`<span class="badge green">● Nova Up</span>`);
+    else if (nd.compute_status === 'disabled') badges.push(`<span class="badge yellow">Nova Disabled</span>`);
+    else if (nd.compute_status === 'down')     badges.push(`<span class="badge red">Nova DOWN</span>`);
+    else if (!nd.compute_status)               badges.push(`<span class="badge gray">Nova Loading…</span>`);
+    badges.push(`<span class="badge blue">Compute Node</span>`);
+  }
+  if (nd.is_etcd) badges.push(`<span class="badge red">etcd</span>`);
+
+  document.getElementById('oh-badges').innerHTML = badges.join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tabs
+// ─────────────────────────────────────────────────────────────────────────────
+
+function showTab(name) {
+  activeTab = name;
+  ['summary','instances','monitor','configure'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display      = t === name ? '' : 'none';
+    document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
+  });
+  if (name === 'monitor') {
+    const ml = document.getElementById('monitor-log');
+    setTimeout(() => ml.scrollTop = ml.scrollHeight, 0);
+  }
+  if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
+}
+
+function renderActiveTab(nd) {
+  if (!nd) return;
+  if (activeTab === 'summary')   renderSummaryTab(nd);
+  if (activeTab === 'instances') renderInstancesTab(nd);
+  if (activeTab === 'configure') renderConfigureTab(nd);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Summary tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderSummaryTab(nd) {
+  let h = '';
 
   // ── etcd quorum block ──
   if (nd.is_etcd) {
-    const peers  = Object.values(nodes).filter(n => n.is_etcd);
-    const total  = peers.length;
-    const quorum = Math.floor(total / 2) + 1;
-    const safeDn = total - quorum;
-    const checked = peers.filter(n => n.etcd_healthy !== null && n.etcd_healthy !== undefined);
-
+    const peers   = Object.values(nodes).filter(n => n.is_etcd);
+    const total   = peers.length;
+    const quorum  = Math.floor(total / 2) + 1;
+    const safeDn  = total - quorum;
     const anyChecking = peers.some(n => n.etcd_checking);
     if (anyChecking) {
-      h += `<div class="etcd-warning">
-        <span class="etcd-spinner">⟳</span> Checking etcd health…
-      </div>`;
-    } else if (!checked.length) {
-      h += `<div class="etcd-warning">
-        ⚠  etcd node — health unknown (will be checked before reboot)
-      </div>`;
+      h += `<div class="etcd-alert checking"><span class="spinner">⟳</span> Checking etcd health on all ${total} etcd nodes…</div>`;
     } else {
-      const healthy   = peers.filter(n => n.etcd_healthy === true).length;
-      const remaining = healthy - (nd.etcd_healthy === true ? 1 : 0);
-      const atRisk    = remaining < quorum;
-      const parts     = peers.map(p =>
-        `${escHtml(p.k8s_name)} ${p.etcd_healthy === true ? "✓" : p.etcd_healthy === false ? "✗" : "?"}`
-      ).join("  ·  ");
-      h += `<div class="etcd-warning ${atRisk ? "danger" : ""}">
-        ${atRisk
-          ? `⚠  ETCD QUORUM RISK — ${healthy}/${total} healthy, reboot would leave ${remaining} (need ${quorum})`
-          : `⚠  etcd — ${healthy}/${total} healthy, safe to work on ${safeDn} at a time`}
-        <div class="etcd-nodes">${escHtml(parts)}</div>
-      </div>`;
+      const checked = peers.filter(n => n.etcd_healthy !== null && n.etcd_healthy !== undefined);
+      if (!checked.length) {
+        h += `<div class="etcd-alert">⚠ etcd node — health unknown (will be checked before reboot)</div>`;
+      } else {
+        const healthy   = peers.filter(n => n.etcd_healthy === true).length;
+        const remaining = healthy - (nd.etcd_healthy === true ? 1 : 0);
+        const atRisk    = remaining < quorum;
+        const peerList  = peers.map(p =>
+          `${escHtml(p.k8s_name)} ${p.etcd_healthy === true ? '✓' : p.etcd_healthy === false ? '✗' : '?'}`
+        ).join('  ·  ');
+        h += `<div class="etcd-alert ${atRisk ? 'danger' : ''}">
+          ${atRisk
+            ? `⚠ ETCD QUORUM RISK — ${healthy}/${total} healthy, reboot would leave ${remaining} available (quorum=${quorum})`
+            : `⚠ etcd — ${healthy}/${total} healthy · safe to work on ${safeDn} at a time`}
+          <div class="etcd-peers">${peerList}</div>
+        </div>`;
+      }
     }
-  }
-
-  // ── Non-compute short path ──
-  if (!nd.is_compute && nd.phase !== "undraining" && nd.phase !== "rebooting") {
-    const uptime = nd.uptime ? ` &nbsp;|&nbsp; Uptime: <span style="color:var(--cyan)">${escHtml(nd.uptime)}</span>` : "";
-    const kernel = nd.kernel_version ? ` &nbsp;|&nbsp; <span style="color:var(--dim)">${escHtml(nd.kernel_version)}</span>` : "";
-    h += `<div class="wf-meta">K8s status: ${statusHtml(nd)}${uptime}${kernel}</div>
-      <div class="dim">Non-compute node — no OpenStack evacuation needed.</div>`;
-    if (nd.k8s_cordoned)
-      h += `<div class="idle-hint">Click <b>Undrain Node</b> to uncordon.</div>`;
-    el.innerHTML = h; return;
-  }
-
-  // ── Compute meta ──
-  if (nd.is_compute) {
-    const uptime = nd.uptime ? ` &nbsp;|&nbsp; Uptime: <span style="color:var(--cyan)">${escHtml(nd.uptime)}</span>` : "";
-    const kernel = nd.kernel_version ? ` &nbsp;|&nbsp; <span style="color:var(--dim)">${escHtml(nd.kernel_version)}</span>` : "";
-    h += `<div class="wf-meta">Hypervisor: ${escHtml(nd.hypervisor)} &nbsp;|&nbsp; Nova compute: ${novaHtml(nd.compute_status)}${uptime}${kernel}</div>`;
   }
 
   // ── Live downtime counter ──
-  if (nd.phase === "rebooting" && nd.reboot_start) {
+  if (nd.phase === 'rebooting' && nd.reboot_start) {
     const elapsed = Math.floor(Date.now()/1000 - nd.reboot_start);
-    h += `<div class="downtime-counter">⏱  Downtime: ${elapsed}s</div>`;
+    h += `<div class="downtime-counter">⏱ Downtime: ${elapsed}s</div>`;
   }
 
-  // ── Workflow steps ──
+  // ── Workflow steps (when active) ──
   if (nd.steps && nd.steps.length) {
-    h += `<div class="steps-title">Workflow Steps</div>`;
+    h += `<div class="steps-section">
+      <div class="steps-title">Workflow Steps</div>`;
     for (const s of nd.steps) {
-      const icon = STEP_ICON[s.status] || "○";
-      h += `<div class="step-row step-${s.status}">
-        <span class="step-icon">${icon}</span>
-        <span>${escHtml(s.label)}</span>
-        ${s.detail ? `<span class="step-detail">${escHtml(s.detail)}</span>` : ""}
+      const icon = STEP_ICON[s.status] || '○';
+      const spin = s.status === 'running' ? ' <span class="spinner">⟳</span>' : '';
+      h += `<div class="step-row ${s.status}">
+        <span class="step-icon">${icon}${spin}</span>
+        <span class="step-label">${escHtml(s.label)}</span>
+        ${s.detail ? `<span class="step-detail">${escHtml(s.detail)}</span>` : ''}
       </div>`;
     }
-    if (nd.phase === "idle") {
-      if (nd.reboot_downtime !== null && nd.reboot_downtime !== undefined) {
-        h += `<div class="idle-hint" style="margin-top:10px;color:var(--green);font-weight:bold">✓ Reboot complete — total downtime: ${Math.round(nd.reboot_downtime)}s</div>`;
-      } else {
-        h += `<div class="idle-hint" style="margin-top:8px">Click <b>Start Evacuation</b> to begin.</div>`;
-      }
+    h += `</div>`;
+
+    // Reboot complete banner
+    if (nd.phase === 'idle' && nd.reboot_downtime !== null && nd.reboot_downtime !== undefined) {
+      h += `<div class="reboot-complete">✓ Reboot complete — total downtime: ${Math.round(nd.reboot_downtime)}s</div>`;
     }
-  } else {
-    // Idle compute: preflight instance preview
+    // Idle hints
+    if (nd.phase === 'idle') {
+      if (nd.k8s_cordoned || nd.compute_status === 'disabled')
+        h += `<div class="idle-hint">Click <strong>Drain (Undrain)</strong> to re-enable this node.</div>`;
+      else
+        h += `<div class="idle-hint">Click <strong>Evacuate</strong> to start the full evacuation workflow, or <strong>Drain</strong> for a quick drain-only operation.</div>`;
+    }
+    // Non-compute note
+    if (!nd.is_compute && nd.phase === 'idle') {
+      if (nd.k8s_cordoned)
+        h += `<div class="idle-hint">Node is cordoned — click <strong>Drain (Undrain)</strong> to uncordon.</div>`;
+    }
+  }
+
+  // ── Status cards ──
+  h += `<div class="summary-grid">`;
+
+  // Nova card (compute only)
+  if (nd.is_compute) {
+    const novaColor = nd.compute_status === 'up' ? 'green' : nd.compute_status === 'disabled' ? 'yellow' : nd.compute_status === 'down' ? 'red' : 'gray';
+    const novaLabel = nd.compute_status === 'up' ? 'enabled' : nd.compute_status || '…';
+    const vms  = nd.vm_count      !== null && nd.vm_count      !== undefined ? nd.vm_count      : '…';
+    const amps = nd.amphora_count  !== null && nd.amphora_count  !== undefined ? nd.amphora_count  : '…';
+    h += `<div class="card">
+      <div class="card-title">Nova (OpenStack Compute)</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Service state</span><span class="mv ${novaColor}">${escHtml(novaLabel)}</span></div>
+        <div class="mrow"><span class="ml">Running instances</span><span class="mv">${vms}</span></div>
+        <div class="mrow"><span class="ml">Amphora (LB) instances</span><span class="mv ${amps > 0 ? 'yellow' : ''}">${amps}</span></div>
+        <div class="mrow"><span class="ml">Hypervisor hostname</span><span class="mv dim">${escHtml(nd.hypervisor)}</span></div>
+      </div>
+    </div>`;
+  }
+
+  // K8s card
+  const readyLabel = nd.k8s_cordoned ? 'Cordoned' : nd.k8s_ready ? 'Ready' : 'Not Ready';
+  const readyColor = nd.k8s_cordoned ? 'gray'     : nd.k8s_ready ? 'green' : 'red';
+  h += `<div class="card">
+    <div class="card-title">Kubernetes Node</div>
+    <div class="card-body">
+      <div class="mrow"><span class="ml">Status</span><span class="mv ${readyColor}">${readyLabel}</span></div>
+      <div class="mrow"><span class="ml">Cordoned</span><span class="mv ${nd.k8s_cordoned ? 'yellow' : 'green'}">${nd.k8s_cordoned ? 'Yes' : 'No'}</span></div>
+      <div class="mrow"><span class="ml">etcd role</span><span class="mv ${nd.is_etcd ? 'red' : 'dim'}">${nd.is_etcd ? 'Yes' : 'No'}</span></div>
+      ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>` : ''}
+      ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${escHtml(nd.kernel_version)}</span></div>` : ''}
+    </div>
+  </div>`;
+
+  h += `</div>`; // /summary-grid
+
+  // ── Idle compute: preflight preview ──
+  if (nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
     if (nd.preflight_loading) {
-      h += `<div class="dim">Fetching instances…</div>`;
+      h += `<div style="color:var(--vc-dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Fetching instances on this hypervisor…</div>`;
     } else if (nd.preflight_instances && nd.preflight_instances.length) {
       const vms  = nd.preflight_instances.filter(i => !i.is_amphora);
       const amps = nd.preflight_instances.filter(i =>  i.is_amphora);
       if (vms.length) {
-        const W = 34;
-        h += `<div class="steps-title">Instances</div>
-          <div class="inst-header">  ${"Name".padEnd(W)} ${"Status".padEnd(12)} Storage</div>
-          <div class="inst-header">  ${"─".repeat(W + 24)}</div>`;
+        h += `<div class="steps-section">
+          <div class="steps-title">Instances on this hypervisor (pre-flight preview)</div>
+          <table class="inst-table">
+            <thead><tr><th>Name</th><th>Status</th><th>Storage</th></tr></thead>
+            <tbody>`;
         for (const inst of vms) {
-          const nm  = inst.name.length > W ? inst.name.slice(0, W-2) + ".." : inst.name.padEnd(W);
-          const st  = inst.is_volume_backed ? `<span style="color:var(--cyan)">Volume</span>` : `<span class="dim">Ephemeral</span>`;
-          h += `<div class="inst-row">
-            <span class="inst-name" style="color:var(--text)">${escHtml(nm)}</span>
-            <span class="inst-stat">${escHtml(inst.status)}</span>
-            <span>${st}</span>
-          </div>`;
+          const st = inst.is_volume_backed
+            ? `<span class="vol-tag">Volume-backed</span>`
+            : `<span class="eph-tag">Ephemeral</span>`;
+          h += `<tr><td>${escHtml(inst.name)}</td><td>${escHtml(inst.status)}</td><td>${st}</td></tr>`;
         }
-        if (amps.length) h += `<div class="dim" style="margin-top:4px">  + ${amps.length} Amphora instance(s)</div>`;
-      } else {
-        h += `<div class="dim">${nd.preflight_instances.length} Amphora instance(s), no regular VMs.</div>`;
+        h += `</tbody></table>`;
+        if (amps.length) h += `<div style="font-size:11px;color:var(--vc-dim);margin-top:6px">+ ${amps.length} Amphora (load balancer) instance(s)</div>`;
+        h += `</div>`;
+      } else if (amps.length) {
+        h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">${amps.length} Amphora instance(s) only — no regular VMs.</div>`;
       }
-    } else {
-      h += `<div class="dim">No instances on this hypervisor.</div>`;
+    } else if (nd.preflight_instances && !nd.preflight_instances.length) {
+      h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">No instances running on this hypervisor.</div>`;
     }
-    h += `<div class="idle-hint">Click <b>Start Evacuation</b> to begin.</div>`;
-    if (nd.k8s_cordoned || nd.compute_status === "disabled")
-      h += `<div class="idle-hint">Click <b>Undrain Node</b> to re-enable.</div>`;
-  }
-
-  // ── Instance migration table ──
-  if (nd.instances && nd.instances.length) {
-    const W = 36;
-    h += `<div class="steps-title" style="margin-top:16px">Instances</div>
-      <div class="inst-header">  ${"Name".padEnd(W)} ${"Type".padEnd(9)} ${"Nova State".padEnd(14)} Op Status</div>
-      <div class="inst-header">  ${"─".repeat(W + 9 + 14 + 12)}</div>`;
-    for (const inst of nd.instances) {
-      const nm  = inst.name.length > W ? inst.name.slice(0, W-2) + ".." : inst.name;
-      const tp  = inst.is_amphora ? "Amphora" : "VM";
-      const op  = inst.is_amphora ? (inst.failover_status || "pending") : (inst.migration_status || "pending");
-      const cls = OP_COLOR[op] || "";
-      const tc  = inst.is_amphora ? "var(--cyan)" : "var(--text)";
-      h += `<div class="inst-row">
-        <span class="inst-name" style="color:${tc}">${escHtml(nm)}</span>
-        <span class="inst-type">${tp}</span>
-        <span class="inst-stat">${escHtml(inst.status)}</span>
-        <span class="${cls}">${escHtml(op)}</span>
-      </div>`;
+    if (!nd.steps || !nd.steps.length) {
+      h += `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow.</div>`;
+      if (nd.k8s_cordoned || nd.compute_status === 'disabled')
+        h += `<div class="idle-hint">Node is partially drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
     }
   }
 
-  el.innerHTML = h;
+  // Non-compute idle
+  if (!nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
+    h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Non-compute node — no OpenStack evacuation needed.</div>`;
+    if (nd.k8s_cordoned)
+      h += `<div class="idle-hint">Node is cordoned — click <strong>Drain (Undrain)</strong> to uncordon.</div>`;
+  }
+
+  document.getElementById('summary-content').innerHTML = h;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Button state
+// Instances & Pods tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-function updateButtons() {
-  const nd    = selectedNode ? nodes[selectedNode] : null;
-  const phase = nd ? nd.phase : null;
+function renderInstancesTab(nd) {
+  let h = '';
 
-  const startBtn  = document.getElementById("btn-start");
-  const drainBtn  = document.getElementById("btn-drain");
-  const rebootBtn = document.getElementById("btn-reboot");
+  // ── Live migration instances (workflow running) ──
+  if (nd.instances && nd.instances.length) {
+    h += `<div class="tab-section-title">
+      <span>Nova Instances — Migration Status</span>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>Name</th><th>Type</th><th>Nova State</th><th>Operation Status</th>
+      </tr></thead>
+      <tbody>`;
+    for (const inst of nd.instances) {
+      const tp  = inst.is_amphora ? `<span class="amp-tag">Amphora LB</span>` : 'VM';
+      const op  = inst.is_amphora ? (inst.failover_status || 'pending') : (inst.migration_status || 'pending');
+      const cls = OP_COLOR[op] || '';
+      const phCls = op === 'complete' ? 'ph-complete' : op === 'failed' ? 'ph-failed' :
+                    (op === 'migrating' || op === 'cold-migrating' || op === 'confirming' || op === 'failing_over') ? 'ph-migrating' : 'ph-queued';
+      h += `<tr>
+        <td>${escHtml(inst.name)}</td>
+        <td>${tp}</td>
+        <td><span class="sdot ${inst.status === 'ACTIVE' ? 'green' : inst.status === 'ERROR' ? 'red' : 'gray'}"></span>${escHtml(inst.status)}</td>
+        <td><span class="phase-badge ${phCls}">${escHtml(op)}</span></td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
 
-  startBtn.textContent = phase === "running"  ? "▶  Evacuating…" : "▶  Start Evacuation";
-  startBtn.disabled    = phase === "running";
-
-  const drained = nd && (nd.k8s_cordoned || nd.compute_status === "disabled");
-  if (phase === "undraining") {
-    drainBtn.textContent = "↺  Undraining…";
-    drainBtn.disabled    = true;
-  } else if (phase === "running" || phase === "rebooting") {
-    drainBtn.textContent = drained ? "↺  Undrain Node" : "▽  Drain Node";
-    drainBtn.disabled    = true;
-  } else if (drained) {
-    drainBtn.textContent = "↺  Undrain Node";
-    drainBtn.disabled    = false;
+  // ── Preflight instances (idle compute) ──
+  } else if (nd.is_compute) {
+    h += `<div class="tab-section-title"><span>Nova Instances</span></div>`;
+    if (nd.preflight_loading) {
+      h += `<div style="color:var(--vc-dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Loading instances…</div>`;
+    } else if (nd.preflight_instances && nd.preflight_instances.length) {
+      h += `<table class="data-table">
+        <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Storage</th></tr></thead>
+        <tbody>`;
+      for (const inst of nd.preflight_instances) {
+        const tp = inst.is_amphora
+          ? `<span class="amp-tag">Amphora LB</span>` : 'VM';
+        const st = inst.is_volume_backed
+          ? `<span class="vol-tag">Volume</span>` : `<span class="eph-tag">Ephemeral</span>`;
+        h += `<tr>
+          <td>${escHtml(inst.name)}</td>
+          <td><span class="sdot green"></span>${escHtml(inst.status)}</td>
+          <td>${tp}</td>
+          <td>${st}</td>
+        </tr>`;
+      }
+      h += `</tbody></table>`;
+    } else {
+      h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">No instances running on this hypervisor.</div>`;
+    }
   } else {
-    drainBtn.textContent = "▽  Drain Node";
-    drainBtn.disabled    = false;
+    h += `<div class="tab-section-title"><span>Nova Instances</span></div>
+      <div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Non-compute node — no Nova instances.</div>`;
   }
 
-  rebootBtn.textContent = phase === "rebooting" ? "⏻  Rebooting…" : "⏻  Reboot Node";
-  rebootBtn.disabled    = phase === "rebooting" || phase === "running" || phase === "undraining";
+  // ── Pods section ──
+  h += `<div class="tab-section-title" style="margin-top:8px">
+    <span>Kubernetes Pods</span>
+    <button class="btn" id="btn-pods-inline" onclick="actionPodsInline()">
+      ${showPods ? '↺ Refresh Pods' : '⬡ Load Pods'}
+    </button>
+  </div>
+  <div id="pods-section">`;
+  if (!showPods && !lastPodsCache) {
+    h += `<div style="color:var(--vc-dim);font-size:12px;padding:4px 0">Click "Load Pods" to fetch current pods on this node.</div>`;
+  } else if (lastPodsCache && lastPodsCache.node === nd.k8s_name) {
+    h += buildPodsTableHtml(lastPodsCache.pods);
+  } else {
+    h += `<div style="color:var(--vc-dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
+  }
+  h += `</div>`;
+
+  document.getElementById('instances-content').innerHTML = h;
+}
+
+function renderPodsSection(nodeName, pods) {
+  lastPodsCache = { node: nodeName, pods };
+  const sec = document.getElementById('pods-section');
+  if (sec) sec.innerHTML = buildPodsTableHtml(pods);
+}
+
+function buildPodsTableHtml(allPods) {
+  if (allPods.length === 1 && allPods[0].error)
+    return `<div style="color:var(--red);font-size:12px">${escHtml(allPods[0].error)}</div>`;
+  if (!allPods.length)
+    return `<div style="color:var(--vc-dim);font-size:12px">No pods scheduled on this node.</div>`;
+
+  const succeeded = allPods.filter(p => p.phase === 'Succeeded');
+  const visible   = hideSucceeded ? allPods.filter(p => p.phase !== 'Succeeded') : allPods;
+  const sorted    = [...visible].sort((a,b) => (a.namespace+a.name).localeCompare(b.namespace+b.name));
+
+  let rows = '';
+  for (const p of sorted) {
+    const ready    = `${p.ready_count}/${p.total_count}`;
+    const phase    = p.phase || 'Unknown';
+    const age      = p.created_at ? podAge(p.created_at) : '?';
+    const rCls     = p.ready_count === p.total_count ? 'green' : 'yellow';
+    const pCls     = phase === 'Running' ? 'green' : phase === 'Pending' ? 'yellow' : phase === 'Succeeded' ? '' : 'red';
+    rows += `<tr>
+      <td style="color:var(--vc-dim)">${escHtml(p.namespace)}</td>
+      <td>${escHtml(p.name)}</td>
+      <td><span style="color:var(--${rCls === 'green' ? 'green' : 'yellow-lt'})">${escHtml(ready)}</span></td>
+      <td><span class="sdot ${pCls}"></span>${escHtml(phase)}</td>
+      <td>${p.restarts}</td>
+      <td style="color:var(--vc-dim)">${escHtml(age)}</td>
+    </tr>`;
+  }
+
+  let footer = `${visible.length} pod(s)`;
+  let toggleHtml = '';
+  if (succeeded.length) {
+    if (hideSucceeded) {
+      footer += ` &nbsp;·&nbsp; ${succeeded.length} Succeeded hidden`;
+      toggleHtml = `<a href="#" onclick="toggleSucceeded();return false" style="color:var(--vc-blue);margin-left:6px">show</a>`;
+    } else {
+      footer += ` (${succeeded.length} Succeeded shown)`;
+      toggleHtml = `<a href="#" onclick="toggleSucceeded();return false" style="color:var(--vc-blue);margin-left:6px">hide</a>`;
+    }
+  }
+
+  return `<table class="data-table">
+    <thead><tr>
+      <th>Namespace</th><th>Name</th><th>Ready</th><th>Status</th><th>Restarts</th><th>Age</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="font-size:11px;color:var(--vc-dim);margin-top:4px">${footer}${toggleHtml}</div>`;
+}
+
+function toggleSucceeded() {
+  hideSucceeded = !hideSucceeded;
+  if (lastPodsCache && selectedNode === lastPodsCache.node) {
+    const sec = document.getElementById('pods-section');
+    if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
+  }
+}
+
+function podAge(iso) {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configure tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderConfigureTab(nd) {
+  let h = `<div class="summary-grid" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Node Details</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">K8s node name</span><span class="mv">${escHtml(nd.k8s_name)}</span></div>
+        <div class="mrow"><span class="ml">Nova hypervisor</span><span class="mv">${escHtml(nd.hypervisor)}</span></div>
+        ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv">${escHtml(nd.kernel_version)}</span></div>` : ''}
+        ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${escHtml(nd.uptime)}</span></div>` : ''}
+        <div class="mrow"><span class="ml">Is compute</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">Is etcd</span><span class="mv ${nd.is_etcd ? 'red' : ''}">${nd.is_etcd ? 'Yes' : 'No'}</span></div>
+      </div>
+    </div>`;
+
+  if (nd.is_etcd) {
+    const peers = Object.values(nodes).filter(n => n.is_etcd);
+    const healthyCount = peers.filter(n => n.etcd_healthy === true).length;
+    h += `<div class="card">
+      <div class="card-title">etcd Cluster</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Total etcd members</span><span class="mv">${peers.length}</span></div>
+        <div class="mrow"><span class="ml">Healthy members</span><span class="mv green">${healthyCount}</span></div>
+        <div class="mrow"><span class="ml">Quorum needed</span><span class="mv">${Math.floor(peers.length/2)+1}</span></div>
+        <div class="mrow"><span class="ml">This node health</span><span class="mv ${nd.etcd_healthy === true ? 'green' : nd.etcd_healthy === false ? 'red' : 'gray'}">${nd.etcd_healthy === true ? '✓ Healthy' : nd.etcd_healthy === false ? '✗ Unhealthy' : 'Unknown'}</span></div>
+      </div>
+    </div>`;
+  }
+  h += `</div>`;
+
+  // VMware reference table
+  h += `<div class="card">
+    <div class="card-title">💡 VMware → OpenStack / Kubernetes Reference</div>
+    <div class="card-body" style="padding:0">
+      <table class="concept-table">
+        <thead><tr><th>VMware vSphere</th><th>OpenStack / Kubernetes equivalent</th></tr></thead>
+        <tbody>
+          <tr><td>Datacenter</td><td>Region</td></tr>
+          <tr><td>vSphere Cluster / DRS</td><td>Availability Zone + Nova Scheduler</td></tr>
+          <tr><td>ESXi Host</td><td>Nova Hypervisor + K8s Node (same physical machine)</td></tr>
+          <tr><td>VM</td><td>Nova Instance (QEMU/KVM) or K8s Pod</td></tr>
+          <tr><td>Enter Maintenance Mode</td><td>Disable Nova service + Cordon K8s + Drain pods</td></tr>
+          <tr><td>vMotion (live migration)</td><td>Nova live-migrate</td></tr>
+          <tr><td>vApp (templated multi-tier app)</td><td>Helm Chart / K8s Deployment</td></tr>
+          <tr><td>VM Template</td><td>Glance Image</td></tr>
+          <tr><td>Datastore</td><td>Ceph / Cinder Volume (RBD-backed)</td></tr>
+          <tr><td>vDS Port Group</td><td>Neutron Network / OVN logical port</td></tr>
+          <tr><td>NSX-T</td><td>Neutron + OVN (or Calico for K8s)</td></tr>
+          <tr><td>Resource Pool / Quota</td><td>K8s Namespace + ResourceQuota</td></tr>
+          <tr><td>HA Restart (VM HA)</td><td>K8s Pod restart policy / Nova evacuate</td></tr>
+          <tr><td>vSphere HA Cluster</td><td>K8s cluster (multi-master) + Nova availability zones</td></tr>
+          <tr><td>Snapshot</td><td>Cinder Volume Snapshot / etcd backup</td></tr>
+          <tr><td>Load Balancer (NSX LB)</td><td>Octavia (Amphora)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  document.getElementById('configure-content').innerHTML = h;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Action buttons
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateActionButtons(nd) {
+  const phase = nd ? nd.phase : null;
+  const evBtn    = document.getElementById('btn-evacuate');
+  const drBtn    = document.getElementById('btn-drain');
+  const podsBtn  = document.getElementById('btn-pods');
+  const rebootBtn= document.getElementById('btn-reboot');
+
+  if (!nd) {
+    evBtn.disabled = drBtn.disabled = podsBtn.disabled = rebootBtn.disabled = true;
+    return;
+  }
+
+  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  const busy    = phase === 'running' || phase === 'rebooting' || phase === 'undraining';
+
+  // Evacuate
+  evBtn.disabled    = busy || !nd.is_compute;
+  evBtn.textContent = phase === 'running' ? '▶ Evacuating…' : '▶ Evacuate';
+
+  // Drain / Undrain
+  if (phase === 'undraining') {
+    drBtn.textContent = '↺ Undraining…'; drBtn.disabled = true;
+  } else if (busy) {
+    drBtn.textContent = drained ? '↺ Undrain' : '▽ Drain'; drBtn.disabled = true;
+  } else if (drained) {
+    drBtn.textContent = '↺ Undrain'; drBtn.disabled = false;
+  } else {
+    drBtn.textContent = '▽ Drain'; drBtn.disabled = false;
+  }
+  drBtn.className = 'btn ' + (drained && !busy ? 'warning' : '');
+
+  // Pods
+  podsBtn.disabled = false;
+
+  // Reboot
+  rebootBtn.disabled    = busy;
+  rebootBtn.textContent = phase === 'rebooting' ? '⏻ Rebooting…' : '⏻ Reboot';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Actions → WebSocket
 // ─────────────────────────────────────────────────────────────────────────────
 
-function actionRefresh()          { send({ action: "refresh" }); }
-function actionStart()            { if (selectedNode) send({ action: "evacuate",    node: selectedNode }); }
-function actionReboot()           { if (selectedNode) send({ action: "reboot_request", node: selectedNode }); }
+function actionRefresh()  { send({ action: 'refresh' }); }
+function actionEvacuate() { if (selectedNode) send({ action: 'evacuate', node: selectedNode }); }
+function actionReboot()   { if (selectedNode) send({ action: 'reboot_request', node: selectedNode }); }
 
 function actionDrainOrUndrain() {
   if (!selectedNode) return;
   const nd = nodes[selectedNode];
   if (!nd) return;
-  const drained = nd.k8s_cordoned || nd.compute_status === "disabled";
-  send({ action: drained ? "undrain" : "drain_quick", node: selectedNode });
+  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  send({ action: drained ? 'undrain' : 'drain_quick', node: selectedNode });
 }
 
 function actionPods() {
-  showPods = !showPods;
-  const btn = document.getElementById("btn-pods");
-  if (showPods) {
-    btn.textContent = "✕  Close Pods";
-    if (selectedNode) {
-      send({ action: "get_pods", node: selectedNode });
-      document.getElementById("workflow-content").innerHTML =
-        `<div style="font-size:15px;font-weight:bold;margin-bottom:12px">
-          ${escHtml(selectedNode)} <span style="color:var(--cyan)">[ PODS ]</span>
-         </div>
-         <div class="dim">Fetching pods…</div>`;
-    }
-  } else {
-    btn.textContent = "⬡  Pods";
-    lastPodsCache = null;
-    renderWorkflow();
-  }
+  // Toggle pods in the Instances tab
+  showTab('instances');
+  actionPodsInline();
+}
+
+function actionPodsInline() {
+  if (!selectedNode) return;
+  showPods = true;
+  lastPodsCache = null; // force fresh fetch
+  send({ action: 'get_pods', node: selectedNode });
+  // Show loading state
+  const sec = document.getElementById('pods-section');
+  if (sec) sec.innerHTML = `<div style="color:var(--vc-dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
+  // Update button text
+  const btn = document.getElementById('btn-pods-inline');
+  if (btn) btn.textContent = '↺ Refresh Pods';
+  document.getElementById('btn-pods').textContent = '✕ Pods';
 }
 
 function cancelReboot() {
-  document.getElementById("modal-overlay").classList.remove("open");
-  if (pendingReboot) {
-    send({ action: "reboot_cancel", node: pendingReboot });
-    pendingReboot = null;
-  }
+  document.getElementById('modal-overlay').classList.remove('open');
+  if (pendingReboot) { send({ action: 'reboot_cancel', node: pendingReboot }); pendingReboot = null; }
 }
 
 function confirmReboot() {
-  const val = document.getElementById("modal-input").value.trim();
-  if (val !== "YES") {
-    const inp = document.getElementById("modal-input");
-    inp.classList.remove("shake");
-    void inp.offsetWidth; // reflow to restart animation
-    inp.classList.add("shake");
-    inp.focus();
+  const val = document.getElementById('modal-input').value.trim();
+  if (val !== 'YES') {
+    const inp = document.getElementById('modal-input');
+    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake'); inp.focus();
     return;
   }
-  document.getElementById("modal-overlay").classList.remove("open");
-  if (pendingReboot) {
-    send({ action: "reboot_confirm", node: pendingReboot });
-    pendingReboot = null;
-  }
+  document.getElementById('modal-overlay').classList.remove('open');
+  if (pendingReboot) { send({ action: 'reboot_confirm', node: pendingReboot }); pendingReboot = null; }
 }
 
-document.getElementById("modal-input").addEventListener("keydown", e => {
-  if (e.key === "Enter")  confirmReboot();
-  if (e.key === "Escape") cancelReboot();
-});
+function closeBlocked() { document.getElementById('blocked-banner').classList.remove('open'); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyboard shortcuts
 // ─────────────────────────────────────────────────────────────────────────────
 
-document.addEventListener("keydown", e => {
-  if (document.getElementById("modal-overlay").classList.contains("open")) return;
-  if (e.target.tagName === "INPUT") return;
-  if (e.key === "s" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionStart(); }
-  if (e.key === "u")                              { e.preventDefault(); actionDrainOrUndrain(); }
-  if (e.key === "p")                              { e.preventDefault(); actionPods(); }
-  if (e.key === "r" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionRefresh(); }
-  if (e.key === "r" &&  e.ctrlKey)               { e.preventDefault(); actionReboot(); }
+document.getElementById('modal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter')  confirmReboot();
+  if (e.key === 'Escape') cancelReboot();
+});
+
+document.addEventListener('keydown', e => {
+  if (document.getElementById('modal-overlay').classList.contains('open')) return;
+  if (document.getElementById('blocked-banner').classList.contains('open')) {
+    if (e.key === 'Escape') closeBlocked(); return;
+  }
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 's' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionEvacuate(); }
+  if (e.key === 'u')                              { e.preventDefault(); actionDrainOrUndrain(); }
+  if (e.key === 'p')                              { e.preventDefault(); actionPods(); }
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionRefresh(); }
+  if (e.key === 'r' &&  e.ctrlKey)               { e.preventDefault(); actionReboot(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Live downtime ticker (1s) and clock
+// Clock + live downtime ticker
 // ─────────────────────────────────────────────────────────────────────────────
 
 setInterval(() => {
-  document.getElementById("clock").textContent =
-    new Date().toLocaleTimeString("en-GB", { hour12: false });
-
-  // Refresh workflow panel if selected node is rebooting (for the live counter).
-  if (selectedNode) {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-GB', { hour12: false });
+  // Refresh summary tab if rebooting (live downtime counter)
+  if (selectedNode && nodes[selectedNode]) {
     const nd = nodes[selectedNode];
-    if (nd && nd.phase === "rebooting") renderWorkflow();
+    if (nd.phase === 'rebooting' && activeTab === 'summary') renderSummaryTab(nd);
   }
 }, 1000);
 
@@ -1029,13 +1375,10 @@ setInterval(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function escHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;");
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escAttr(s) {
-  return String(s ?? "").replace(/'/g,"\\'");
-}
+function escAttr(s) { return String(s ?? '').replace(/'/g,"\\'"); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Boot
