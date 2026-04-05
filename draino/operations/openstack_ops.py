@@ -121,7 +121,26 @@ def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
     except Exception as exc:
         _log(f"Octavia query failed (non-fatal): {exc}")
 
-    # Build per-host summary from the three collected datasets
+    # 4. Host aggregates — derive AZ and aggregate membership per host
+    # Each host maps to {az: str|None, aggregates: [agg_name, ...]}
+    agg_map: dict[str, dict] = {}
+    try:
+        for agg in conn.compute.aggregates():
+            agg_az   = (agg.metadata or {}).get("availability_zone") or None
+            agg_name = getattr(agg, "name", None) or ""
+            for host in (agg.hosts or []):
+                if host not in agg_map:
+                    agg_map[host] = {"az": None, "aggregates": []}
+                # First AZ-bearing aggregate wins
+                if agg_az and not agg_map[host]["az"]:
+                    agg_map[host]["az"] = agg_az
+                if agg_name:
+                    agg_map[host]["aggregates"].append(agg_name)
+        _log(f"Aggregates: {len(agg_map)} host(s) mapped")
+    except Exception as exc:
+        _log(f"Aggregates query failed (non-fatal): {exc}")
+
+    # Build per-host summary from the four collected datasets
     result: dict[str, dict] = {}
     for host in set(service_map) | set(servers_by_host):
         servers = servers_by_host.get(host, [])
@@ -129,11 +148,14 @@ def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
             1 for s in servers
             if s.id in amp_ids or (s.name or "").startswith("amphora-")
         )
+        host_agg = agg_map.get(host, {})
         result[host] = {
-            "is_compute":     True,
-            "compute_status": service_map.get(host),
-            "amphora_count":  amphora_count,
-            "vm_count":       len(servers) - amphora_count,
+            "is_compute":        True,
+            "compute_status":    service_map.get(host),
+            "amphora_count":     amphora_count,
+            "vm_count":          len(servers) - amphora_count,
+            "availability_zone": host_agg.get("az"),
+            "aggregates":        host_agg.get("aggregates", []),
         }
 
     return result

@@ -65,6 +65,8 @@ def _serialise(state: NodeState) -> dict:
         "compute_status":      state.compute_status,
         "amphora_count":       state.amphora_count,
         "vm_count":            state.vm_count,
+        "availability_zone":   state.availability_zone,
+        "aggregates":          state.aggregates,
         "preflight_loading":   state.preflight_loading,
         "preflight_instances": state.preflight_instances,
         "reboot_start":        state.reboot_start,
@@ -224,7 +226,9 @@ class DrainoServer:
             state    = self.node_states.get(name)
             if not state:
                 continue
-            state.is_etcd = name in self._etcd_node_names
+            state.is_etcd          = name in self._etcd_node_names
+            state.availability_zone = summary.get("availability_zone")
+            state.aggregates        = summary.get("aggregates", [])
             if state.phase == NodePhase.IDLE:
                 state.is_compute     = summary.get("is_compute", False)
                 state.compute_status = summary.get("compute_status")

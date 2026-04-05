@@ -194,6 +194,7 @@ body {
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
+.tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ═══════════════════════════════════════════════════════
    HINT CHIPS (VMware equivalent labels)
@@ -900,34 +901,58 @@ function treeItemHtml(name, nd) {
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
-  let vmBadge   = '';
+
+  let vmBadge = '';
   if (nd.is_compute) {
     const v = nd.vm_count, a = nd.amphora_count;
-    if (v !== null && v !== undefined && a !== null && a !== undefined && (v > 0 || a > 0)) {
+    if (v !== null && v !== undefined && a !== null && a !== undefined && (v > 0 || a > 0))
       vmBadge = `<span class="tree-badge warn">${v}vm ${a}amp</span>`;
-    }
   }
+
+  // Aggregate membership badges (up to 2, then "+N more")
+  let aggHtml = '';
+  if (nd.aggregates?.length) {
+    const shown = nd.aggregates.slice(0, 2);
+    const extra = nd.aggregates.length - shown.length;
+    aggHtml = shown.map(a => `<span class="tree-badge agg" title="${esc(a)}">${esc(a)}</span>`).join('');
+    if (extra > 0) aggHtml += `<span class="tree-badge agg">+${extra}</span>`;
+  }
+
   return `<div class="tree-item${sel}" onclick="selectNode('${escAttr(name)}')" data-node="${escAttr(name)}">
     <span class="ti-ico">${ico}</span>
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${vmBadge}
+    ${etcBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
 function rebuildSidebar() {
   const compute = Object.entries(nodes).filter(([,nd]) => nd.is_compute);
   const other   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
-  let html = '';
-  if (compute.length) {
-    const col = collapsedGroups.has('compute');
-    html += `<div class="tree-group" onclick="toggleGroup('compute')">
-      <span class="tree-expand">${col ? '▶' : '▼'}</span> 🖥️ Compute Nodes
-      <span class="tree-count">${compute.length}</span>
-    </div>`;
-    if (!col) for (const [name, nd] of compute) html += treeItemHtml(name, nd);
+
+  // Group compute nodes by AZ; fall back to single group if no AZ data at all
+  const byAZ = {};
+  for (const [name, nd] of compute) {
+    const az = nd.availability_zone || 'nova';
+    (byAZ[az] = byAZ[az] || []).push([name, nd]);
   }
+  const azKeys = Object.keys(byAZ).sort();
+
+  let html = '';
+
+  for (const az of azKeys) {
+    const entries = byAZ[az];
+    const gid = `az:${az}`;
+    const col = collapsedGroups.has(gid);
+    html += `<div class="tree-group" onclick="toggleGroup('${escAttr(gid)}')">
+      <span class="tree-expand">${col ? '▶' : '▼'}</span>
+      🌐 ${esc(az)}
+      <span class="tree-count">${entries.length}</span>
+    </div>`;
+    if (!col) for (const [name, nd] of entries) html += treeItemHtml(name, nd);
+  }
+
   if (other.length) {
     const col = collapsedGroups.has('other');
     html += `<div class="tree-group" onclick="toggleGroup('other')">
@@ -936,9 +961,10 @@ function rebuildSidebar() {
     </div>`;
     if (!col) for (const [name, nd] of other) html += treeItemHtml(name, nd);
   }
-  if (!compute.length && !other.length) {
+
+  if (!compute.length && !other.length)
     html = `<div class="tree-group" style="border-top:none;cursor:default">No nodes loaded</div>`;
-  }
+
   document.getElementById('tree').innerHTML = html;
 }
 
@@ -1369,6 +1395,8 @@ function renderConfigureTab(nd) {
         ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${esc(nd.kernel_version)}</span></div>` : ''}
         ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
         <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
+        ${nd.availability_zone ? `<div class="mrow"><span class="ml">Availability zone</span><span class="mv blue">${esc(nd.availability_zone)}</span></div>` : ''}
+        ${nd.aggregates?.length ? `<div class="mrow"><span class="ml">Host aggregates</span><span class="mv" style="display:flex;flex-wrap:wrap;gap:3px">${nd.aggregates.map(a => `<span class="tree-badge agg" title="${esc(a)}">${esc(a)}</span>`).join('')}</span></div>` : ''}
         <div class="mrow"><span class="ml">Carries etcd role</span><span class="mv ${nd.is_etcd ? 'red' : ''}">${nd.is_etcd ? 'Yes' : 'No'}</span></div>
       </div>
     </div>`;

@@ -66,10 +66,12 @@ class NodeState:
 
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"
-    is_compute:     bool = False
-    compute_status: Optional[str] = None
-    amphora_count:  Optional[int] = None
-    vm_count:       Optional[int] = None
+    is_compute:        bool = False
+    compute_status:    Optional[str] = None
+    amphora_count:     Optional[int] = None
+    vm_count:          Optional[int] = None
+    availability_zone: Optional[str] = None   # Nova AZ (from host aggregate metadata)
+    aggregates:        list[str] = field(default_factory=list)  # host aggregate names
 
     # ── Pre-flight instance preview (populated on node selection) ────────────
     preflight_instances: list[dict] = field(default_factory=list)
