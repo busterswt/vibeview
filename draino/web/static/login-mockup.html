@@ -49,21 +49,7 @@ body {
   border-bottom: 2px solid var(--blue);
 }
 
-.logo { display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; font-size: 14px; }
-.logo-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.28), transparent 34%),
-    linear-gradient(180deg, #2f9de8 0%, #0072c6 58%, #025896 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.24), 0 3px 10px rgba(0,0,0,0.22);
-}
-.logo-icon svg { width: 22px; height: 22px; display: block; }
+.logo { display: flex; align-items: baseline; gap: 10px; color: white; font-weight: 700; font-size: 14px; }
 .logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
 .top-nav { display: flex; gap: 2px; margin-left: 28px; }
 .top-nav a { color: #b0bec5; text-decoration: none; padding: 4px 10px; border-radius: 3px; font-size: 12px; }
@@ -161,40 +147,20 @@ body {
 }
 
 .auth-head {
-  position: relative;
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
-  overflow: hidden;
-}
-.auth-head::after {
-  content: "";
-  position: absolute;
-  right: 18px;
-  top: 10px;
-  width: 140px;
-  height: 56px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 25% 50%, rgba(0,114,198,0.18) 0 10%, transparent 11%),
-    radial-gradient(circle at 46% 50%, rgba(46,125,50,0.16) 0 11%, transparent 12%),
-    radial-gradient(circle at 67% 50%, rgba(245,127,23,0.16) 0 10%, transparent 11%),
-    linear-gradient(90deg, rgba(0,114,198,0.16), rgba(0,131,143,0.08));
-  border: 1px solid rgba(148,163,184,0.18);
 }
 
 .auth-title { font-size: 18px; font-weight: 700; color: var(--header); }
 .auth-sub { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.6; }
-.auth-brand-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; position: relative; z-index: 1; }
-.auth-brand-copy { min-width: 0; }
-.auth-brand-kicker {
+.auth-kicker {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--blue);
 }
-.auth-brand-note { margin-top: 2px; font-size: 11px; color: var(--dim); }
 
 .auth-grid {
   display: grid;
@@ -311,20 +277,9 @@ body {
 <body>
 <div id="top-bar">
   <div class="logo">
-    <div class="logo-icon" aria-hidden="true">
-      <svg viewBox="0 0 64 64">
-        <path d="M11 16h27c6 0 11 5 11 11v3h5c4 0 7 3 7 7s-3 7-7 7H43v4c0 4-3 7-7 7H11z" fill="#f6fbff"/>
-        <path d="M16 21h18c5 0 9 4 9 9v9c0 5-4 9-9 9H16z" fill="#0072c6"/>
-        <circle cx="48" cy="37" r="5" fill="#4caf50"/>
-        <circle cx="56" cy="37" r="3" fill="#ffc107"/>
-        <path d="M18 25h8c8 0 15 6 15 14s-7 14-15 14h-8z" fill="#ffffff"/>
-        <path d="M18 25h7c6 0 11 4 11 10s-5 10-11 10h-7z" fill="#e3f2fd"/>
-        <path d="M15 47c5-1 9-4 11-8h4c-2 7-8 12-15 13z" fill="#ef5350"/>
-      </svg>
-    </div>
     <div>
       <div>Draino</div>
-      <div class="logo-sub">Node Evacuation Manager</div>
+      <div class="logo-sub">Flushing Cloud Infrastructure Since 2026</div>
     </div>
   </div>
   <nav class="top-nav">
@@ -366,25 +321,9 @@ body {
   <div id="overlay">
   <div class="auth-shell">
     <div class="auth-head">
-      <div class="auth-brand-row">
-        <div class="logo-icon" aria-hidden="true">
-          <svg viewBox="0 0 64 64">
-            <path d="M11 16h27c6 0 11 5 11 11v3h5c4 0 7 3 7 7s-3 7-7 7H43v4c0 4-3 7-7 7H11z" fill="#f6fbff"/>
-            <path d="M16 21h18c5 0 9 4 9 9v9c0 5-4 9-9 9H16z" fill="#0072c6"/>
-            <circle cx="48" cy="37" r="5" fill="#4caf50"/>
-            <circle cx="56" cy="37" r="3" fill="#ffc107"/>
-            <path d="M18 25h8c8 0 15 6 15 14s-7 14-15 14h-8z" fill="#ffffff"/>
-            <path d="M18 25h7c6 0 11 4 11 10s-5 10-11 10h-7z" fill="#e3f2fd"/>
-            <path d="M15 47c5-1 9-4 11-8h4c-2 7-8 12-15 13z" fill="#ef5350"/>
-          </svg>
-        </div>
-        <div class="auth-brand-copy">
-          <div class="auth-brand-kicker">Internet Pipe Service</div>
-          <div class="auth-brand-note">Flushes pods and VMs through the maintenance line, not the production lane.</div>
-        </div>
-      </div>
+      <div class="auth-kicker">Flushing Cloud Infrastructure Since 2026</div>
       <div class="auth-title">Authenticate Access</div>
-      <div class="auth-sub">Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.</div>
+      <div class="auth-sub">Lubricates the pipes to keep maintenances pain free. Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.</div>
     </div>
 
       <div class="auth-grid">
