@@ -128,7 +128,19 @@ body {
 .view { display: none; flex: 1; overflow: hidden; }
 .view.active { display: flex; }
 #view-infra { flex-direction: row; }
-#view-networking, #view-storage { flex-direction: column; }
+#view-networking { flex-direction: row; }
+#view-storage    { flex-direction: column; }
+#net-detail-wrap {
+  width: 370px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--white);
+  overflow-y: auto;
+  display: none;
+}
+#net-detail-wrap.open { display: block; }
+.net-detail-inner { padding: 14px; }
+.net-detail-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 
 /* ═══════════════════════════════════════════════════════
    SIDEBAR (Infrastructure view only)
@@ -401,6 +413,7 @@ body {
 .st-error     { color: var(--red); font-weight: 700; }
 .st-available { color: var(--green); }
 .st-inuse     { color: var(--blue); font-weight: 600; }
+.data-table tbody tr.selected td { background: var(--sel); }
 
 /* ═══════════════════════════════════════════════════════
    RECENT TASKS PANEL (bottom)
@@ -575,6 +588,7 @@ body {
     <div class="data-view-wrap" id="net-wrap">
       <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading networks…</div>
     </div>
+    <div id="net-detail-wrap"></div>
   </div>
 
   <!-- ── Storage view ── -->
@@ -661,7 +675,9 @@ let ws           = null;
 const stepTimes = {};
 
 // Networking view state
-const netState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+let   selectedNetwork  = null;
+const netDetailState   = { loading: false, data: null, selectedSubnet: null };
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
@@ -811,6 +827,7 @@ function switchView(name) {
       bcSep.style.display = 'none';
       bcNode.textContent  = '';
     }
+    renderInfraDetail();  // re-render content panel when returning from other views
   } else {
     const label = name === 'networking' ? 'Networking' : 'Volumes';
     bcRoot.textContent  = 'Draino';
@@ -819,6 +836,11 @@ function switchView(name) {
     // Lazy-load on first visit
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
+    // Restore network detail panel visibility when returning
+    if (name === 'networking') {
+      const det = document.getElementById('net-detail-wrap');
+      if (selectedNetwork && netDetailState.data) det.classList.add('open');
+    }
   }
 }
 
@@ -1395,7 +1417,8 @@ function renderNetworksView() {
       ? `<span class="sdot green"></span>up` : `<span class="sdot red"></span>down`;
     const ext    = n.external ? `<span class="tag-amp">ext</span>` : '—';
     const shared = n.shared ? '✓' : '—';
-    rows += `<tr>
+    const rowSel = selectedNetwork === n.id ? ' selected' : '';
+    rows += `<tr class="${rowSel}" style="cursor:pointer" data-net-id="${escAttr(n.id)}" onclick="selectNetwork('${escAttr(n.id)}')">
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(n.name)}</td>
       <td><span class="${stCls}">${esc(n.status)}</span></td>
       <td>${adm}</td>
@@ -1432,6 +1455,159 @@ function renderNetworksView() {
 
 function appendNetError(msg) {
   onLog({ node: '-', message: `Networks API error: ${msg}`, color: 'error' });
+}
+
+async function selectNetwork(id) {
+  selectedNetwork = id;
+  netDetailState.selectedSubnet = null;
+  // Highlight row in list (immediately, before async fetch)
+  document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => {
+    r.classList.toggle('selected', r.dataset.netId === id);
+  });
+  // Open detail pane and show spinner
+  document.getElementById('net-detail-wrap').classList.add('open');
+  netDetailState.loading = true;
+  netDetailState.data    = null;
+  renderNetworkDetail();
+  try {
+    const resp = await fetch(`/api/networks/${encodeURIComponent(id)}`);
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error);
+    const meta = netState.data?.find(n => n.id === id) || {};
+    netDetailState.data = { ...meta, ...json.network };
+  } catch (e) {
+    netDetailState.data = { error: String(e) };
+  } finally {
+    netDetailState.loading = false;
+    renderNetworkDetail();
+  }
+}
+
+function closeNetworkDetail() {
+  selectedNetwork = null;
+  netDetailState.data = null;
+  netDetailState.selectedSubnet = null;
+  document.getElementById('net-detail-wrap').classList.remove('open');
+  document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
+}
+
+function renderNetworkDetail() {
+  const wrap = document.getElementById('net-detail-wrap');
+  if (netDetailState.loading) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div></div>`;
+    return;
+  }
+  const nd = netDetailState.data;
+  if (!nd) { wrap.innerHTML = ''; return; }
+  if (nd.error) {
+    wrap.innerHTML = `<div class="net-detail-inner" style="color:var(--red);font-size:12px">${esc(nd.error)}</div>`;
+    return;
+  }
+
+  const stCls = nd.status === 'ACTIVE' ? 'st-active' : nd.status === 'DOWN' ? 'st-down' : 'st-error';
+  let h = `<div class="net-detail-inner">
+    <div class="net-detail-head">
+      <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(nd.name)}</strong>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span class="${stCls}" style="font-size:11px">${esc(nd.status)}</span>
+        <button class="btn" style="padding:1px 7px;font-size:11px" onclick="closeNetworkDetail()">✕</button>
+      </div>
+    </div>
+    <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all;margin-bottom:10px">${esc(nd.id || '')}</div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Properties</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Admin state</span><span class="mv ${nd.admin_state === 'up' ? 'green' : 'red'}">${esc(nd.admin_state || '')}</span></div>
+        <div class="mrow"><span class="ml">Type</span><span class="mv">${esc(nd.network_type) || '<span style="color:var(--dim)">—</span>'}</span></div>
+        <div class="mrow"><span class="ml">Shared</span><span class="mv">${nd.shared ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">External</span><span class="mv">${nd.external ? 'Yes' : 'No'}</span></div>
+        ${nd.project_id ? `<div class="mrow"><span class="ml">Project</span><span class="mv uuid-short" title="${esc(nd.project_id)}">${nd.project_id.slice(0, 8)}</span></div>` : ''}
+      </div>
+    </div>`;
+
+  // Subnets
+  const subnets = nd.subnets || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Subnets (${subnets.length})</div>
+    <div class="card-body" style="padding:0">`;
+  if (!subnets.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No subnets.</div>`;
+  } else {
+    h += `<table class="data-table" style="font-size:11px">
+      <thead><tr><th>Name / CIDR</th><th>DHCP</th><th>Gateway</th></tr></thead>
+      <tbody>`;
+    for (const s of subnets) {
+      const isSel = netDetailState.selectedSubnet === s.id;
+      h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectSubnet('${escAttr(s.id)}')">
+        <td>
+          <div style="font-weight:${isSel ? 600 : 400}">${esc(s.name || '(unnamed)')}</div>
+          <div style="color:var(--dim);font-size:10px;font-family:monospace">${esc(s.cidr)}</div>
+        </td>
+        <td>${s.enable_dhcp ? '<span class="sdot green"></span>' : '—'}</td>
+        <td style="font-family:monospace;font-size:10px;color:var(--dim)">${esc(s.gateway_ip) || '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+  }
+  h += `</div></div>`;
+
+  // Subnet detail (shown when a subnet row is clicked)
+  if (netDetailState.selectedSubnet) {
+    const sub = subnets.find(s => s.id === netDetailState.selectedSubnet);
+    if (sub) h += renderSubnetDetail(sub);
+  }
+
+  // Segments
+  const segments = nd.segments || [];
+  if (segments.length) {
+    h += `<div class="card">
+      <div class="card-title">Segments (${segments.length})</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Type</th><th>Physical net</th><th>Seg ID</th></tr></thead>
+          <tbody>`;
+    for (const seg of segments) {
+      h += `<tr>
+        <td>${esc(seg.network_type) || '<span style="color:var(--dim)">—</span>'}</td>
+        <td style="color:var(--dim);font-size:10px">${esc(seg.physical_network) || '—'}</td>
+        <td style="font-family:monospace">${seg.segmentation_id != null ? seg.segmentation_id : '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table></div></div>`;
+  }
+
+  h += `</div>`;
+  wrap.innerHTML = h;
+}
+
+function selectSubnet(id) {
+  // Toggle: clicking the same subnet again collapses the detail
+  netDetailState.selectedSubnet = (netDetailState.selectedSubnet === id) ? null : id;
+  renderNetworkDetail();
+}
+
+function renderSubnetDetail(sub) {
+  let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
+    <div class="card-title" style="color:var(--blue)">Subnet: ${esc(sub.name || sub.cidr)}</div>
+    <div class="card-body">
+      <div class="mrow"><span class="ml">CIDR</span><span class="mv" style="font-family:monospace">${esc(sub.cidr)}</span></div>
+      <div class="mrow"><span class="ml">IP version</span><span class="mv">IPv${sub.ip_version}</span></div>
+      <div class="mrow"><span class="ml">Gateway</span><span class="mv" style="font-family:monospace">${esc(sub.gateway_ip) || '—'}</span></div>
+      <div class="mrow"><span class="ml">DHCP</span><span class="mv ${sub.enable_dhcp ? 'green' : ''}">${sub.enable_dhcp ? 'Enabled' : 'Disabled'}</span></div>`;
+  if (sub.allocation_pools?.length) {
+    const pools = sub.allocation_pools.map(p => `${p.start}–${p.end}`).join(', ');
+    h += `<div class="mrow"><span class="ml">Alloc pools</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(pools)}</span></div>`;
+  }
+  if (sub.dns_nameservers?.length) {
+    h += `<div class="mrow"><span class="ml">DNS</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(sub.dns_nameservers.join(', '))}</span></div>`;
+  }
+  if (sub.host_routes?.length) {
+    const routes = sub.host_routes.map(r => `${r.destination} via ${r.nexthop}`).join('; ');
+    h += `<div class="mrow"><span class="ml">Host routes</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(routes)}</span></div>`;
+  }
+  h += `</div></div>`;
+  return h;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

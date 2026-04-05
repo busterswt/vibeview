@@ -426,6 +426,56 @@ def _get_networks() -> list[dict]:
     return result
 
 
+def _get_network_detail(network_id: str) -> dict:
+    """Return subnets and segments for a single Neutron network."""
+    conn = openstack_ops._conn()
+    network = conn.network.get_network(network_id)
+    nd = network.to_dict() if hasattr(network, "to_dict") else {}
+
+    subnets = []
+    for subnet_id in (network.subnet_ids or []):
+        try:
+            s = conn.network.get_subnet(subnet_id)
+            subnets.append({
+                "id":               s.id,
+                "name":             s.name or "",
+                "cidr":             s.cidr or "",
+                "ip_version":       s.ip_version,
+                "gateway_ip":       s.gateway_ip or "",
+                "enable_dhcp":      bool(getattr(s, "is_dhcp_enabled", False)),
+                "allocation_pools": getattr(s, "allocation_pools", []) or [],
+                "dns_nameservers":  getattr(s, "dns_nameservers", []) or [],
+                "host_routes":      getattr(s, "host_routes", []) or [],
+            })
+        except Exception:
+            pass
+
+    # Try dedicated Segments API (admin-only in most deployments)
+    segments = []
+    try:
+        for seg in conn.network.segments(network_id=network_id):
+            seg_d = seg.to_dict() if hasattr(seg, "to_dict") else {}
+            segments.append({
+                "id":               seg.id or "",
+                "name":             seg.name or "",
+                "network_type":     seg_d.get("network_type")     or getattr(seg, "network_type",     "") or "",
+                "physical_network": seg_d.get("physical_network") or getattr(seg, "physical_network", "") or "",
+                "segmentation_id":  seg_d.get("segmentation_id", getattr(seg, "segmentation_id", None)),
+            })
+    except Exception:
+        pass
+
+    # Fall back to provider attributes on the network object itself
+    if not segments:
+        nt = nd.get("provider:network_type") or ""
+        pn = nd.get("provider:physical_network") or ""
+        si = nd.get("provider:segmentation_id")
+        if nt or pn or si is not None:
+            segments = [{"id": "", "name": "", "network_type": nt, "physical_network": pn, "segmentation_id": si}]
+
+    return {"subnets": subnets, "segments": segments}
+
+
 def _get_volumes() -> tuple[list[dict], bool]:
     """Return all Cinder volumes.  Falls back to project-scope on permission error.
 
@@ -491,6 +541,17 @@ async def api_networks():
         return {"networks": data, "error": None}
     except Exception as exc:
         return {"networks": [], "error": str(exc)}
+
+
+@fastapi_app.get("/api/networks/{network_id}")
+async def api_network_detail(network_id: str):
+    """Return subnets and segments for a single network."""
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, _get_network_detail, network_id)
+        return {"network": data, "error": None}
+    except Exception as exc:
+        return {"network": None, "error": str(exc)}
 
 
 @fastapi_app.get("/api/volumes")
