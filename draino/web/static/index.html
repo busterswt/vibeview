@@ -787,7 +787,12 @@ function onStateUpdate(msg) {
   }
   trackStepTimes(msg.node, msg.data.steps || []);
   updateSidebarRow(msg.node);
-  if (msg.node === selectedNode) renderInfraDetail();
+  if (msg.node === selectedNode) {
+    renderInfraDetail();
+  } else if (msg.data.is_etcd && selectedNode && nodes[selectedNode]?.is_etcd && activeTab === 'summary') {
+    // A peer etcd node's health changed — re-render so the etcd quorum block updates
+    renderSummaryTab(nodes[selectedNode]);
+  }
   renderTasksPanel();
 }
 
