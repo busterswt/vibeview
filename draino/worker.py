@@ -25,6 +25,8 @@ def run_workflow(
     update_cb: UpdateFn,
     log_cb: LogFn,
     audit_cb: Optional[AuditCb] = None,
+    k8s_auth: Optional[k8s_ops.K8sAuth] = None,
+    openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
 ) -> None:
     """Execute the full evacuation workflow.  Designed to run in a daemon thread.
 
@@ -63,7 +65,7 @@ def run_workflow(
     # ── Step 1: Cordon ────────────────────────────────────────────────────
     step_set("cordon", StepStatus.RUNNING)
     try:
-        k8s_ops.cordon_node(state.k8s_name, log)
+        k8s_ops.cordon_node(state.k8s_name, log, auth=k8s_auth)
         step_set("cordon", StepStatus.SUCCESS)
     except Exception as exc:
         abort("cordon", str(exc))
@@ -72,7 +74,7 @@ def run_workflow(
     # ── Step 2: Disable Nova compute ──────────────────────────────────────
     step_set("disable_nova", StepStatus.RUNNING)
     try:
-        openstack_ops.disable_compute_service(state.hypervisor, log)
+        openstack_ops.disable_compute_service(state.hypervisor, log, auth=openstack_auth)
         state.compute_status = "disabled"   # reflect immediately in node panel
         step_set("disable_nova", StepStatus.SUCCESS)
     except Exception as exc:
@@ -82,8 +84,8 @@ def run_workflow(
     # ── Step 3: Enumerate instances ───────────────────────────────────────
     step_set("list_instances", StepStatus.RUNNING)
     try:
-        servers = openstack_ops.list_servers_on_host(state.hypervisor, log)
-        amp_map = openstack_ops.get_amphora_lb_mapping(log)
+        servers = openstack_ops.list_servers_on_host(state.hypervisor, log, auth=openstack_auth)
+        amp_map = openstack_ops.get_amphora_lb_mapping(log, auth=openstack_auth)
         for s in servers:
             lb_id  = amp_map.get(s["id"])
             is_amp = s["is_amphora"] or lb_id is not None
@@ -117,14 +119,14 @@ def run_workflow(
             inst.migration_status = "queued"
             update_cb()
             try:
-                openstack_ops.live_migrate_server(inst.id, log)
+                openstack_ops.live_migrate_server(inst.id, log, auth=openstack_auth)
                 inst.migration_status = "migrating"
             except Exception as live_exc:
                 # A 504 timeout means Nova accepted the request but the HTTP
                 # response timed out — the instance may already be migrating.
                 # Check task_state before attempting a cold fallback; issuing
                 # cold migrate against an already-migrating instance gets a 409.
-                task_state = openstack_ops.get_server_task_state(inst.id) or ""
+                task_state = openstack_ops.get_server_task_state(inst.id, auth=openstack_auth) or ""
                 if "migrat" in task_state.lower():
                     log(
                         f"Live migration for '{inst.name}' timed out but instance "
@@ -134,7 +136,7 @@ def run_workflow(
                 else:
                     log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
                     try:
-                        openstack_ops.cold_migrate_server(inst.id, log)
+                        openstack_ops.cold_migrate_server(inst.id, log, auth=openstack_auth)
                         inst.migration_status = "cold-migrating"
                     except Exception as cold_exc:
                         log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
@@ -151,20 +153,20 @@ def run_workflow(
                 break
 
             for inst in pending:
-                nova_status = openstack_ops.get_server_status(inst.id)
+                nova_status = openstack_ops.get_server_status(inst.id, auth=openstack_auth)
 
                 if nova_status == "VERIFY_RESIZE":
                     # Cold migration landed — confirm it automatically
                     inst.migration_status = "confirming"
                     update_cb()
                     try:
-                        openstack_ops.confirm_resize_server(inst.id, log)
+                        openstack_ops.confirm_resize_server(inst.id, log, auth=openstack_auth)
                     except Exception as exc:
                         log(f"Confirm resize failed for '{inst.name}': {exc}")
                         inst.migration_status = "failed"
                 elif nova_status == "ACTIVE":
                     # Check migration records to confirm it actually moved
-                    migs = openstack_ops.get_server_migrations(inst.id)
+                    migs = openstack_ops.get_server_migrations(inst.id, auth=openstack_auth)
                     if migs:
                         latest = migs[0]["status"].lower()
                         if latest in ("completed", "done", "finished"):
@@ -211,8 +213,8 @@ def run_workflow(
             update_cb()
 
             try:
-                openstack_ops.failover_loadbalancer(lb_id, log)
-                ok        = openstack_ops.wait_for_lb_active(lb_id, log)
+                openstack_ops.failover_loadbalancer(lb_id, log, auth=openstack_auth)
+                ok        = openstack_ops.wait_for_lb_active(lb_id, log, auth=openstack_auth)
                 fo_status = "complete" if ok else "failed"
                 if not ok:
                     any_failed = True
@@ -238,7 +240,7 @@ def run_workflow(
     count    = -1
     while time.time() < deadline:
         try:
-            count = openstack_ops.count_servers_on_host(state.hypervisor)
+            count = openstack_ops.count_servers_on_host(state.hypervisor, auth=openstack_auth)
         except Exception:
             count = -1
         step = state.get_step("await_empty")
@@ -265,7 +267,7 @@ def run_workflow(
     # ── Step 7: Drain K8s node ────────────────────────────────────────────
     step_set("drain_k8s", StepStatus.RUNNING)
     try:
-        k8s_ops.drain_node(state.k8s_name, log)
+        k8s_ops.drain_node(state.k8s_name, log, auth=k8s_auth)
         step_set("drain_k8s", StepStatus.SUCCESS)
     except Exception as exc:
         abort("drain_k8s", str(exc))
@@ -284,6 +286,7 @@ def run_reboot(
     update_cb: UpdateFn,
     log_cb: LogFn,
     audit_cb: Optional[AuditCb] = None,
+    k8s_auth: Optional[k8s_ops.K8sAuth] = None,
 ) -> None:
     """Issue a reboot via SSH and track downtime.  Runs in a daemon thread."""
 
@@ -319,7 +322,7 @@ def run_reboot(
     # clock-skew issues with timestamp comparisons).
     baseline_ready_since = None
     try:
-        for nd in k8s_ops.get_nodes():
+        for nd in k8s_ops.get_nodes(auth=k8s_auth):
             if nd["name"] == state.k8s_name:
                 baseline_ready_since = nd.get("ready_since")
                 break
@@ -361,7 +364,7 @@ def run_reboot(
 
     while time.time() < offline_deadline:
         try:
-            for nd in k8s_ops.get_nodes():
+            for nd in k8s_ops.get_nodes(auth=k8s_auth):
                 if nd["name"] == state.k8s_name and not nd["ready"]:
                     went_offline = True
                     break
@@ -392,7 +395,7 @@ def run_reboot(
 
     while time.time() < deadline:
         try:
-            for nd in k8s_ops.get_nodes():
+            for nd in k8s_ops.get_nodes(auth=k8s_auth):
                 if nd["name"] != state.k8s_name or not nd["ready"]:
                     continue
                 ready_since = nd.get("ready_since")
@@ -432,6 +435,8 @@ def run_drain_quick(
     update_cb: UpdateFn,
     log_cb: LogFn,
     audit_cb: Optional[AuditCb] = None,
+    k8s_auth: Optional[k8s_ops.K8sAuth] = None,
+    openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
 ) -> None:
     """Cordon, optionally disable Nova, then drain pods.  Runs in a daemon thread."""
 
@@ -458,7 +463,7 @@ def run_drain_quick(
 
     step_set("cordon", StepStatus.RUNNING)
     try:
-        k8s_ops.cordon_node(state.k8s_name, log)
+        k8s_ops.cordon_node(state.k8s_name, log, auth=k8s_auth)
         state.k8s_cordoned = True
         step_set("cordon", StepStatus.SUCCESS)
     except Exception as exc:
@@ -468,7 +473,7 @@ def run_drain_quick(
     if state.is_compute:
         step_set("disable_nova", StepStatus.RUNNING)
         try:
-            openstack_ops.disable_compute_service(state.hypervisor, log)
+            openstack_ops.disable_compute_service(state.hypervisor, log, auth=openstack_auth)
             state.compute_status = "disabled"
             step_set("disable_nova", StepStatus.SUCCESS)
         except Exception as exc:
@@ -477,7 +482,7 @@ def run_drain_quick(
 
     step_set("drain_k8s", StepStatus.RUNNING)
     try:
-        k8s_ops.drain_node(state.k8s_name, log)
+        k8s_ops.drain_node(state.k8s_name, log, auth=k8s_auth)
         step_set("drain_k8s", StepStatus.SUCCESS)
     except Exception as exc:
         abort("drain_k8s", str(exc))
@@ -495,6 +500,8 @@ def run_undrain(
     update_cb: UpdateFn,
     log_cb: LogFn,
     audit_cb: Optional[AuditCb] = None,
+    k8s_auth: Optional[k8s_ops.K8sAuth] = None,
+    openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
 ) -> None:
     """Enable Nova (if compute) then uncordon.  Runs in a daemon thread."""
 
@@ -522,7 +529,7 @@ def run_undrain(
     if state.is_compute:
         step_set("enable_nova", StepStatus.RUNNING)
         try:
-            openstack_ops.enable_compute_service(state.hypervisor, log)
+            openstack_ops.enable_compute_service(state.hypervisor, log, auth=openstack_auth)
             state.compute_status = "up"
             step_set("enable_nova", StepStatus.SUCCESS)
         except Exception as exc:
@@ -531,7 +538,7 @@ def run_undrain(
 
     step_set("uncordon", StepStatus.RUNNING)
     try:
-        k8s_ops.uncordon_node(state.k8s_name, log)
+        k8s_ops.uncordon_node(state.k8s_name, log, auth=k8s_auth)
         state.k8s_cordoned = False
         step_set("uncordon", StepStatus.SUCCESS)
     except Exception as exc:

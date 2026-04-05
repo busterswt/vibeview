@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 import openstack
@@ -12,13 +13,39 @@ LogFn = Callable[[str], None]
 _CLOUD: str | None = None
 
 
+@dataclass(slots=True)
+class OpenStackAuth:
+    auth_url: str
+    username: str
+    password: str
+    project_name: str
+    user_domain_name: str = "Default"
+    project_domain_name: str = "Default"
+    region_name: str | None = None
+    interface: str | None = None
+
+
 def configure(cloud: str | None = None) -> None:
     global _CLOUD
     _CLOUD = cloud
 
 
-def _conn() -> openstack.connection.Connection:
-    return openstack.connect(cloud=_CLOUD)
+def _conn(auth: OpenStackAuth | None = None) -> openstack.connection.Connection:
+    if auth is None:
+        return openstack.connect(cloud=_CLOUD)
+    kwargs = {
+        "auth_url": auth.auth_url,
+        "username": auth.username,
+        "password": auth.password,
+        "project_name": auth.project_name,
+        "user_domain_name": auth.user_domain_name,
+        "project_domain_name": auth.project_domain_name,
+    }
+    if auth.region_name:
+        kwargs["region_name"] = auth.region_name
+    if auth.interface:
+        kwargs["interface"] = auth.interface
+    return openstack.connection.Connection(**kwargs)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -51,13 +78,16 @@ def _servers_on_host(conn, hypervisor: str) -> list:
 
 # ── Node summary (for the node-list panel) ────────────────────────────────────
 
-def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
+def get_all_host_summaries(
+    log_cb: Optional[LogFn] = None,
+    auth: OpenStackAuth | None = None,
+) -> dict[str, dict]:
     """Fetch summaries for every hypervisor in exactly three API calls.
 
     Returns {hypervisor_hostname: {compute_status, amphora_count, vm_count}}
     log_cb, if provided, receives diagnostic strings useful for debugging.
     """
-    conn = _conn()
+    conn = _conn(auth=auth)
 
     def _log(msg: str) -> None:
         if log_cb:
@@ -161,7 +191,7 @@ def get_all_host_summaries(log_cb: Optional[LogFn] = None) -> dict[str, dict]:
     return result
 
 
-def get_host_summary(hypervisor: str) -> dict:
+def get_host_summary(hypervisor: str, auth: OpenStackAuth | None = None) -> dict:
     """Return a lightweight summary for the node panel.
 
     Returns a dict with keys:
@@ -169,7 +199,7 @@ def get_host_summary(hypervisor: str) -> dict:
       amphora_count  : int | None
       vm_count       : int | None   (non-amphora instances)
     """
-    conn = _conn()
+    conn = _conn(auth=auth)
 
     compute_status: Optional[str] = None
     amphora_count:  Optional[int] = None
@@ -230,7 +260,10 @@ def get_host_summary(hypervisor: str) -> dict:
 
 # ── Hypervisor detail (for summary tab) ──────────────────────────────────────
 
-def get_hypervisor_detail(hypervisor: str) -> dict:
+def get_hypervisor_detail(
+    hypervisor: str,
+    auth: OpenStackAuth | None = None,
+) -> dict:
     """Return Nova hypervisor resource stats for the summary tab.
 
     Returns a dict with vcpus, vcpus_used, memory_mb, memory_mb_used,
@@ -239,7 +272,7 @@ def get_hypervisor_detail(hypervisor: str) -> dict:
     """
     import json as _json
 
-    conn = _conn()
+    conn = _conn(auth=auth)
     result: dict = {
         "vcpus":             None,
         "vcpus_used":        None,
@@ -288,9 +321,13 @@ def get_hypervisor_detail(hypervisor: str) -> dict:
 
 # ── Compute service ───────────────────────────────────────────────────────────
 
-def disable_compute_service(hypervisor: str, log: LogFn) -> None:
+def disable_compute_service(
+    hypervisor: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Disable the nova-compute service on a hypervisor host."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     services = list(conn.compute.services(host=hypervisor, binary="nova-compute"))
     if not services:
         raise RuntimeError(f"No nova-compute service found for host '{hypervisor}'")
@@ -304,9 +341,13 @@ def disable_compute_service(hypervisor: str, log: LogFn) -> None:
     log(f"Nova compute service disabled on '{hypervisor}'")
 
 
-def enable_compute_service(hypervisor: str, log: LogFn) -> None:
+def enable_compute_service(
+    hypervisor: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Enable the nova-compute service on a hypervisor host."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     services = list(conn.compute.services(host=hypervisor, binary="nova-compute"))
     if not services:
         raise RuntimeError(f"No nova-compute service found for host '{hypervisor}'")
@@ -321,13 +362,16 @@ def enable_compute_service(hypervisor: str, log: LogFn) -> None:
 
 # ── Servers ───────────────────────────────────────────────────────────────────
 
-def get_instances_preflight(hypervisor: str) -> list[dict]:
+def get_instances_preflight(
+    hypervisor: str,
+    auth: OpenStackAuth | None = None,
+) -> list[dict]:
     """Return all instances on *hypervisor* with storage-type metadata.
 
     Used to preview what will be migrated before the workflow starts.
     is_volume_backed is True when the server has no image (booted from volume).
     """
-    conn = _conn()
+    conn = _conn(auth=auth)
     servers = _servers_on_host(conn, hypervisor)
     result = []
     for s in servers:
@@ -342,9 +386,13 @@ def get_instances_preflight(hypervisor: str) -> list[dict]:
     return result
 
 
-def list_servers_on_host(hypervisor: str, log: LogFn) -> list[dict]:
+def list_servers_on_host(
+    hypervisor: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> list[dict]:
     """List all server instances currently scheduled on a hypervisor."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     servers = _servers_on_host(conn, hypervisor)
     result = []
     for s in servers:
@@ -364,9 +412,13 @@ def list_servers_on_host(hypervisor: str, log: LogFn) -> list[dict]:
     return result
 
 
-def live_migrate_server(server_id: str, log: LogFn) -> None:
+def live_migrate_server(
+    server_id: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Trigger a live migration for a server, letting the scheduler choose the host."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     conn.compute.live_migrate_server(
         server_id,
         host=None,
@@ -375,9 +427,12 @@ def live_migrate_server(server_id: str, log: LogFn) -> None:
     log(f"Live migration triggered for server {server_id}")
 
 
-def get_server_task_state(server_id: str) -> Optional[str]:
+def get_server_task_state(
+    server_id: str,
+    auth: OpenStackAuth | None = None,
+) -> Optional[str]:
     """Return the current OS-EXT-STS:task_state for a server, or None on error."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     try:
         s = conn.compute.get_server(server_id)
         return (
@@ -388,23 +443,34 @@ def get_server_task_state(server_id: str) -> Optional[str]:
         return None
 
 
-def cold_migrate_server(server_id: str, log: LogFn) -> None:
+def cold_migrate_server(
+    server_id: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Trigger a cold migration (server will be stopped and moved)."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     conn.compute.migrate_server(server_id)
     log(f"Cold migration triggered for server {server_id}")
 
 
-def confirm_resize_server(server_id: str, log: LogFn) -> None:
+def confirm_resize_server(
+    server_id: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Confirm a completed cold migration, moving it from VERIFY_RESIZE to ACTIVE."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     conn.compute.confirm_resize_server(server_id)
     log(f"Cold migration confirmed for server {server_id}")
 
 
-def get_server_migrations(server_id: str) -> list[dict]:
+def get_server_migrations(
+    server_id: str,
+    auth: OpenStackAuth | None = None,
+) -> list[dict]:
     """Return recent migrations for a server, newest first."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     try:
         migs = list(conn.compute.migrations(instance_uuid=server_id))
         migs.sort(key=lambda m: getattr(m, "created_at", ""), reverse=True)
@@ -413,9 +479,12 @@ def get_server_migrations(server_id: str) -> list[dict]:
         return []
 
 
-def get_server_status(server_id: str) -> Optional[str]:
+def get_server_status(
+    server_id: str,
+    auth: OpenStackAuth | None = None,
+) -> Optional[str]:
     """Return the current Nova status string for a server, or None on error."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     try:
         s = conn.compute.get_server(server_id)
         return s.status if s else None
@@ -423,17 +492,23 @@ def get_server_status(server_id: str) -> Optional[str]:
         return None
 
 
-def count_servers_on_host(hypervisor: str) -> int:
+def count_servers_on_host(
+    hypervisor: str,
+    auth: OpenStackAuth | None = None,
+) -> int:
     """Return the number of instances currently on a hypervisor."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     return len(_servers_on_host(conn, hypervisor))
 
 
 # ── Octavia / Amphora ─────────────────────────────────────────────────────────
 
-def get_amphora_lb_mapping(log: LogFn) -> dict[str, str]:
+def get_amphora_lb_mapping(
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> dict[str, str]:
     """Return {compute_instance_id: lb_id} for all known Octavia amphora."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     mapping: dict[str, str] = {}
     try:
         for amp in conn.load_balancer.amphorae():
@@ -445,16 +520,25 @@ def get_amphora_lb_mapping(log: LogFn) -> dict[str, str]:
     return mapping
 
 
-def failover_loadbalancer(lb_id: str, log: LogFn) -> None:
+def failover_loadbalancer(
+    lb_id: str,
+    log: LogFn,
+    auth: OpenStackAuth | None = None,
+) -> None:
     """Trigger an Octavia load-balancer failover."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     conn.load_balancer.failover_load_balancer(lb_id)
     log(f"Failover triggered for load balancer {lb_id}")
 
 
-def wait_for_lb_active(lb_id: str, log: LogFn, timeout: int = 600) -> bool:
+def wait_for_lb_active(
+    lb_id: str,
+    log: LogFn,
+    timeout: int = 600,
+    auth: OpenStackAuth | None = None,
+) -> bool:
     """Block until the LB returns to ACTIVE provisioning status."""
-    conn = _conn()
+    conn = _conn(auth=auth)
     deadline = time.time() + timeout
     while time.time() < deadline:
         lb     = conn.load_balancer.get_load_balancer(lb_id)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from kubernetes import client, config
@@ -11,6 +12,14 @@ from kubernetes.client.exceptions import ApiException
 LogFn = Callable[[str], None]
 
 _CONTEXT: str | None = None
+
+
+@dataclass(slots=True)
+class K8sAuth:
+    server: str
+    token: str
+    skip_tls_verify: bool = False
+    context: str | None = None
 
 
 def configure(context: str | None = None) -> None:
@@ -25,10 +34,33 @@ def _load_config() -> None:
         config.load_kube_config(context=_CONTEXT)
 
 
-def get_nodes() -> list[dict]:
+def _api_client(auth: K8sAuth | None = None) -> client.ApiClient:
+    if auth is None:
+        _load_config()
+        return client.ApiClient()
+    cfg = client.Configuration()
+    cfg.host = auth.server.rstrip("/")
+    cfg.verify_ssl = not auth.skip_tls_verify
+    cfg.api_key = {"authorization": auth.token}
+    cfg.api_key_prefix = {"authorization": "Bearer"}
+    return client.ApiClient(cfg)
+
+
+def _kubectl_base_cmd(auth: K8sAuth | None = None) -> list[str]:
+    cmd = ["kubectl"]
+    if auth is None:
+        if _CONTEXT:
+            cmd += ["--context", _CONTEXT]
+        return cmd
+    cmd += ["--server", auth.server, "--token", auth.token]
+    if auth.skip_tls_verify:
+        cmd.append("--insecure-skip-tls-verify=true")
+    return cmd
+
+
+def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
     """Return a list of node info dicts."""
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     raw = v1.list_node()
     result: list[dict] = []
     for node in raw.items:
@@ -57,15 +89,17 @@ def get_nodes() -> list[dict]:
     return result
 
 
-def get_node_k8s_detail(node_name: str) -> dict:
+def get_node_k8s_detail(
+    node_name: str,
+    auth: K8sAuth | None = None,
+) -> dict:
     """Return detailed K8s node info for the summary tab.
 
     Fetches node_info (kubelet version, container runtime, OS image,
     architecture), capacity/allocatable (cpu, memory, pods), and live
     pod count.  All values default to None on failure.
     """
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
 
     result: dict = {
         "kubelet_version":     None,
@@ -180,13 +214,12 @@ def check_etcd_service(hostname: str) -> Optional[bool]:
         return None
 
 
-def get_etcd_node_names() -> set[str]:
+def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role.
 
     Detects nodes labelled by kubespray with node-role.kubernetes.io/etcd.
     """
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     result: set[str] = set()
     try:
         nodes = v1.list_node(
@@ -199,18 +232,23 @@ def get_etcd_node_names() -> set[str]:
     return result
 
 
-def cordon_node(name: str, log: LogFn) -> None:
+def cordon_node(
+    name: str,
+    log: LogFn,
+    auth: K8sAuth | None = None,
+) -> None:
     """Mark a node unschedulable."""
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     v1.patch_node(name, {"spec": {"unschedulable": True}})
     log(f"Node '{name}' cordoned successfully")
 
 
-def get_pods_on_node(node_name: str) -> list[dict]:
+def get_pods_on_node(
+    node_name: str,
+    auth: K8sAuth | None = None,
+) -> list[dict]:
     """Return a list of pod info dicts for all pods scheduled on *node_name*."""
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     raw = v1.list_pod_for_all_namespaces(
         field_selector=f"spec.nodeName={node_name}"
     )
@@ -239,10 +277,13 @@ def get_pods_on_node(node_name: str) -> list[dict]:
     return result
 
 
-def uncordon_node(name: str, log: LogFn) -> None:
+def uncordon_node(
+    name: str,
+    log: LogFn,
+    auth: K8sAuth | None = None,
+) -> None:
     """Mark a node schedulable."""
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     v1.patch_node(name, {"spec": {"unschedulable": False}})
     log(f"Node '{name}' uncordoned successfully")
 
@@ -416,14 +457,16 @@ OVN_ANNOTATION_KEYS = [
 ]
 
 
-def get_node_ovn_annotations(node_name: str) -> dict:
+def get_node_ovn_annotations(
+    node_name: str,
+    auth: K8sAuth | None = None,
+) -> dict:
     """Return OVN-related annotations from the K8s node object.
 
     Returns a dict keyed by annotation name → value (str or None).
     Adds an ``error`` key if the K8s API call fails.
     """
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     try:
         node = v1.read_node(node_name)
         ann = node.metadata.annotations or {}
@@ -432,14 +475,18 @@ def get_node_ovn_annotations(node_name: str) -> dict:
         return {k: None for k in OVN_ANNOTATION_KEYS} | {"error": str(exc)}
 
 
-def patch_node_annotation(node_name: str, key: str, value: Optional[str]) -> None:
+def patch_node_annotation(
+    node_name: str,
+    key: str,
+    value: Optional[str],
+    auth: K8sAuth | None = None,
+) -> None:
     """Set (or remove, if *value* is None) a single annotation on a K8s node.
 
     Uses the kubernetes Python client so no subprocess/kubectl required.
     Raises any ApiException on failure.
     """
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
     body = {"metadata": {"annotations": {key: value}}}
     v1.patch_node(node_name, body)
 
@@ -603,7 +650,7 @@ done
     return {"interfaces": interfaces, "error": None}
 
 
-def get_ovn_port_detail(port_id: str) -> dict:
+def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:
     """Run `kubectl ko nbctl lsp-show <port_id>` and return parsed data.
 
     Returns a dict with keys: id, type, addresses, port_security,
@@ -613,9 +660,7 @@ def get_ovn_port_detail(port_id: str) -> dict:
     import json as _json
     import re as _re
 
-    cmd = ["kubectl"]
-    if _CONTEXT:
-        cmd += ["--context", _CONTEXT]
+    cmd = _kubectl_base_cmd(auth)
     # ovn-nbctl has no lsp-show; use --format=list list TABLE <name> which
     # looks up by name column directly — avoids the find condition parser
     # mis-treating hyphenated UUIDs as multi-value expressions.
@@ -702,7 +747,10 @@ def get_ovn_port_detail(port_id: str) -> dict:
     return data
 
 
-def get_ovn_logical_switch(network_id: str) -> dict:
+def get_ovn_logical_switch(
+    network_id: str,
+    auth: K8sAuth | None = None,
+) -> dict:
     """Run `kubectl ko nbctl show neutron-<network_id>` and return parsed data.
 
     Returns:
@@ -723,9 +771,7 @@ def get_ovn_logical_switch(network_id: str) -> dict:
     import json as _json
 
     ls_name = f"neutron-{network_id}"
-    cmd = ["kubectl"]
-    if _CONTEXT:
-        cmd += ["--context", _CONTEXT]
+    cmd = _kubectl_base_cmd(auth)
     cmd += ["ko", "nbctl", "show", ls_name]
 
     try:
@@ -799,9 +845,8 @@ def _ts(obj) -> str | None:
     return ts.isoformat() if ts else None
 
 
-def list_k8s_namespaces() -> list[dict]:
-    _load_config()
-    v1 = client.CoreV1Api()
+def list_k8s_namespaces(auth: K8sAuth | None = None) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
     return [
         {"name": ns.metadata.name, "status": ns.status.phase or "Active", "created": _ts(ns),
          "labels": dict(ns.metadata.labels or {})}
@@ -809,9 +854,11 @@ def list_k8s_namespaces() -> list[dict]:
     ]
 
 
-def list_k8s_pods(namespace: str | None = None) -> list[dict]:
-    _load_config()
-    v1 = client.CoreV1Api()
+def list_k8s_pods(
+    namespace: str | None = None,
+    auth: K8sAuth | None = None,
+) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
     raw = v1.list_pod_for_all_namespaces() if not namespace else v1.list_namespaced_pod(namespace)
     result = []
     for pod in raw.items:
@@ -834,9 +881,11 @@ def list_k8s_pods(namespace: str | None = None) -> list[dict]:
     return result
 
 
-def list_k8s_services(namespace: str | None = None) -> list[dict]:
-    _load_config()
-    v1 = client.CoreV1Api()
+def list_k8s_services(
+    namespace: str | None = None,
+    auth: K8sAuth | None = None,
+) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
     raw = v1.list_service_for_all_namespaces() if not namespace else v1.list_namespaced_service(namespace)
     result = []
     for svc in raw.items:
@@ -860,9 +909,8 @@ def list_k8s_services(namespace: str | None = None) -> list[dict]:
     return result
 
 
-def list_k8s_pvs() -> list[dict]:
-    _load_config()
-    v1 = client.CoreV1Api()
+def list_k8s_pvs(auth: K8sAuth | None = None) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
     result = []
     for pv in v1.list_persistent_volume().items:
         claim = ""
@@ -881,9 +929,11 @@ def list_k8s_pvs() -> list[dict]:
     return result
 
 
-def list_k8s_pvcs(namespace: str | None = None) -> list[dict]:
-    _load_config()
-    v1 = client.CoreV1Api()
+def list_k8s_pvcs(
+    namespace: str | None = None,
+    auth: K8sAuth | None = None,
+) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
     raw = (v1.list_persistent_volume_claim_for_all_namespaces() if not namespace
            else v1.list_namespaced_persistent_volume_claim(namespace))
     result = []
@@ -901,9 +951,8 @@ def list_k8s_pvcs(namespace: str | None = None) -> list[dict]:
     return result
 
 
-def list_k8s_crds() -> list[dict]:
-    _load_config()
-    api = client.ApiextensionsV1Api()
+def list_k8s_crds(auth: K8sAuth | None = None) -> list[dict]:
+    api = client.ApiextensionsV1Api(_api_client(auth))
     result = []
     for crd in api.list_custom_resource_definition().items:
         spec = crd.spec
@@ -919,10 +968,14 @@ def list_k8s_crds() -> list[dict]:
     return result
 
 
-def drain_node(name: str, log: LogFn, timeout: int = 300) -> None:
+def drain_node(
+    name: str,
+    log: LogFn,
+    timeout: int = 300,
+    auth: K8sAuth | None = None,
+) -> None:
     """Evict all non-DaemonSet pods from a node and wait for termination."""
-    _load_config()
-    v1 = client.CoreV1Api()
+    v1 = client.CoreV1Api(_api_client(auth))
 
     log(f"Listing pods on node '{name}'…")
     pods = v1.list_pod_for_all_namespaces(field_selector=f"spec.nodeName={name}")

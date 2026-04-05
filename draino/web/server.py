@@ -28,14 +28,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Set
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -46,6 +48,53 @@ from ..render import format_uptime
 from .. import worker
 
 _STATIC = Path(__file__).parent / "static"
+_SESSION_COOKIE = "draino_session"
+_SESSION_TTL = 60 * 60 * 12
+_app_loop: Optional[asyncio.AbstractEventLoop] = None
+_audit_log_path: Optional[str] = None
+
+
+@dataclass(slots=True)
+class SessionRecord:
+    session_id: str
+    server: "DrainoServer"
+    username: str
+    project_name: str
+    created_at: float
+    last_seen: float
+
+
+class SessionStore:
+    def __init__(self) -> None:
+        self._sessions: dict[str, SessionRecord] = {}
+        self._lock = threading.Lock()
+
+    def put(self, record: SessionRecord) -> None:
+        with self._lock:
+            self._sessions[record.session_id] = record
+
+    def get(self, session_id: str | None) -> SessionRecord | None:
+        if not session_id:
+            return None
+        with self._lock:
+            record = self._sessions.get(session_id)
+            if record is None:
+                return None
+            now = time.time()
+            if now - record.last_seen > _SESSION_TTL:
+                self._sessions.pop(session_id, None)
+                return None
+            record.last_seen = now
+            return record
+
+    def delete(self, session_id: str | None) -> None:
+        if not session_id:
+            return
+        with self._lock:
+            self._sessions.pop(session_id, None)
+
+
+_sessions = SessionStore()
 
 
 # ── State serialisation ───────────────────────────────────────────────────────
@@ -105,12 +154,12 @@ class DrainoServer:
 
     def __init__(
         self,
-        cloud:     Optional[str] = None,
-        context:   Optional[str] = None,
+        k8s_auth:  Optional[k8s_ops.K8sAuth] = None,
+        openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
         audit_log: Optional[str] = None,
     ) -> None:
-        self.cloud   = cloud
-        self.context = context
+        self.k8s_auth = k8s_auth
+        self.openstack_auth = openstack_auth
         self._audit  = AuditLogger(path=audit_log)
 
         self.node_states:      dict[str, NodeState] = {}
@@ -186,7 +235,7 @@ class DrainoServer:
 
     def _load_nodes_bg(self) -> None:
         try:
-            nodes = k8s_ops.get_nodes()
+            nodes = k8s_ops.get_nodes(auth=self.k8s_auth)
         except Exception as exc:
             self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
             return
@@ -213,12 +262,12 @@ class DrainoServer:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})
 
         try:
-            summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log)
+            summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
         except Exception as exc:
             self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
             return
 
-        etcd_names = k8s_ops.get_etcd_node_names()
+        etcd_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
         self._etcd_node_names = etcd_names
 
         for nd in nodes:
@@ -264,7 +313,10 @@ class DrainoServer:
         if not state:
             return
         try:
-            state.preflight_instances = openstack_ops.get_instances_preflight(state.hypervisor)
+            state.preflight_instances = openstack_ops.get_instances_preflight(
+                state.hypervisor,
+                auth=self.openstack_auth,
+            )
         except Exception as exc:
             state.preflight_instances = []
             self._push({"type": "log", "node": "-", "message": f"Preflight failed for {node_name}: {exc}", "color": "warn"})
@@ -315,7 +367,7 @@ class DrainoServer:
 
         threading.Thread(
             target=worker.run_workflow,
-            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb),
+            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb, self.k8s_auth, self.openstack_auth),
             daemon=True,
         ).start()
 
@@ -334,7 +386,7 @@ class DrainoServer:
 
         threading.Thread(
             target=worker.run_drain_quick,
-            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb),
+            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb, self.k8s_auth, self.openstack_auth),
             daemon=True,
         ).start()
 
@@ -353,7 +405,7 @@ class DrainoServer:
 
         threading.Thread(
             target=worker.run_undrain,
-            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb),
+            args=(state, self._update_cb(node_name), self._log_cb(node_name), audit_cb, self.k8s_auth, self.openstack_auth),
             daemon=True,
         ).start()
 
@@ -407,7 +459,7 @@ class DrainoServer:
 
         threading.Thread(
             target=worker.run_reboot,
-            args=(state, self._update_cb(node_name), self._log_cb(node_name, "magenta"), audit_cb),
+            args=(state, self._update_cb(node_name), self._log_cb(node_name, "magenta"), audit_cb, self.k8s_auth),
             daemon=True,
         ).start()
 
@@ -439,7 +491,7 @@ class DrainoServer:
     def _migrate_instance_bg(self, node_name: str, instance_id: str) -> None:
         log = self._log_cb(node_name)
         try:
-            openstack_ops.live_migrate_server(instance_id, log)
+            openstack_ops.live_migrate_server(instance_id, log, auth=self.openstack_auth)
         except Exception as exc:
             log(f"Migration trigger failed for {instance_id}: {exc}")
             self._push({"type": "instance_migrate_status", "node": node_name,
@@ -450,8 +502,8 @@ class DrainoServer:
         deadline = time.time() + 600
         time.sleep(3)
         while time.time() < deadline:
-            task_state = openstack_ops.get_server_task_state(instance_id)
-            srv_status = openstack_ops.get_server_status(instance_id)
+            task_state = openstack_ops.get_server_task_state(instance_id, auth=self.openstack_auth)
+            srv_status = openstack_ops.get_server_status(instance_id, auth=self.openstack_auth)
             if srv_status == "ERROR":
                 log(f"Instance {instance_id} entered ERROR state during migration")
                 self._push({"type": "instance_migrate_status", "node": node_name,
@@ -473,9 +525,9 @@ class DrainoServer:
 
 # ── OpenStack resource helpers (called in thread pool) ───────────────────────
 
-def _get_networks() -> list[dict]:
+def _get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return all Neutron networks visible to the configured credential."""
-    conn = openstack_ops._conn()
+    conn = openstack_ops._conn(auth=auth)
     result = []
     for n in conn.network.networks():
         d = n.to_dict() if hasattr(n, "to_dict") else {}
@@ -493,9 +545,12 @@ def _get_networks() -> list[dict]:
     return result
 
 
-def _get_network_detail(network_id: str) -> dict:
+def _get_network_detail(
+    network_id: str,
+    auth: openstack_ops.OpenStackAuth | None,
+) -> dict:
     """Return subnets and segments for a single Neutron network."""
-    conn = openstack_ops._conn()
+    conn = openstack_ops._conn(auth=auth)
     network = conn.network.get_network(network_id)
     nd = network.to_dict() if hasattr(network, "to_dict") else {}
 
@@ -543,12 +598,14 @@ def _get_network_detail(network_id: str) -> dict:
     return {"subnets": subnets, "segments": segments}
 
 
-def _get_volumes() -> tuple[list[dict], bool]:
+def _get_volumes(
+    auth: openstack_ops.OpenStackAuth | None,
+) -> tuple[list[dict], bool]:
     """Return all Cinder volumes.  Falls back to project-scope on permission error.
 
     Returns (volumes, all_projects_succeeded).
     """
-    conn = openstack_ops._conn()
+    conn = openstack_ops._conn(auth=auth)
     all_projects = False
     try:
         vols = list(conn.volume.volumes(all_projects=True))
@@ -580,18 +637,48 @@ def _get_volumes() -> tuple[list[dict], bool]:
 
 # ── FastAPI application ───────────────────────────────────────────────────────
 
-_server: Optional[DrainoServer] = None
+
+def _get_session_record(request: Request) -> SessionRecord:
+    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return record
+
+
+def _get_ws_session(ws: WebSocket) -> SessionRecord | None:
+    return _sessions.get(ws.cookies.get(_SESSION_COOKIE))
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    if _server is not None:
-        _server.set_loop(asyncio.get_running_loop())
-        _server.start_refresh()
+    global _app_loop
+    _app_loop = asyncio.get_running_loop()
     yield
 
 
 fastapi_app = FastAPI(title="Draino", lifespan=_lifespan)
+
+
+class K8sLoginPayload(BaseModel):
+    server: str
+    token: str
+    skip_tls_verify: bool = False
+
+
+class OpenStackLoginPayload(BaseModel):
+    auth_url: str
+    username: str
+    password: str
+    project_name: str
+    user_domain_name: str = "Default"
+    project_domain_name: str = "Default"
+    region_name: Optional[str] = None
+    interface: Optional[str] = None
+
+
+class LoginPayload(BaseModel):
+    kubernetes: K8sLoginPayload
+    openstack: OpenStackLoginPayload
 
 
 @fastapi_app.get("/")
@@ -599,52 +686,129 @@ async def index() -> FileResponse:
     return FileResponse(_STATIC / "index.html")
 
 
+@fastapi_app.get("/api/session")
+async def api_session(request: Request):
+    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
+    if record is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "username": record.username,
+        "project_name": record.project_name,
+    }
+
+
+@fastapi_app.post("/api/session")
+async def api_login(payload: LoginPayload, response: Response):
+    k8s_auth = k8s_ops.K8sAuth(
+        server=payload.kubernetes.server.strip(),
+        token=payload.kubernetes.token.strip(),
+        skip_tls_verify=payload.kubernetes.skip_tls_verify,
+    )
+    openstack_auth = openstack_ops.OpenStackAuth(
+        auth_url=payload.openstack.auth_url.strip(),
+        username=payload.openstack.username.strip(),
+        password=payload.openstack.password,
+        project_name=payload.openstack.project_name.strip(),
+        user_domain_name=payload.openstack.user_domain_name.strip() or "Default",
+        project_domain_name=payload.openstack.project_domain_name.strip() or "Default",
+        region_name=(payload.openstack.region_name or "").strip() or None,
+        interface=(payload.openstack.interface or "").strip() or None,
+    )
+
+    try:
+        k8s_ops.get_nodes(auth=k8s_auth)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Kubernetes authentication failed: {exc}")
+
+    try:
+        openstack_ops._conn(auth=openstack_auth).authorize()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"OpenStack authentication failed: {exc}")
+
+    server = DrainoServer(k8s_auth=k8s_auth, openstack_auth=openstack_auth, audit_log=_audit_log_path)
+    if _app_loop is not None:
+        server.set_loop(_app_loop)
+    server._audit.log("session", "-", "started", "web ui user-authenticated session")
+    session_id = secrets.token_urlsafe(32)
+    _sessions.put(SessionRecord(
+        session_id=session_id,
+        server=server,
+        username=openstack_auth.username,
+        project_name=openstack_auth.project_name,
+        created_at=time.time(),
+        last_seen=time.time(),
+    ))
+    response.set_cookie(
+        key=_SESSION_COOKIE,
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=_SESSION_TTL,
+    )
+    server.start_refresh()
+    return {"ok": True}
+
+
+@fastapi_app.delete("/api/session")
+async def api_logout(request: Request, response: Response):
+    _sessions.delete(request.cookies.get(_SESSION_COOKIE))
+    response.delete_cookie(_SESSION_COOKIE)
+    return {"ok": True}
+
+
 @fastapi_app.get("/api/networks")
-async def api_networks():
+async def api_networks(request: Request):
     """List Neutron networks (admin sees all; non-admin sees project scope)."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, _get_networks)
+        data = await loop.run_in_executor(None, _get_networks, session.server.openstack_auth)
         return {"networks": data, "error": None}
     except Exception as exc:
         return {"networks": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/ovn/lsp/{port_id}")
-async def api_ovn_port_detail(port_id: str):
+async def api_ovn_port_detail(port_id: str, request: Request):
     """Return OVN logical switch port detail for a given port UUID."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_port_detail, port_id)
+        data = await loop.run_in_executor(None, k8s_ops.get_ovn_port_detail, port_id, session.server.k8s_auth)
         return {"port": data, "error": None}
     except Exception as exc:
         return {"port": None, "error": str(exc)}
 
 
 @fastapi_app.get("/api/networks/{network_id}/ovn")
-async def api_network_ovn(network_id: str):
+async def api_network_ovn(network_id: str, request: Request):
     """Return OVN logical switch and ports for a Neutron network."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id)
+        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id, session.server.k8s_auth)
         return {"ovn": data, "error": None}
     except Exception as exc:
         return {"ovn": None, "error": str(exc)}
 
 
 @fastapi_app.get("/api/nodes/{node_name}/detail")
-async def api_node_detail(node_name: str):
+async def api_node_detail(node_name: str, request: Request):
     """Return detailed K8s + Nova + hardware stats for the summary tab."""
+    session = _get_session_record(request)
+    server = session.server
     loop = asyncio.get_running_loop()
-    state = _server.node_states.get(node_name)
+    state = server.node_states.get(node_name)
     hypervisor = state.hypervisor if state else node_name
 
-    k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name)
+    k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
     hw_future  = loop.run_in_executor(None, k8s_ops.get_node_hardware_info, hypervisor)
 
     nova: dict = {}
     if state and state.is_compute:
-        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, hypervisor)
+        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, hypervisor, server.openstack_auth)
 
     k8s = await k8s_future
     hw  = await hw_future
@@ -652,10 +816,11 @@ async def api_node_detail(node_name: str):
 
 
 @fastapi_app.get("/api/nodes/{node_name}/ovn-annotations")
-async def api_node_ovn_annotations(node_name: str):
+async def api_node_ovn_annotations(node_name: str, request: Request):
     """Return OVN-related annotations from the K8s node."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, k8s_ops.get_node_ovn_annotations, node_name)
+    result = await loop.run_in_executor(None, k8s_ops.get_node_ovn_annotations, node_name, session.server.k8s_auth)
     return result
 
 
@@ -665,14 +830,15 @@ class AnnotationPatch(BaseModel):
 
 
 @fastapi_app.post("/api/nodes/{node_name}/ovn-annotations")
-async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch):
+async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch, request: Request):
     """Set or remove a single OVN annotation on a K8s node."""
+    session = _get_session_record(request)
     if payload.key not in k8s_ops.OVN_ANNOTATION_KEYS:
         return {"ok": False, "error": f"Key {payload.key!r} not in allowed OVN annotation keys"}
     loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(
-            None, k8s_ops.patch_node_annotation, node_name, payload.key, payload.value
+            None, k8s_ops.patch_node_annotation, node_name, payload.key, payload.value, session.server.k8s_auth
         )
         return {"ok": True, "error": None}
     except Exception as exc:
@@ -680,10 +846,11 @@ async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch):
 
 
 @fastapi_app.get("/api/nodes/{node_name}/network-interfaces")
-async def api_node_network_interfaces(node_name: str):
+async def api_node_network_interfaces(node_name: str, request: Request):
     """Return physical and bond network interfaces discovered via SSH."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
-    state = _server.node_states.get(node_name)
+    state = session.server.node_states.get(node_name)
     hostname = state.hypervisor if state else node_name
     result = await loop.run_in_executor(
         None, k8s_ops.get_node_network_interfaces, hostname
@@ -692,76 +859,84 @@ async def api_node_network_interfaces(node_name: str):
 
 
 @fastapi_app.get("/api/k8s/namespaces")
-async def api_k8s_namespaces():
+async def api_k8s_namespaces(request: Request):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_namespaces), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_namespaces, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/k8s/pods")
-async def api_k8s_pods(namespace: Optional[str] = None):
+async def api_k8s_pods(request: Request, namespace: Optional[str] = None):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pods, namespace), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pods, namespace, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/k8s/services")
-async def api_k8s_services(namespace: Optional[str] = None):
+async def api_k8s_services(request: Request, namespace: Optional[str] = None):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_services, namespace), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_services, namespace, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/k8s/pvs")
-async def api_k8s_pvs():
+async def api_k8s_pvs(request: Request):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvs), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvs, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/k8s/pvcs")
-async def api_k8s_pvcs(namespace: Optional[str] = None):
+async def api_k8s_pvcs(request: Request, namespace: Optional[str] = None):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvcs, namespace), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvcs, namespace, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/k8s/crds")
-async def api_k8s_crds():
+async def api_k8s_crds(request: Request):
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_crds), "error": None}
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_crds, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 
 
 @fastapi_app.get("/api/networks/{network_id}")
-async def api_network_detail(network_id: str):
+async def api_network_detail(network_id: str, request: Request):
     """Return subnets and segments for a single network."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, _get_network_detail, network_id)
+        data = await loop.run_in_executor(None, _get_network_detail, network_id, session.server.openstack_auth)
         return {"network": data, "error": None}
     except Exception as exc:
         return {"network": None, "error": str(exc)}
 
 
 @fastapi_app.get("/api/volumes")
-async def api_volumes():
+async def api_volumes(request: Request):
     """List Cinder volumes (admin sees all projects; non-admin sees own project)."""
+    session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     try:
-        data, all_projects = await loop.run_in_executor(None, _get_volumes)
+        data, all_projects = await loop.run_in_executor(None, _get_volumes, session.server.openstack_auth)
         return {"volumes": data, "all_projects": all_projects, "error": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc)}
@@ -769,7 +944,12 @@ async def api_volumes():
 
 @fastapi_app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
-    await _server.connect(ws)
+    session = _get_ws_session(ws)
+    if session is None:
+        await ws.close(code=4401)
+        return
+    server = session.server
+    await server.connect(ws)
     try:
         while True:
             raw    = await ws.receive_text()
@@ -777,32 +957,32 @@ async def ws_endpoint(ws: WebSocket) -> None:
             action = msg.get("action")
             node   = msg.get("node")
 
-            if   action == "refresh":                              _server.start_refresh()
-            elif action == "evacuate"       and node:             _server.action_evacuate(node)
-            elif action == "drain_quick"    and node:             _server.action_drain_quick(node)
-            elif action == "undrain"        and node:             _server.action_undrain(node)
-            elif action == "reboot_request" and node:             _server.action_reboot_request(node)
-            elif action == "reboot_confirm" and node:             _server.action_reboot_confirm(node)
-            elif action == "reboot_cancel"  and node:             _server.action_reboot_cancel(node)
-            elif action == "check_etcd":                          _server.start_etcd_check()
-            elif action == "get_preflight"     and node:            _server.start_preflight(node)
-            elif action == "refresh_preflight"  and node:            _server.start_preflight(node, silent=True)
+            if   action == "refresh":                              server.start_refresh()
+            elif action == "evacuate"       and node:             server.action_evacuate(node)
+            elif action == "drain_quick"    and node:             server.action_drain_quick(node)
+            elif action == "undrain"        and node:             server.action_undrain(node)
+            elif action == "reboot_request" and node:             server.action_reboot_request(node)
+            elif action == "reboot_confirm" and node:             server.action_reboot_confirm(node)
+            elif action == "reboot_cancel"  and node:             server.action_reboot_cancel(node)
+            elif action == "check_etcd":                          server.start_etcd_check()
+            elif action == "get_preflight"     and node:            server.start_preflight(node)
+            elif action == "refresh_preflight"  and node:            server.start_preflight(node, silent=True)
             elif action == "migrate_instance" and node:
                 iid = msg.get("instance_id")
-                if iid: _server.action_migrate_instance(node, iid)
+                if iid: server.action_migrate_instance(node, iid)
             elif action == "get_pods"       and node:
                 threading.Thread(
-                    target=_serve_pods, args=(_server, ws, node), daemon=True
+                    target=_serve_pods, args=(server, ws, node), daemon=True
                 ).start()
 
     except WebSocketDisconnect:
-        _server.disconnect(ws)
+        server.disconnect(ws)
 
 
 def _serve_pods(server: DrainoServer, ws: WebSocket, node_name: str) -> None:
     """Fetch pods in a thread and push back as a 'pods' message."""
     try:
-        raw_pods = k8s_ops.get_pods_on_node(node_name)
+        raw_pods = k8s_ops.get_pods_on_node(node_name, auth=server.k8s_auth)
         pods = []
         for p in raw_pods:
             p2 = dict(p)
@@ -825,10 +1005,9 @@ def run(
     port:      int            = 8000,
 ) -> None:
     """Configure and launch the Draino web server."""
-    global _server
+    global _audit_log_path
+    _audit_log_path = audit_log
     openstack_ops.configure(cloud=cloud)
     k8s_ops.configure(context=context)
-    _server = DrainoServer(cloud=cloud, context=context, audit_log=audit_log)
-    _server._audit.log("session", "-", "started", f"web ui host={host} port={port}")
     print(f"Draino web UI → http://{host}:{port}")
     uvicorn.run(fastapi_app, host=host, port=port, log_level="warning")

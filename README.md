@@ -54,10 +54,32 @@ Requires Python 3.11+.
 
 ## Prerequisites
 
-- A valid `~/.kube/config` (or `KUBECONFIG`) pointing at the target cluster
-- OpenStack credentials in `~/.config/openstack/clouds.yaml` (or `OS_CLOUD` env var)
 - SSH access from the machine running draino to each hypervisor (used for etcd health
   checks and issuing reboots)
+
+### Terminal UI auth
+
+The TUI still uses local operator credentials from the runtime environment:
+
+- A valid `~/.kube/config` (or `KUBECONFIG`) pointing at the target cluster
+- OpenStack credentials in `~/.config/openstack/clouds.yaml` (or `OS_CLOUD` env var)
+
+### Web UI auth
+
+The web UI now requires explicit credentials entered in the browser before the app loads.
+It does not rely on ambient Kubernetes or OpenStack auth from the host once a web session
+is established.
+
+Required at login:
+
+- Kubernetes API server URL
+- Kubernetes bearer token
+- Optional Kubernetes TLS skip-verify toggle
+- OpenStack Keystone auth URL
+- OpenStack username / password
+- OpenStack project name
+- OpenStack user domain and project domain (default `Default`)
+- Optional OpenStack region and interface
 
 ---
 
@@ -77,18 +99,27 @@ draino --web
 draino --web --host 127.0.0.1 --port 9000
 ```
 
-Then open `http://localhost:8000` in a browser.
+Then open `http://localhost:8000` in a browser and authenticate with both:
+
+- Kubernetes credentials
+- OpenStack credentials
+
+The browser session is stored server-side in memory and all subsequent REST/WebSocket
+operations use those supplied credentials.
 
 ### Options
 
 | Flag | Default | Description |
 |---|---|---|
-| `--cloud NAME` | `$OS_CLOUD` | OpenStack cloud name from `clouds.yaml` |
-| `--context NAME` | current context | Kubernetes context from `kubeconfig` |
+| `--cloud NAME` | `$OS_CLOUD` | OpenStack cloud name from `clouds.yaml` for the TUI |
+| `--context NAME` | current context | Kubernetes context from `kubeconfig` for the TUI |
 | `--audit-log PATH` | `~/.draino/audit.log` | Path for the compliance audit log |
 | `--web` | off | Launch the web UI instead of the TUI |
 | `--host HOST` | `0.0.0.0` | Bind address for the web server |
 | `--port PORT` | `8000` | Port for the web server |
+
+When `--web` is used, `--cloud` and `--context` are no longer required for normal use
+because the browser login provides explicit OpenStack and Kubernetes credentials.
 
 ---
 
@@ -185,6 +216,7 @@ draino/
     server.py        FastAPI + WebSocket backend
     static/
       index.html     Single-page browser UI
+      login-mockup.html Standalone login mockup
 ```
 
 ---
