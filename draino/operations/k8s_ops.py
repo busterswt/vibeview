@@ -80,11 +80,13 @@ def get_node_k8s_detail(node_name: str) -> dict:
         "pods_allocatable":    None,
         "pod_count":           None,
         "roles":               [],
+        "error":               None,
     }
 
     try:
         node = v1.read_node(node_name)
-    except Exception:
+    except Exception as e:
+        result["error"] = str(e)
         return result
 
     # node_info
@@ -269,6 +271,7 @@ def get_node_hardware_info(hostname: str) -> dict:
         "ram_total_gb":        None,
         "ram_slots_used":      None,
         "ram_manufacturer":    None,
+        "error":               None,
     }
 
     # Single SSH session — all reads in one round-trip
@@ -300,7 +303,13 @@ def get_node_hardware_info(hostname: str) -> dict:
             text=True,
             timeout=20,
         )
-    except Exception:
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        result["error"] = f"SSH failed: {stderr}" if stderr else f"SSH exited {proc.returncode}"
         return result
 
     section = None

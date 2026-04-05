@@ -229,6 +229,16 @@ body.no-hints .hint { display: none !important; }
 body.no-hints .concept-map { display: none !important; }
 body.no-hints .concept-table { display: none !important; }
 body.no-hints .vmware-ref-card { display: none !important; }
+.err-chip {
+  display: inline-block; background: #ffebee; color: #c62828;
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid #ef9a9a; flex-shrink: 0; word-break: break-all;
+}
+.err-block {
+  background: #ffebee; color: #c62828; font-size: 11px;
+  border-radius: 4px; padding: 6px 10px; margin: 4px 0;
+  border: 1px solid #ef9a9a; word-break: break-all;
+}
 .hint-toggle {
   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
   color: #b0bec5; padding: 3px 9px; border-radius: 3px; font-size: 11px;
@@ -1364,6 +1374,7 @@ function renderSummaryTab(nd) {
         ${k8sd.kubelet_version   ? `<div class="mrow"><span class="ml">Kubelet</span><span class="mv dim">${esc(k8sd.kubelet_version)}</span></div>` : ''}
         ${k8sd.container_runtime ? `<div class="mrow"><span class="ml">Runtime</span><span class="mv dim">${esc(k8sd.container_runtime)}</span></div>` : ''}
         ${podPct != null ? `<div class="pbw"><div class="pb-label"><span>Pod capacity</span><span>${podPct}%</span></div><div class="pb-track"><div class="pb-fill ${podCls}" style="width:${podPct}%"></div></div></div>` : ''}
+        ${k8sd.error ? `<div class="err-chip" title="${esc(k8sd.error)}">⚠ K8s API: ${esc(k8sd.error.length > 60 ? k8sd.error.slice(0,60)+'…' : k8sd.error)}</div>` : ''}
       </div>
     </div>`;
   }
@@ -1408,6 +1419,7 @@ function renderSummaryTab(nd) {
         ${nd.kernel_version || k8sd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim" style="font-size:10px">${esc(nd.kernel_version || k8sd.kernel_version)}</span></div>` : ''}
         ${k8sd.architecture ? `<div class="mrow"><span class="ml">Architecture</span><span class="mv">${esc(k8sd.architecture)}</span></div>` : ''}
         ${nd.uptime   ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
+        ${hwd.error ? `<div class="err-chip" title="${esc(hwd.error)}">⚠ SSH: ${esc(hwd.error.length > 60 ? hwd.error.slice(0,60)+'…' : hwd.error)}</div>` : ''}
       </div>
     </div>`;
   }
@@ -1535,7 +1547,7 @@ function filterInstTable() {
 
 function buildPodsTableHtml(allPods) {
   if (allPods.length === 1 && allPods[0].error)
-    return `<div style="color:var(--red);font-size:12px">${esc(allPods[0].error)}</div>`;
+    return `<div class="err-block">${esc(allPods[0].error)}</div>`;
   if (!allPods.length)
     return `<div style="color:var(--dim);font-size:12px">No pods on this node.</div>`;
 
@@ -1797,7 +1809,7 @@ function renderNetworkDetail() {
   const nd = netDetailState.data;
   if (!nd) { wrap.innerHTML = ''; return; }
   if (nd.error) {
-    wrap.innerHTML = `<div class="net-detail-inner" style="color:var(--red);font-size:12px">${esc(nd.error)}</div>`;
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(nd.error)}</div></div>`;
     return;
   }
 
@@ -1881,7 +1893,7 @@ function renderNetworkDetail() {
   if (ovn.loading) {
     h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
   } else if (ovn.error) {
-    h += `<div class="card-body" style="color:var(--red);font-size:11px">${esc(ovn.error)}</div>`;
+    h += `<div class="card-body"><div class="err-block">${esc(ovn.error)}</div></div>`;
   } else if (ovn.data) {
     const ls = ovn.data;
     h += `<div class="card-body">
@@ -1995,7 +2007,7 @@ function renderOvnPortDetail(portId, cached) {
   if (cached.loading) {
     h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
   } else if (cached.error) {
-    h += `<div class="card-body" style="color:var(--red);font-size:11px">${esc(cached.error)}</div>`;
+    h += `<div class="card-body"><div class="err-block">${esc(cached.error)}</div></div>`;
   } else if (cached.data) {
     const d = cached.data;
     const ext = d.external_ids || {};
@@ -2150,7 +2162,7 @@ function renderK8sContent() {
   }
   if (cached.error) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>${meta.icon} ${meta.label}</h2></div>
-      <div style="color:var(--red);font-size:12px;padding:8px 0">${esc(cached.error)}</div>`;
+      <div class="err-block" style="margin:8px 0">${esc(cached.error)}</div>`;
     return;
   }
 
