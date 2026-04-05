@@ -633,19 +633,21 @@ async def api_network_ovn(network_id: str):
 
 @fastapi_app.get("/api/nodes/{node_name}/detail")
 async def api_node_detail(node_name: str):
-    """Return detailed K8s + Nova stats for the summary tab."""
+    """Return detailed K8s + Nova + hardware stats for the summary tab."""
     loop = asyncio.get_running_loop()
     state = _server.node_states.get(node_name)
     hypervisor = state.hypervisor if state else node_name
 
     k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name)
+    hw_future  = loop.run_in_executor(None, k8s_ops.get_node_hardware_info, hypervisor)
 
     nova: dict = {}
     if state and state.is_compute:
         nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, hypervisor)
 
     k8s = await k8s_future
-    return {"k8s": k8s, "nova": nova, "error": None}
+    hw  = await hw_future
+    return {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
 
 
 @fastapi_app.get("/api/networks/{network_id}")

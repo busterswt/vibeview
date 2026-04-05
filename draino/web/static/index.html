@@ -1051,12 +1051,12 @@ function selectNode(name) {
 }
 
 async function loadNodeDetail(name) {
-  nodeDetailCache[name] = { loading: true, k8s: null, nova: null, error: null };
+  nodeDetailCache[name] = { loading: true, k8s: null, nova: null, hw: null, error: null };
   if (activeTab === 'summary') renderSummaryTab(nodes[name]);
   try {
     const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail`);
     const json = await resp.json();
-    nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, error: json.error || null };
+    nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, hw: json.hw || {}, error: json.error || null };
   } catch (e) {
     nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, error: String(e) };
   }
@@ -1228,6 +1228,7 @@ function renderSummaryTab(nd) {
   const det  = nodeDetailCache[nd.k8s_name] || {};
   const k8sd = det.k8s  || {};
   const novd = det.nova || {};
+  const hwd  = det.hw   || {};
   const detLoading = det.loading;
 
   function pb(label, used, total, unit, warnPct = 70, critPct = 90) {
@@ -1302,27 +1303,44 @@ function renderSummaryTab(nd) {
 
   // ── Hardware / Host Info card ────────────────────────────────────────────
   {
-    const cpuInfo  = novd.cpu_info || {};
-    const topo     = cpuInfo.topology || {};
-    const sockets  = topo.sockets;
-    const cores    = topo.cores;
-    const threads  = topo.threads;
-    const cpuModel = cpuInfo.model || cpuInfo.vendor || null;
-    const physCores = (sockets && cores) ? sockets * cores : null;
-    const physThreads = (physCores && threads) ? physCores * threads : null;
-    const memKb    = k8sd.memory_capacity_kb;
-    const memGb    = memKb ? Math.round(memKb / 1024 / 1024) : null;
+    // Chassis
+    const vendor  = hwd.vendor  || null;
+    const product = hwd.product || null;
+    const chassis = (vendor && product) ? `${vendor} ${product}` : (vendor || product || null);
+
+    // CPU — prefer SSH data, fall back to Nova cpu_info
+    const cpuInfo   = novd.cpu_info || {};
+    const novaTopo  = cpuInfo.topology || {};
+    const cpuModel  = hwd.cpu_model || cpuInfo.model || cpuInfo.vendor || null;
+    const sockets   = hwd.cpu_sockets         || novaTopo.sockets || null;
+    const coresPerS = hwd.cpu_cores_per_socket || novaTopo.cores   || null;
+    const threadsPerC = hwd.cpu_threads_per_core || (novaTopo.threads > 1 ? novaTopo.threads : null);
+    const totalCores   = sockets && coresPerS ? sockets * coresPerS : null;
+    const totalThreads = totalCores && threadsPerC ? totalCores * threadsPerC : null;
+
+    // RAM
+    const ramGb   = hwd.ram_total_gb || (k8sd.memory_capacity_kb ? Math.round(k8sd.memory_capacity_kb / 1024 / 1024) : null);
+    const ramType = hwd.ram_type     || null;
+    const ramSpeed = hwd.ram_speed   || null;
+    const ramMfr  = hwd.ram_manufacturer || null;
+    const ramSlots = hwd.ram_slots_used  || null;
+    let ramStr = ramGb ? `${ramGb} GB` : null;
+    if (ramStr && ramType)  ramStr += ` ${ramType}`;
+    if (ramStr && ramSpeed) ramStr += ` @ ${ramSpeed}`;
+
     h += `<div class="card">
       <div class="card-title">Hardware / Host Info</div>
       <div class="card-body">
-        ${cpuModel      ? `<div class="mrow"><span class="ml">CPU model</span><span class="mv dim" style="font-size:10px">${esc(cpuModel)}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">CPU</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
-        ${physCores     ? `<div class="mrow"><span class="ml">Physical cores</span><span class="mv">${sockets}s × ${cores}c${threads > 1 ? ' × ' + threads + 't = ' + physThreads + ' threads' : ''}</span></div>` : ''}
-        ${novd.vcpus    ? `<div class="mrow"><span class="ml">vCPUs (Nova)</span><span class="mv">${novd.vcpus}</span></div>` : ''}
-        ${memGb         ? `<div class="mrow"><span class="ml">RAM</span><span class="mv">${memGb} GB</span></div>` : ''}
+        ${chassis     ? `<div class="mrow"><span class="ml">System</span><span class="mv" style="font-size:11px">${esc(chassis)}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">System</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
+        ${hwd.bios_version ? `<div class="mrow"><span class="ml">BIOS</span><span class="mv dim" style="font-size:10px">${esc(hwd.bios_version)}</span></div>` : ''}
+        ${cpuModel    ? `<div class="mrow"><span class="ml">CPU</span><span class="mv" style="font-size:11px">${esc(cpuModel)}</span></div>` : detLoading && !chassis ? '' : ''}
+        ${totalCores  ? `<div class="mrow"><span class="ml">CPU topology</span><span class="mv">${sockets}s × ${coresPerS}c${threadsPerC > 1 ? ' × ' + threadsPerC + 't' : ''} = ${totalThreads || totalCores} logical CPUs</span></div>` : coresPerS ? `<div class="mrow"><span class="ml">CPU cores</span><span class="mv">${coresPerS}</span></div>` : ''}
+        ${novd.vcpus  ? `<div class="mrow"><span class="ml">vCPUs (Nova)</span><span class="mv">${novd.vcpus}</span></div>` : ''}
+        ${ramStr      ? `<div class="mrow"><span class="ml">RAM</span><span class="mv">${esc(ramStr)}${ramSlots ? `<span style="color:var(--dim);font-size:10px"> (${ramSlots} DIMMs${ramMfr ? ', ' + ramMfr : ''})</span>` : ''}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">RAM</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
         ${k8sd.os_image ? `<div class="mrow"><span class="ml">OS</span><span class="mv dim" style="font-size:10px">${esc(k8sd.os_image)}</span></div>` : ''}
         ${nd.kernel_version || k8sd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim" style="font-size:10px">${esc(nd.kernel_version || k8sd.kernel_version)}</span></div>` : ''}
         ${k8sd.architecture ? `<div class="mrow"><span class="ml">Architecture</span><span class="mv">${esc(k8sd.architecture)}</span></div>` : ''}
-        ${nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
+        ${nd.uptime   ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
       </div>
     </div>`;
   }

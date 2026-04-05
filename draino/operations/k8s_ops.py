@@ -245,6 +245,159 @@ def uncordon_node(name: str, log: LogFn) -> None:
     log(f"Node '{name}' uncordoned successfully")
 
 
+def get_node_hardware_info(hostname: str) -> dict:
+    """SSH to *hostname* and return chassis, CPU, and RAM hardware details.
+
+    Reads /sys/class/dmi/id/ (no sudo) for vendor/product info,
+    /proc/cpuinfo (no sudo) for CPU model and topology, and tries
+    dmidecode -t 17 (sudo -n, non-interactive) for RAM type/speed.
+    Returns a dict with all keys present; unknown values are None.
+    """
+    import re as _re
+    from collections import Counter
+
+    result: dict = {
+        "vendor":              None,
+        "product":             None,
+        "bios_version":        None,
+        "cpu_model":           None,
+        "cpu_sockets":         None,
+        "cpu_cores_per_socket": None,
+        "cpu_threads_per_core": None,
+        "ram_type":            None,
+        "ram_speed":           None,
+        "ram_total_gb":        None,
+        "ram_slots_used":      None,
+        "ram_manufacturer":    None,
+    }
+
+    # Single SSH session — all reads in one round-trip
+    script = (
+        "echo __V__; cat /sys/class/dmi/id/sys_vendor 2>/dev/null; "
+        "echo __P__; cat /sys/class/dmi/id/product_name 2>/dev/null; "
+        "echo __B__; cat /sys/class/dmi/id/bios_version 2>/dev/null; "
+        "echo __C__; grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
+        "echo __S__; grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l; "
+        "echo __K__; grep -m1 'cpu cores' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
+        "echo __H__; grep -m1 'siblings' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
+        "echo __D__; (sudo -n dmidecode -t 17 2>/dev/null || dmidecode -t 17 2>/dev/null) | "
+        r"grep -E '^\s+(Size|Type|Speed|Manufacturer):' | "
+        "grep -v 'No Module Installed'; "
+        "echo __END__"
+    )
+
+    try:
+        proc = subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=5",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no",
+                hostname,
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        return result
+
+    section = None
+    dmi_sizes: list[int] = []
+    dmi_types: list[str] = []
+    dmi_speeds: list[str] = []
+    dmi_mfrs: list[str] = []
+
+    for line in proc.stdout.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+
+        # Section markers
+        if s == "__V__":   section = "vendor";   continue
+        if s == "__P__":   section = "product";  continue
+        if s == "__B__":   section = "bios";     continue
+        if s == "__C__":   section = "cpu";      continue
+        if s == "__S__":   section = "sockets";  continue
+        if s == "__K__":   section = "cores";    continue
+        if s == "__H__":   section = "siblings"; continue
+        if s == "__D__":   section = "dmi";      continue
+        if s == "__END__": break
+
+        if section == "vendor":
+            result["vendor"] = s
+        elif section == "product":
+            result["product"] = s
+        elif section == "bios":
+            result["bios_version"] = s
+        elif section == "cpu":
+            # Clean up: remove (R)/(TM), " CPU @ X.XXGHz", "XX-Core Processor"
+            m = _re.sub(r'\([RT]M\)', '', s)
+            m = _re.sub(r'\bCPU\s+@\s+[\d.]+\s*GHz\b', '', m)
+            m = _re.sub(r'\b\d+-Core\s+Processor\b', '', m, flags=_re.IGNORECASE)
+            m = _re.sub(r'\s{2,}', ' ', m).strip()
+            result["cpu_model"] = m
+        elif section == "sockets":
+            try:
+                n = int(s)
+                result["cpu_sockets"] = n if n > 0 else 1
+            except Exception:
+                pass
+        elif section == "cores":
+            try:
+                result["cpu_cores_per_socket"] = int(s)
+            except Exception:
+                pass
+        elif section == "siblings":
+            try:
+                siblings = int(s)
+                cps = result["cpu_cores_per_socket"]
+                if cps and cps > 0:
+                    result["cpu_threads_per_core"] = siblings // cps
+            except Exception:
+                pass
+        elif section == "dmi":
+            if ":" not in s:
+                continue
+            key, _, val = s.partition(":")
+            key = key.strip()
+            val = val.strip()
+            if key == "Size":
+                parts = val.split()
+                if len(parts) >= 2:
+                    try:
+                        num = int(parts[0])
+                        unit = parts[1].upper()
+                        gb = num if unit == "GB" else num // 1024 if unit == "MB" else None
+                        if gb is not None and gb > 0:
+                            dmi_sizes.append(gb)
+                    except Exception:
+                        pass
+            elif key == "Type":
+                if val and val not in ("Unknown", "Other", ""):
+                    dmi_types.append(val)
+            elif key == "Speed":
+                if val and val not in ("Unknown", "0 MT/s", "0 MHz", ""):
+                    dmi_speeds.append(val)
+            elif key == "Manufacturer":
+                if val and val not in ("Unknown", "Not Specified", ""):
+                    dmi_mfrs.append(val)
+
+    # Aggregate DMI memory info
+    if dmi_sizes:
+        result["ram_total_gb"]  = sum(dmi_sizes)
+        result["ram_slots_used"] = len(dmi_sizes)
+    if dmi_types:
+        result["ram_type"] = Counter(dmi_types).most_common(1)[0][0]
+    if dmi_speeds:
+        result["ram_speed"] = Counter(dmi_speeds).most_common(1)[0][0]
+    if dmi_mfrs:
+        result["ram_manufacturer"] = Counter(dmi_mfrs).most_common(1)[0][0]
+
+    return result
+
+
 def get_ovn_port_detail(port_id: str) -> dict:
     """Run `kubectl ko nbctl lsp-show <port_id>` and return parsed data.
 
