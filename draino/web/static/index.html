@@ -823,6 +823,7 @@ function onRebootBlocked(msg) {
 function onPods(msg) {
   if (selectedNode !== msg.node) return;
   lastPodsCache = { node: msg.node, pods: msg.pods || [] };
+  syncPodsButton();
   if (activeTab === 'instances') {
     const sec = document.getElementById('pods-section');
     if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
@@ -1006,16 +1007,15 @@ function selectNode(name) {
   // Bug fix: clear all existing selected items before setting new one
   document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
 
-  selectedNode = name;
-  showPods = false;
+  selectedNode  = name;
+  showPods      = false;
   lastPodsCache = null;
 
   // Highlight new item directly (avoids rebuilding whole sidebar)
   const el = document.querySelector(`[data-node="${escAttr(name)}"]`);
   if (el) el.classList.add('selected');
 
-  // Reset pods button label
-  document.getElementById('bc-pods').textContent = '⬡ Pods';
+  syncPodsButton();
 
   const nd = nodes[name];
   if (nd) {
@@ -1245,7 +1245,7 @@ function renderInstancesTab(nd) {
   let h = `<div class="inst-toolbar">
     <button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>
     <button class="btn ${drained?'warning':''}" onclick="actionDrainOrUndrain()">${drained ? '↺ Undrain' : '▽ Drain'}</button>
-    <button class="btn" id="inst-pods-btn" onclick="actionPodsInline()">⬡ ${showPods && lastPodsCache ? 'Refresh' : 'Load'} Pods</button>
+    <button class="btn" id="inst-pods-btn" onclick="actionPodsInline()">${podsButtonText()}</button>
     <span style="flex:1"></span>
     <input class="toolbar-filter" type="text" placeholder="Filter instances…" id="inst-filter" oninput="filterInstTable()">
   </div>`;
@@ -1925,6 +1925,21 @@ function actionRefresh()  { wsSend({ action: 'refresh' }); }
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }
 function actionReboot()   { if (selectedNode) wsSend({ action: 'reboot_request', node: selectedNode }); }
 
+function podsButtonText() {
+  if (!showPods)           return '⬡ Pods';
+  if (!lastPodsCache)      return '⟳ Pods…';
+  return '⟳ Refresh Pods';
+}
+
+/** Keep both pod buttons (breadcrumb bar + instances tab toolbar) in sync. */
+function syncPodsButton() {
+  const txt = podsButtonText();
+  const bc  = document.getElementById('bc-pods');
+  const tb  = document.getElementById('inst-pods-btn');
+  if (bc) bc.textContent = txt;
+  if (tb) tb.textContent = txt;
+}
+
 function migrateInstance(instanceId) {
   if (!selectedNode) return;
   instanceMigrateStates[instanceId] = 'migrating';
@@ -1946,10 +1961,10 @@ function actionPods() {
 
 function actionPodsInline() {
   if (!selectedNode) return;
-  showPods     = true;
+  showPods      = true;
   lastPodsCache = null;
   wsSend({ action: 'get_pods', node: selectedNode });
-  document.getElementById('bc-pods').textContent = '✕ Pods';
+  syncPodsButton();
   const sec = document.getElementById('pods-section');
   if (sec) sec.innerHTML = `<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
 }
