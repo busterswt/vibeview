@@ -698,13 +698,25 @@ body.auth-locked { overflow: hidden; }
   margin: 0 22px 10px;
   padding: 9px 11px;
   border-radius: 3px;
-  border: 1px solid #ef9a9a;
-  background: #ffebee;
-  color: var(--red);
   font-size: 12px;
   display: none;
 }
 .auth-msg.open { display: block; }
+.auth-msg.info {
+  border: 1px solid #cfd8dc;
+  background: #f5f7fa;
+  color: var(--text);
+}
+.auth-msg.busy {
+  border: 1px solid #90caf9;
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.auth-msg.error {
+  border: 1px solid #ef9a9a;
+  background: #ffebee;
+  color: var(--red);
+}
 .auth-actions {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 0 22px 20px;
@@ -1273,8 +1285,12 @@ function setAuthMessage(msg = '', kind = '') {
   const el = document.getElementById('auth-msg');
   el.textContent = msg;
   el.classList.toggle('open', Boolean(msg));
+  el.className = `auth-msg${msg ? ' open' : ''}${kind ? ` ${kind}` : ''}`;
   const status = document.getElementById('auth-status');
-  status.textContent = msg || 'Waiting for credentials.';
+  if (!msg) status.textContent = 'Waiting for credentials.';
+  else if (kind === 'busy') status.textContent = 'Validating credentials...';
+  else if (kind === 'error') status.textContent = 'Review the error above.';
+  else status.textContent = 'Status updated.';
   status.className = `auth-status${kind ? ` ${kind}` : ''}`;
 }
 
