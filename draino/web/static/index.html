@@ -960,7 +960,7 @@ body.auth-locked { overflow: hidden; }
           <div class="auth-mode-pane open" id="auth-k8s-mode-token">
             <div class="auth-field">
               <label for="auth-k8s-server">API server URL</label>
-              <input id="auth-k8s-server" type="text" placeholder="https://kubernetes.example:6443">
+              <input id="auth-k8s-server" type="text" placeholder="https://kubernetes.example:6443" oninput="syncK8sServerField('auth-k8s-server')">
             </div>
             <div class="auth-field">
               <label for="auth-k8s-token">Bearer token</label>
@@ -978,7 +978,7 @@ body.auth-locked { overflow: hidden; }
           <div class="auth-mode-pane" id="auth-k8s-mode-client_cert">
             <div class="auth-field">
               <label for="auth-k8s-cert-server">API server URL</label>
-              <input id="auth-k8s-cert-server" type="text" placeholder="https://kubernetes.example:6443">
+              <input id="auth-k8s-cert-server" type="text" placeholder="https://kubernetes.example:6443" oninput="syncK8sServerField('auth-k8s-cert-server')">
             </div>
             <div class="auth-field">
               <label for="auth-k8s-client-cert">Client certificate PEM</label>
@@ -1287,13 +1287,28 @@ function loadAuthPrefs() {
 }
 
 function saveAuthPrefs() {
+  const k8sServer = getK8sServerFieldValue();
   const prefs = {
-    k8s_api_server: document.getElementById('auth-k8s-server').value.trim() || document.getElementById('auth-k8s-cert-server').value.trim(),
+    k8s_api_server: k8sServer,
     openstack_auth_url: document.getElementById('auth-os-url').value.trim() || document.getElementById('auth-os-app-url').value.trim(),
     openstack_region: document.getElementById('auth-os-region').value.trim() || document.getElementById('auth-os-app-region').value.trim(),
     openstack_interface: document.getElementById('auth-os-interface').value.trim() || document.getElementById('auth-os-app-interface').value.trim() || 'public',
   };
   localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(prefs));
+}
+
+function getK8sServerFieldValue() {
+  return document.getElementById('auth-k8s-server').value.trim() || document.getElementById('auth-k8s-cert-server').value.trim();
+}
+
+function setK8sServerFieldValue(value) {
+  document.getElementById('auth-k8s-server').value = value;
+  document.getElementById('auth-k8s-cert-server').value = value;
+}
+
+function syncK8sServerField(sourceId) {
+  const source = document.getElementById(sourceId);
+  setK8sServerFieldValue(source.value);
 }
 
 function applyAuthPrefs() {
@@ -1303,8 +1318,7 @@ function applyAuthPrefs() {
   const region = prefs.openstack_region || '';
   const iface = prefs.openstack_interface || 'public';
 
-  document.getElementById('auth-k8s-server').value = k8sServer;
-  document.getElementById('auth-k8s-cert-server').value = k8sServer;
+  setK8sServerFieldValue(k8sServer);
   document.getElementById('auth-os-url').value = authUrl;
   document.getElementById('auth-os-app-url').value = authUrl;
   document.getElementById('auth-os-region').value = region;
