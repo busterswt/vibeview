@@ -241,15 +241,21 @@ class DrainoServer:
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
-    def start_preflight(self, node_name: str) -> None:
+    def start_preflight(self, node_name: str, silent: bool = False) -> None:
+        """Fetch instances on the hypervisor.
+
+        silent=True keeps the existing list visible while refreshing in the
+        background (no spinner, no list clear).  Used for periodic auto-refresh.
+        """
         state = self.node_states.get(node_name)
         if not state or not state.is_compute or state.phase != NodePhase.IDLE:
             return
         if state.preflight_loading:
             return
-        state.preflight_loading   = True
-        state.preflight_instances = []
-        self._push({"type": "state_update", "node": node_name, "data": _serialise(state)})
+        state.preflight_loading = True
+        if not silent:
+            state.preflight_instances = []
+            self._push({"type": "state_update", "node": node_name, "data": _serialise(state)})
         threading.Thread(target=self._preflight_bg, args=(node_name,), daemon=True).start()
 
     def _preflight_bg(self, node_name: str) -> None:
@@ -643,7 +649,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif action == "reboot_confirm" and node:             _server.action_reboot_confirm(node)
             elif action == "reboot_cancel"  and node:             _server.action_reboot_cancel(node)
             elif action == "check_etcd":                          _server.start_etcd_check()
-            elif action == "get_preflight"  and node:             _server.start_preflight(node)
+            elif action == "get_preflight"     and node:            _server.start_preflight(node)
+            elif action == "refresh_preflight"  and node:            _server.start_preflight(node, silent=True)
             elif action == "migrate_instance" and node:
                 iid = msg.get("instance_id")
                 if iid: _server.action_migrate_instance(node, iid)

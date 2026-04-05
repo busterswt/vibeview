@@ -1281,7 +1281,7 @@ function renderInstancesTab(nd) {
     h += `</tbody></table>`;
   } else if (nd.is_compute) {
     h += `<div class="tab-section-title"><span>Nova Instances <span class="hint">VMs &amp; Templates</span></span></div>`;
-    if (nd.preflight_loading) {
+    if (nd.preflight_loading && !nd.preflight_instances?.length) {
       h += `<div style="color:var(--dim);padding:8px 0;font-size:12px"><span class="spinner">⟳</span> Loading instances…</div>`;
     } else if (nd.preflight_instances?.length) {
       h += `<table class="data-table" id="inst-data-table">
@@ -1304,6 +1304,7 @@ function renderInstancesTab(nd) {
         h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${st}</td><td>${action}</td></tr>`;
       }
       h += `</tbody></table>`;
+      if (nd.preflight_loading) h += `<div style="font-size:10px;color:var(--dim);margin-top:4px"><span class="spinner">⟳</span> Refreshing…</div>`;
     } else {
       h += `<div style="color:var(--dim);font-size:12px;padding:4px 0">No instances on this hypervisor.</div>`;
     }
@@ -2073,6 +2074,15 @@ setInterval(() => {
     }
   }
 }, 1000);
+
+// Periodic silent refresh of instance list every 10 s while Instances tab is open
+setInterval(() => {
+  if (activeTab !== 'instances') return;
+  if (!selectedNode) return;
+  const nd = nodes[selectedNode];
+  if (!nd || !nd.is_compute || nd.phase !== 'idle') return;
+  wsSend({ action: 'refresh_preflight', node: selectedNode });
+}, 10000);
 
 // ════════════════════════════════════════════════════════════════════════════
 // § UTILS
