@@ -1068,7 +1068,7 @@ body.auth-locked { overflow: hidden; }
             </div>
             <div class="auth-field">
               <label for="auth-os-interface">Interface</label>
-              <input id="auth-os-interface" type="text" placeholder="Optional, e.g. public">
+              <input id="auth-os-interface" type="text" value="public" placeholder="Optional, e.g. public">
             </div>
           </div>
           <div class="auth-mode-pane" id="auth-os-mode-application_credential">
@@ -1091,7 +1091,7 @@ body.auth-locked { overflow: hidden; }
               </div>
               <div class="auth-field">
                 <label for="auth-os-app-interface">Interface</label>
-                <input id="auth-os-app-interface" type="text" placeholder="Optional, e.g. public">
+                <input id="auth-os-app-interface" type="text" value="public" placeholder="Optional, e.g. public">
               </div>
             </div>
             <div class="auth-help">
@@ -1195,6 +1195,7 @@ let authReady    = false;
 let authInfo     = null;
 let wsStatusMode = 'offline';
 const authMode = { k8s: 'token', os: 'password' };
+const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -1267,6 +1268,63 @@ function setAuthMessage(msg = '', kind = '') {
   const status = document.getElementById('auth-status');
   status.textContent = msg || 'Waiting for credentials.';
   status.className = `auth-status${kind ? ` ${kind}` : ''}`;
+}
+
+function loadAuthPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_PREFS_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveAuthPrefs() {
+  const prefs = {
+    k8s_api_server: document.getElementById('auth-k8s-server').value.trim() || document.getElementById('auth-k8s-cert-server').value.trim(),
+    openstack_auth_url: document.getElementById('auth-os-url').value.trim() || document.getElementById('auth-os-app-url').value.trim(),
+    openstack_region: document.getElementById('auth-os-region').value.trim() || document.getElementById('auth-os-app-region').value.trim(),
+    openstack_interface: document.getElementById('auth-os-interface').value.trim() || document.getElementById('auth-os-app-interface').value.trim() || 'public',
+  };
+  localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(prefs));
+}
+
+function applyAuthPrefs() {
+  const prefs = loadAuthPrefs();
+  const k8sServer = prefs.k8s_api_server || '';
+  const authUrl = prefs.openstack_auth_url || '';
+  const region = prefs.openstack_region || '';
+  const iface = prefs.openstack_interface || 'public';
+
+  document.getElementById('auth-k8s-server').value = k8sServer;
+  document.getElementById('auth-k8s-cert-server').value = k8sServer;
+  document.getElementById('auth-os-url').value = authUrl;
+  document.getElementById('auth-os-app-url').value = authUrl;
+  document.getElementById('auth-os-region').value = region;
+  document.getElementById('auth-os-app-region').value = region;
+  document.getElementById('auth-os-interface').value = iface;
+  document.getElementById('auth-os-app-interface').value = iface;
+}
+
+function clearSecretAuthInputs() {
+  [
+    'auth-k8s-token',
+    'auth-k8s-client-cert',
+    'auth-k8s-client-key',
+    'auth-k8s-kubeconfig',
+    'auth-os-pass',
+    'auth-os-app-id',
+    'auth-os-app-secret',
+    'auth-os-clouds-yaml',
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['auth-k8s-kubeconfig-file', 'auth-os-clouds-file'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('auth-k8s-kubeconfig-name').textContent = 'Upload kubeconfig or paste below';
+  document.getElementById('auth-os-clouds-name').textContent = 'Upload clouds.yaml or paste below';
 }
 
 function setAuthMode(section, mode) {
@@ -1377,6 +1435,8 @@ function setUnauthenticatedUI() {
   document.getElementById('user-label').textContent = 'Auth required';
   document.getElementById('user-dot').textContent = 'D';
   document.getElementById('bc-reboot').title = '';
+  applyAuthPrefs();
+  clearSecretAuthInputs();
   wsSetStatus('offline');
   if (ws) {
     try { ws.close(); } catch (_) {}
@@ -1404,6 +1464,7 @@ async function submitAuth() {
   document.getElementById('auth-submit').disabled = true;
   setAuthMessage('Validating credentials and loading inventory…', 'busy');
   try {
+    saveAuthPrefs();
     const resp = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1421,6 +1482,7 @@ async function submitAuth() {
 
 async function logout() {
   try {
+    saveAuthPrefs();
     await fetch('/api/session', { method: 'DELETE' });
   } catch (_) {}
   setUnauthenticatedUI();
