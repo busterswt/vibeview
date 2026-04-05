@@ -669,10 +669,10 @@ def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-    except FileNotFoundError:
-        raise RuntimeError("kubectl not found in PATH")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("kubectl ko nbctl list timed out")
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko nbctl list timed out") from exc
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
@@ -776,10 +776,10 @@ def get_ovn_logical_switch(
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-    except FileNotFoundError:
-        raise RuntimeError("kubectl not found in PATH")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("kubectl ko nbctl show timed out")
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko nbctl show timed out") from exc
 
     if result.returncode != 0:
         stderr = result.stderr.strip()

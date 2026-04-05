@@ -37,15 +37,23 @@ from pathlib import Path
 from typing import Optional, Set
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .. import worker
 from ..audit import AuditLogger
 from ..models import NodePhase, NodeState
 from ..operations import k8s_ops, openstack_ops
 from ..render import format_uptime
-from .. import worker
 
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
@@ -641,7 +649,10 @@ def _get_volumes(
 def _get_session_record(request: Request) -> SessionRecord:
     record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
     if record is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
     return record
 
 
@@ -719,12 +730,18 @@ async def api_login(payload: LoginPayload, response: Response):
     try:
         k8s_ops.get_nodes(auth=k8s_auth)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Kubernetes authentication failed: {exc}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kubernetes authentication failed: {exc}",
+        ) from exc
 
     try:
         openstack_ops._conn(auth=openstack_auth).authorize()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"OpenStack authentication failed: {exc}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"OpenStack authentication failed: {exc}",
+        ) from exc
 
     server = DrainoServer(k8s_auth=k8s_auth, openstack_auth=openstack_auth, audit_log=_audit_log_path)
     if _app_loop is not None:

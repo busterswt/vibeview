@@ -181,6 +181,27 @@ peers is checked first; the reboot is blocked if it would reduce the cluster bel
 
 ---
 
+## Development
+
+Install development tooling:
+
+```bash
+pip install -e ".[dev,web]"
+```
+
+Run the automated checks:
+
+```bash
+python -m pytest
+python -m ruff check .
+```
+
+The current lint baseline is intentionally scoped to the actively maintained
+session-auth and test modules so linting can be adopted incrementally without
+forcing a one-shot cleanup of the full legacy codebase.
+
+---
+
 ## Audit log
 
 Every significant action is recorded to `~/.draino/audit.log` (JSONL, one entry per line):
