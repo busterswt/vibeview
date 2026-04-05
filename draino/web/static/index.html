@@ -903,11 +903,8 @@ function treeItemHtml(name, nd) {
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
 
   let vmBadge = '';
-  if (nd.is_compute) {
-    const v = nd.vm_count, a = nd.amphora_count;
-    if (v !== null && v !== undefined && a !== null && a !== undefined && (v > 0 || a > 0))
-      vmBadge = `<span class="tree-badge warn">${v}vm ${a}amp</span>`;
-  }
+  if (nd.is_compute && nd.vm_count != null && nd.vm_count > 0)
+    vmBadge = `<span class="tree-badge warn">${nd.vm_count}vm</span>`;
 
   // Aggregate membership badges (up to 2, then "+N more")
   let aggHtml = '';
@@ -1206,33 +1203,8 @@ function renderSummaryTab(nd) {
   </div>`;
   h += `</div>`;
 
-  // Idle compute preflight preview
   if (nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
-    if (nd.preflight_loading) {
-      h += `<div style="color:var(--dim);font-size:12px;padding:8px 0"><span class="spinner">⟳</span> Fetching instances…</div>`;
-    } else if (nd.preflight_instances?.length) {
-      const vms  = nd.preflight_instances.filter(i => !i.is_amphora);
-      const amps = nd.preflight_instances.filter(i =>  i.is_amphora);
-      if (vms.length) {
-        h += `<div class="steps-section">
-          <div class="steps-title">Instances on this hypervisor <span class="hint">VMs on ESXi</span></div>
-          <table class="inst-table">
-            <thead><tr><th>Name</th><th>Status</th><th>Storage <span class="hint">Datastore</span></th></tr></thead>
-            <tbody>`;
-        for (const i of vms) {
-          const st = i.is_volume_backed ? `<span class="tag-vol">Volume</span>` : `<span class="tag-eph">Ephemeral</span>`;
-          h += `<tr><td>${esc(i.name)}</td><td>${esc(i.status)}</td><td>${st}</td></tr>`;
-        }
-        h += `</tbody></table>`;
-        if (amps.length) h += `<div style="font-size:11px;color:var(--dim);margin-top:6px">+ ${amps.length} Amphora LB instance(s)</div>`;
-        h += `</div>`;
-      } else {
-        h += `<div style="color:var(--dim);font-size:12px;padding:4px 0">${amps.length} Amphora instance(s) only — no regular VMs.</div>`;
-      }
-    } else if (nd.preflight_instances) {
-      h += `<div style="color:var(--dim);font-size:12px;padding:4px 0">No instances on this hypervisor.</div>`;
-    }
-    h += `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow.</div>`;
+    h += `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow. See the <strong>Instances &amp; Pods</strong> tab for workloads on this hypervisor.</div>`;
     if (nd.k8s_cordoned || nd.compute_status === 'disabled')
       h += `<div class="idle-hint">Node is partially drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
   }
