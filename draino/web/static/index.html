@@ -301,21 +301,6 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .mv.gray    { color: #9e9e9e; }
 .mv.dim     { color: var(--dim); font-weight: 400; }
 
-.steps-section { margin-bottom: 12px; }
-.steps-title {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-  color: var(--dim); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
-}
-.step-row { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; font-size: 12px; border-radius: 3px; margin-bottom: 2px; }
-.step-row.pending  { color: var(--dim); }
-.step-row.running  { background: #fff8e1; color: var(--yellow); }
-.step-row.success  { color: var(--green); }
-.step-row.failed   { background: #ffebee; color: var(--red); font-weight: 600; }
-.step-row.skipped  { color: var(--dim); }
-.step-icon   { width: 16px; flex-shrink: 0; }
-.step-label  { flex: 1; }
-.step-detail { color: var(--dim); font-size: 11px; }
-.step-row.running .step-detail { color: #e65100; }
 
 .downtime-counter { background: #f3e5f5; border: 1px solid #ce93d8; border-radius: 4px; padding: 6px 12px; color: var(--magenta); font-weight: 700; font-size: 14px; margin-bottom: 12px; }
 .reboot-complete  { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px; padding: 6px 12px; color: var(--green); font-weight: 600; margin-top: 8px; }
@@ -1203,30 +1188,18 @@ function renderSummaryTab(nd) {
     }
   }
 
-  // Live downtime counter
+  // Live downtime counter (still shown in summary alongside the tasks panel)
   if (nd.phase === 'rebooting' && nd.reboot_start) {
     const elapsed = Math.floor(Date.now() / 1000 - nd.reboot_start);
     h += `<div class="downtime-counter">⏱ Downtime: ${elapsed}s</div>`;
   }
 
-  // Workflow steps
-  if (nd.steps && nd.steps.length) {
-    h += `<div class="steps-section"><div class="steps-title">Workflow Steps</div>`;
-    for (const s of nd.steps) {
-      const spin = s.status === 'running' ? ' <span class="spinner">⟳</span>' : '';
-      h += `<div class="step-row ${s.status}">
-        <span class="step-icon">${STEP_ICON[s.status]||'○'}${spin}</span>
-        <span class="step-label">${esc(s.label)}</span>
-        ${s.detail ? `<span class="step-detail">${esc(s.detail)}</span>` : ''}
-      </div>`;
-    }
-    h += `</div>`;
-    if (nd.phase === 'idle') {
-      if (nd.reboot_downtime != null)
-        h += `<div class="reboot-complete">✓ Reboot complete — total downtime: ${Math.round(nd.reboot_downtime)}s</div>`;
-      if (nd.k8s_cordoned || nd.compute_status === 'disabled')
-        h += `<div class="idle-hint">Node is drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
-    }
+  // Post-workflow hints (steps themselves are in the Tasks panel)
+  if (nd.phase === 'idle' && nd.steps?.length) {
+    if (nd.reboot_downtime != null)
+      h += `<div class="reboot-complete">✓ Reboot complete — total downtime: ${Math.round(nd.reboot_downtime)}s</div>`;
+    if (nd.k8s_cordoned || nd.compute_status === 'disabled')
+      h += `<div class="idle-hint">Node is drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
   }
 
   // ── Status / resource cards ───────────────────────────────────────────────
