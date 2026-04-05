@@ -242,17 +242,11 @@ class DrainoServer:
 
     # ── Node loading ──────────────────────────────────────────────────────────
 
-    def start_refresh(self) -> None:
+    def start_refresh(self, cached_nodes: Optional[list[dict]] = None) -> None:
         self._push({"type": "log", "node": "-", "message": "Refreshing node list…", "color": "dim"})
-        threading.Thread(target=self._load_nodes_bg, daemon=True).start()
+        threading.Thread(target=self._load_nodes_bg, args=(cached_nodes,), daemon=True).start()
 
-    def _load_nodes_bg(self) -> None:
-        try:
-            nodes = k8s_ops.get_nodes(auth=self.k8s_auth)
-        except Exception as exc:
-            self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
-            return
-
+    def _apply_k8s_nodes(self, nodes: list[dict]) -> None:
         self._last_k8s_nodes = nodes
 
         for nd in nodes:
@@ -270,6 +264,17 @@ class DrainoServer:
 
         # Push K8s-only view immediately so the page shows nodes fast.
         self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
+
+    def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None) -> None:
+        nodes = cached_nodes
+        if nodes is None:
+            try:
+                nodes = k8s_ops.get_nodes(auth=self.k8s_auth)
+            except Exception as exc:
+                self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
+                return
+
+        self._apply_k8s_nodes(nodes)
 
         def _os_log(msg: str) -> None:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})
@@ -745,7 +750,7 @@ async def api_login(payload: LoginPayload, response: Response):
     )
 
     try:
-        k8s_ops.get_nodes(auth=k8s_auth)
+        initial_nodes = k8s_ops.get_nodes(auth=k8s_auth)
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -789,7 +794,7 @@ async def api_login(payload: LoginPayload, response: Response):
         secure=False,
         max_age=_SESSION_TTL,
     )
-    server.start_refresh()
+    server.start_refresh(cached_nodes=initial_nodes)
     return {"ok": True}
 
 

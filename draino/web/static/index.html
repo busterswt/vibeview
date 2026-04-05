@@ -1053,6 +1053,7 @@ let activeView   = 'infrastructure';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
+let wsStatusMode = 'offline';
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -1139,6 +1140,7 @@ function setAuthenticatedUI(info) {
   document.getElementById('user-label').textContent = label;
   document.getElementById('user-dot').textContent = label.slice(0, 1).toUpperCase();
   document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
+  wsSetStatus('connecting');
   setAuthMessage('');
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
 }
@@ -1154,7 +1156,7 @@ function setUnauthenticatedUI() {
   document.getElementById('user-label').textContent = 'Auth required';
   document.getElementById('user-dot').textContent = 'D';
   document.getElementById('bc-reboot').title = '';
-  wsSetStatus(false);
+  wsSetStatus('offline');
   if (ws) {
     try { ws.close(); } catch (_) {}
     ws = null;
@@ -1227,11 +1229,12 @@ async function logout() {
 
 function wsConnect() {
   if (!authReady) return;
+  wsSetStatus('connecting');
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen  = () => { wsSetStatus(true); };
+  ws.onopen  = () => { wsSetStatus('loading'); };
   ws.onclose = () => {
-    wsSetStatus(false);
+    wsSetStatus('reconnecting');
     if (authReady) setTimeout(wsConnect, 3000);
   };
   ws.onerror = () => ws.close();
@@ -1254,9 +1257,16 @@ function wsSend(msg) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-function wsSetStatus(connected) {
-  document.getElementById('ws-dot').classList.toggle('live', connected);
-  document.getElementById('ws-label').textContent = connected ? 'Live' : 'Reconnecting…';
+function wsSetStatus(mode) {
+  wsStatusMode = mode;
+  const dot = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  dot.classList.toggle('live', mode === 'live');
+  if (mode === 'live') label.textContent = 'Live';
+  else if (mode === 'loading') label.textContent = 'Loading inventory…';
+  else if (mode === 'connecting') label.textContent = 'Connecting…';
+  else if (mode === 'reconnecting') label.textContent = 'Reconnecting…';
+  else label.textContent = 'Offline';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1265,6 +1275,7 @@ function wsSetStatus(connected) {
 
 function onFullState(msg) {
   nodes = msg.nodes;
+  if (wsStatusMode !== 'live') wsSetStatus('live');
   rebuildSidebar();
   renderInfraDetail();
   // Pre-fetch node details for all nodes in the background so hardware/K8s

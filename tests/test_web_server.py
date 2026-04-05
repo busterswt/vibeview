@@ -19,9 +19,11 @@ def test_session_endpoint_reports_unauthenticated():
 def test_login_creates_session_and_gates_api(monkeypatch):
     captured: dict[str, object] = {}
 
+    initial_nodes = [{"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False}]
+
     def fake_get_nodes(auth=None):
         captured["login_k8s_auth"] = auth
-        return []
+        return initial_nodes
 
     class FakeConn:
         def authorize(self):
@@ -31,8 +33,9 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         captured["login_os_auth"] = auth
         return FakeConn()
 
-    def fake_refresh(self):
+    def fake_refresh(self, cached_nodes=None):
         captured["refreshed"] = True
+        captured["cached_nodes"] = cached_nodes
 
     def fake_list_namespaces(auth=None):
         captured["api_k8s_auth"] = auth
@@ -70,6 +73,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert login.status_code == 200
         assert login.json() == {"ok": True}
         assert captured["refreshed"] is True
+        assert captured["cached_nodes"] == initial_nodes
         assert isinstance(captured["login_k8s_auth"], K8sAuth)
         assert isinstance(captured["login_os_auth"], OpenStackAuth)
         assert captured["authorized"] is True
@@ -89,7 +93,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
 
 
 def test_websocket_requires_session_and_uses_session_server(monkeypatch):
-    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self: None)
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
 
     class FakeConn:
