@@ -162,20 +162,22 @@ def get_ovn_port_detail(port_id: str) -> dict:
     cmd = ["kubectl"]
     if _CONTEXT:
         cmd += ["--context", _CONTEXT]
-    # ovn-nbctl has no lsp-show; use --format=list find to get all columns
-    cmd += ["ko", "nbctl", "--format=list", "find", "Logical_Switch_Port",
-            f"name={port_id}"]
+    # ovn-nbctl has no lsp-show; use --format=list list TABLE <name> which
+    # looks up by name column directly — avoids the find condition parser
+    # mis-treating hyphenated UUIDs as multi-value expressions.
+    cmd += ["ko", "nbctl", "--format=list", "list", "Logical_Switch_Port",
+            port_id]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     except FileNotFoundError:
         raise RuntimeError("kubectl not found in PATH")
     except subprocess.TimeoutExpired:
-        raise RuntimeError("kubectl ko nbctl find timed out")
+        raise RuntimeError("kubectl ko nbctl list timed out")
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
-        raise RuntimeError(stderr or f"nbctl find exited with code {result.returncode}")
+        raise RuntimeError(stderr or f"nbctl list exited with code {result.returncode}")
 
     if not result.stdout.strip():
         raise RuntimeError(f"No logical switch port found with name {port_id!r}")
