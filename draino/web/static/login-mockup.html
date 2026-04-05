@@ -147,31 +147,45 @@ body {
 }
 
 .auth-head {
-  padding: 18px 22px 14px;
+  padding: 16px 22px 14px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
 }
-
-.auth-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  color: var(--blue);
+.auth-head-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.auth-brand-icon {
+  width: 36px; height: 36px;
+  background: var(--blue);
+  border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 17px; font-weight: 900; color: white;
 }
 .auth-brand {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--header);
-  line-height: 1.1;
+  line-height: 1.15;
+}
+.auth-kicker {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dim);
+  margin-top: 2px;
 }
 .auth-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  margin-bottom: 4px;
 }
-.auth-sub { font-size: 12px; color: var(--dim); margin-top: 4px; line-height: 1.6; max-width: 760px; }
+.auth-sub { font-size: 12px; color: var(--dim); line-height: 1.6; max-width: 760px; }
 
 .auth-grid {
   display: grid;
@@ -188,16 +202,21 @@ body {
 }
 
 .auth-panel-head {
-  padding: 11px 14px;
+  padding: 8px 14px;
   background: var(--gray-bg);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-
-.auth-panel-title { font-size: 13px; font-weight: 700; color: var(--text); }
-.auth-panel-sub { font-size: 11px; color: var(--dim); }
+.auth-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.auth-panel-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
 
 .auth-panel-body { padding: 14px; display: grid; gap: 10px; }
@@ -332,8 +351,13 @@ body {
   <div id="overlay">
   <div class="auth-shell">
     <div class="auth-head">
-      <div class="auth-brand">Draino</div>
-      <div class="auth-kicker">Flushing Cloud Infrastructure Since 2026</div>
+      <div class="auth-head-brand">
+        <div class="auth-brand-icon">D</div>
+        <div>
+          <div class="auth-brand">Draino</div>
+          <div class="auth-kicker">Flushing Cloud Infrastructure Since 2026</div>
+        </div>
+      </div>
       <div class="auth-title">Authenticate Access</div>
       <div class="auth-sub">Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.</div>
     </div>

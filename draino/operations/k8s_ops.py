@@ -122,6 +122,21 @@ def _kubectl_base_cmd(auth: K8sAuth | None = None) -> list[str]:
     return cmd
 
 
+def _kubectl_plugin_env(auth: K8sAuth | None) -> dict | None:
+    """Return an env dict for kubectl plugin subprocess calls.
+
+    kubectl rejects global flags (--kubeconfig, --context) placed before a
+    plugin name.  Setting KUBECONFIG as an environment variable sidesteps
+    the issue while still pointing kubectl at the right credentials.
+    Returns None (inherit parent env unchanged) when auth is None.
+    """
+    if auth is None:
+        return None
+    env = os.environ.copy()
+    env["KUBECONFIG"] = _write_kubeconfig(auth)
+    return env
+
+
 def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
     """Return a list of node info dicts."""
     v1 = client.CoreV1Api(_api_client(auth))
@@ -728,15 +743,15 @@ def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:
     import json as _json
     import re as _re
 
-    cmd = _kubectl_base_cmd(auth)
     # ovn-nbctl has no lsp-show; use --format=list list TABLE <name> which
     # looks up by name column directly — avoids the find condition parser
     # mis-treating hyphenated UUIDs as multi-value expressions.
-    cmd += ["ko", "nbctl", "--format=list", "list", "Logical_Switch_Port",
-            port_id]
+    cmd = ["kubectl", "ko", "nbctl", "--format=list", "list", "Logical_Switch_Port",
+           port_id]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
+                                env=_kubectl_plugin_env(auth))
     except FileNotFoundError as exc:
         raise RuntimeError("kubectl not found in PATH") from exc
     except subprocess.TimeoutExpired as exc:
@@ -839,11 +854,11 @@ def get_ovn_logical_switch(
     import json as _json
 
     ls_name = f"neutron-{network_id}"
-    cmd = _kubectl_base_cmd(auth)
-    cmd += ["ko", "nbctl", "show", ls_name]
+    cmd = ["kubectl", "ko", "nbctl", "show", ls_name]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
+                                env=_kubectl_plugin_env(auth))
     except FileNotFoundError as exc:
         raise RuntimeError("kubectl not found in PATH") from exc
     except subprocess.TimeoutExpired as exc:
