@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 
 from draino import node_agent_client
 from draino.operations import k8s_ops
@@ -149,3 +150,114 @@ def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, 
     assert captured["timeout"] == 5.0
     assert captured["context"] is ssl_ctx
     assert ssl_ctx.check_hostname is False
+
+
+def test_discover_agent_pod_host_uses_cache_until_ttl(monkeypatch):
+    node_agent_client._endpoint_cache.clear()
+
+    calls: list[str] = []
+    now_values = iter([1000.0, 1000.0, 1005.0])
+
+    class FakePodStatus:
+        phase = "Running"
+        pod_ip = "10.0.0.42"
+        conditions = [type("Cond", (), {"type": "Ready", "status": "True"})()]
+
+    class FakePod:
+        status = FakePodStatus()
+
+    class FakeCore:
+        def list_namespaced_pod(self, namespace=None, label_selector=None, field_selector=None):
+            calls.append(field_selector)
+            return type("Pods", (), {"items": [FakePod()]})()
+
+    monkeypatch.setattr(node_agent_client.time, "time", lambda: next(now_values))
+    monkeypatch.setattr(node_agent_client.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(node_agent_client.client, "CoreV1Api", lambda: FakeCore())
+
+    cfg = node_agent_client.NodeAgentConfig(namespace="draino", label_selector="app=node-agent", endpoint_ttl=30.0)
+
+    first = node_agent_client._discover_agent_pod_host("node-1", cfg)
+    second = node_agent_client._discover_agent_pod_host("node-1", cfg)
+
+    assert first == "10.0.0.42"
+    assert second == "10.0.0.42"
+    assert calls == ["spec.nodeName=node-1"]
+
+
+def test_discover_agent_pod_host_refreshes_after_ttl(monkeypatch):
+    node_agent_client._endpoint_cache.clear()
+
+    calls: list[str] = []
+    now_values = iter([1000.0, 1000.0, 1035.0, 1035.0])
+    pod_ips = iter(["10.0.0.42", "10.0.0.77"])
+
+    class FakeCore:
+        def list_namespaced_pod(self, namespace=None, label_selector=None, field_selector=None):
+            calls.append(field_selector)
+            pod_ip = next(pod_ips)
+            status = type(
+                "FakePodStatus",
+                (),
+                {
+                    "phase": "Running",
+                    "pod_ip": pod_ip,
+                    "conditions": [type("Cond", (), {"type": "Ready", "status": "True"})()],
+                },
+            )()
+            return type("Pods", (), {"items": [type("FakePod", (), {"status": status})()]})()
+
+    monkeypatch.setattr(node_agent_client.time, "time", lambda: next(now_values))
+    monkeypatch.setattr(node_agent_client.config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(node_agent_client.client, "CoreV1Api", lambda: FakeCore())
+
+    cfg = node_agent_client.NodeAgentConfig(namespace="draino", label_selector="app=node-agent", endpoint_ttl=30.0)
+
+    first = node_agent_client._discover_agent_pod_host("node-1", cfg)
+    second = node_agent_client._discover_agent_pod_host("node-1", cfg)
+
+    assert first == "10.0.0.42"
+    assert second == "10.0.0.77"
+    assert calls == ["spec.nodeName=node-1", "spec.nodeName=node-1"]
+
+
+def test_request_json_invalidates_cached_host_on_url_error(monkeypatch, tmp_path):
+    node_agent_client._endpoint_cache.clear()
+
+    token_file = tmp_path / "token"
+    ca_file = tmp_path / "ca.crt"
+    token_file.write_text("secret-token", encoding="utf-8")
+    ca_file.write_text("ca", encoding="utf-8")
+
+    monkeypatch.setattr(node_agent_client, "_discover_agent_pod_host", lambda node_name, cfg: "10.0.0.42")
+    monkeypatch.setattr(node_agent_client.ssl, "create_default_context", lambda cafile=None: type("Ctx", (), {"check_hostname": True})())
+    monkeypatch.setattr(
+        node_agent_client.urllib.request,
+        "urlopen",
+        lambda request, timeout=None, context=None: (_ for _ in ()).throw(
+            urllib.error.URLError("connection refused")
+        ),
+    )
+
+    node_agent_client._endpoint_cache["node-1"] = ("10.0.0.42", 9999999999.0)
+
+    try:
+        node_agent_client._request_json(
+            "node-1",
+            "GET",
+            "/host/etcd",
+            agent_config=node_agent_client.NodeAgentConfig(
+                namespace="draino",
+                label_selector="app=node-agent",
+                port=8443,
+                ca_file=str(ca_file),
+                token_file=str(token_file),
+                request_timeout=5.0,
+            ),
+        )
+    except RuntimeError as exc:
+        assert "connection refused" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert "node-1" not in node_agent_client._endpoint_cache

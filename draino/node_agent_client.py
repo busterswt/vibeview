@@ -5,6 +5,8 @@ import json
 import os
 import secrets
 import ssl
+import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -22,6 +24,11 @@ class NodeAgentConfig:
     ca_file: str = ""
     token_file: str = ""
     request_timeout: float = 10.0
+    endpoint_ttl: float = 30.0
+
+
+_endpoint_cache: dict[str, tuple[str, float]] = {}
+_cache_lock = threading.Lock()
 
 
 def enabled() -> bool:
@@ -37,6 +44,7 @@ def load_config_from_env() -> NodeAgentConfig:
         ca_file=os.getenv("DRAINO_NODE_AGENT_CA_FILE", ""),
         token_file=os.getenv("DRAINO_NODE_AGENT_TOKEN_FILE", ""),
         request_timeout=float(os.getenv("DRAINO_NODE_AGENT_TIMEOUT", "10")),
+        endpoint_ttl=float(os.getenv("DRAINO_NODE_AGENT_ENDPOINT_TTL", "30")),
     )
 
 
@@ -103,13 +111,19 @@ def _request_json(
         ) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        _invalidate_cached_agent_pod_host(node_name)
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"node-agent request failed: HTTP {exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
+        _invalidate_cached_agent_pod_host(node_name)
         raise RuntimeError(f"node-agent request failed: {exc.reason}") from exc
 
 
 def _discover_agent_pod_host(node_name: str, agent_config: NodeAgentConfig) -> str:
+    cached = _get_cached_agent_pod_host(node_name, agent_config)
+    if cached:
+        return cached
+
     try:
         config.load_incluster_config()
     except ConfigException as exc:
@@ -128,9 +142,33 @@ def _discover_agent_pod_host(node_name: str, agent_config: NodeAgentConfig) -> s
         conditions = pod.status.conditions or []
         ready = any(cond.type == "Ready" and cond.status == "True" for cond in conditions)
         if ready and pod.status and pod.status.pod_ip:
+            _set_cached_agent_pod_host(node_name, pod.status.pod_ip, agent_config)
             return pod.status.pod_ip
 
     raise RuntimeError(f"no ready node-agent pod found for node '{node_name}'")
+
+
+def _get_cached_agent_pod_host(node_name: str, agent_config: NodeAgentConfig) -> str | None:
+    now = time.time()
+    with _cache_lock:
+        cached = _endpoint_cache.get(node_name)
+        if not cached:
+            return None
+        pod_host, expires_at = cached
+        if now >= expires_at:
+            _endpoint_cache.pop(node_name, None)
+            return None
+        return pod_host
+
+
+def _set_cached_agent_pod_host(node_name: str, pod_host: str, agent_config: NodeAgentConfig) -> None:
+    with _cache_lock:
+        _endpoint_cache[node_name] = (pod_host, time.time() + agent_config.endpoint_ttl)
+
+
+def _invalidate_cached_agent_pod_host(node_name: str) -> None:
+    with _cache_lock:
+        _endpoint_cache.pop(node_name, None)
 
 
 def _read_secret_file(path: str) -> str:
