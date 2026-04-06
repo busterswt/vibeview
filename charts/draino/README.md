@@ -69,7 +69,15 @@ own `Gateway` objects.
 
 ## Reboot support
 
-If you want in-app reboot support, mount an SSH secret:
+If you want in-app reboot support, mount an SSH secret named `draino-ssh`:
+
+```bash
+kubectl -n draino create secret generic draino-ssh \
+  --from-file=id_rsa=/path/to/private_key \
+  --from-file=known_hosts=/path/to/known_hosts
+```
+
+Then enable the mount in Helm:
 
 ```bash
 helm upgrade --install draino ./charts/draino \
@@ -83,6 +91,19 @@ helm upgrade --install draino ./charts/draino \
 
 The mounted key must allow SSH from the pod to the target nodes and the remote account
 must be allowed to run `sudo reboot`.
+
+This is intentionally documented as a stopgap, not a preferred design. Reusing one SSH
+private key across all nodes gives the `draino` pod a very large blast radius. If that
+pod, its secret, or an authenticated session is compromised, an attacker may gain broad
+node-level access. Treat `draino-ssh` as highly sensitive, mount it read-only, and
+restrict who can read Secrets in the namespace.
+
+Safer patterns:
+
+- a privileged node-local agent or DaemonSet that exposes only a narrow reboot action
+- SSH certificates or short-lived credentials issued per session instead of one long-lived key
+- per-node or per-role credentials with tight `sudoers` and forced-command restrictions
+- an out-of-band maintenance service or automation job that performs the reboot on behalf of the UI
 
 ## External hostname
 

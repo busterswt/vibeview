@@ -168,6 +168,12 @@ The intended deployment pattern is:
 This chart is Gateway API only and is intended for environments that expose applications
 through Envoy Gateway.
 
+If you enable reboot support, the documented Secret name is `draino-ssh`. Using one SSH
+private key that is trusted across all nodes is not recommended. It is a temporary
+bootstrap option with high blast radius. Prefer a node-local reboot agent, short-lived
+credentials, or an external maintenance service over a long-lived shared SSH key in a
+Kubernetes Secret.
+
 ### Helm chart
 
 A Helm chart for the web UI is in `charts/draino/`.

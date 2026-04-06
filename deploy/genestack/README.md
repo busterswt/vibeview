@@ -159,10 +159,44 @@ and those route manifests are applied with:
 kubectl apply -f /etc/genestack/gateway-api/routes
 ```
 
+## SSH secret for reboot support
+
+If you want the web UI to issue reboots, create a Secret named `draino-ssh` in the
+`draino` namespace:
+
+```bash
+kubectl -n draino create secret generic draino-ssh \
+  --from-file=id_rsa=/path/to/private_key \
+  --from-file=known_hosts=/path/to/known_hosts
+```
+
+Then enable it in
+`/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`:
+
+```yaml
+ssh:
+  enabled: true
+  secretName: draino-ssh
+```
+
+The secret is mounted at `/home/draino/.ssh` inside the pod. The remote SSH account
+must be able to reach all target nodes and must be permitted to run `sudo reboot`.
+
+This is insecure if the same private key is trusted on every node. It creates a single
+credential with broad node-level access and high blast radius. Use it only as a
+temporary operational shortcut and treat the Secret as highly sensitive.
+
+Better approaches:
+
+- use a node-local reboot agent or privileged DaemonSet instead of direct SSH from the web pod
+- use short-lived SSH certificates or other ephemeral credentials instead of one shared private key
+- scope credentials per node or per host group with restricted `sudoers`
+- move reboot execution into an external automation service and let Draino call that service
+
 ## Genestack notes
 
 - In Genestack environments that use Envoy Gateway, prefer Gateway API resources over a classic `Ingress`.
 - The chart supports this by creating an `HTTPRoute` and attaching it to an existing shared `Gateway`.
 - The app needs `kubectl` for drain operations. The Docker image includes it.
 - OVN inspection endpoints call `kubectl ko nbctl ...`. If your Genestack operators use the `ko` plugin, mount or bake that plugin into the image too. Core drain/evacuation workflows do not depend on it.
-- For reboot support, mount an SSH private key into `/home/draino/.ssh` and ensure the remote host accepts `sudo reboot` for that account.
+- Reboot support uses the `draino-ssh` Secret mounted at `/home/draino/.ssh` when `ssh.enabled=true`.
