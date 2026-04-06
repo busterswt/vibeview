@@ -16,6 +16,22 @@ def test_session_endpoint_reports_unauthenticated():
     assert resp.json() == {"authenticated": False}
 
 
+def test_root_serves_login_when_unauthenticated():
+    with TestClient(web_server.fastapi_app) as client:
+        resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert "Authenticate Access" in resp.text
+
+
+def test_app_requires_authenticated_session():
+    with TestClient(web_server.fastapi_app) as client:
+        resp = client.get("/app", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"
+
+
 def test_health_and_readiness_endpoints():
     with TestClient(web_server.fastapi_app) as client:
         health = client.get("/healthz")

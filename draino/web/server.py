@@ -48,6 +48,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from .. import worker
@@ -914,7 +915,18 @@ def _build_openstack_auth_from_clouds_yaml(
 
 
 @fastapi_app.get("/")
-async def index() -> FileResponse:
+async def index(request: Request):
+    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
+    if record is not None:
+        return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
+    return FileResponse(_STATIC / "login.html")
+
+
+@fastapi_app.get("/app")
+async def app(request: Request):
+    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
+    if record is None:
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     return FileResponse(_STATIC / "index.html")
 
 
