@@ -182,5 +182,5 @@ For a more complete design outline, see
 - In Genestack environments that use Envoy Gateway, prefer Gateway API resources over a classic `Ingress`.
 - The chart supports this by creating an `HTTPRoute` and attaching it to an existing shared `Gateway`.
 - The app needs `kubectl` for drain operations. The Docker image includes it.
-- OVN inspection endpoints call `kubectl ko nbctl ...`. If your Genestack operators use the `ko` plugin, mount or bake that plugin into the image too. Core drain/evacuation workflows do not depend on it.
+- OVN inspection endpoints call `kubectl ko nbctl ...`. The Docker image now includes `kubectl-ko`, so no separate plugin mount is required.
 - Reboot support defaults to the node-local HTTPS agent. SSH is now a legacy fallback only.

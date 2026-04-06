@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 ARG KUBECTL_VERSION=v1.30.10
+ARG KUBECTL_KO_VERSION=v0.1.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,6 +13,9 @@ RUN apt-get update \
 
 RUN curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl
+
+RUN curl -fsSL -o /usr/local/bin/kubectl-ko "https://github.com/kubernetes-sigs/kubectl-plugins/releases/download/${KUBECTL_KO_VERSION}/kubectl-ko_linux_amd64" \
+    && chmod +x /usr/local/bin/kubectl-ko
 
 WORKDIR /app
 

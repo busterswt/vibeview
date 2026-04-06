@@ -149,9 +149,9 @@ docker push registry.example.com/operations/draino:0.1.0
 Notes:
 
 - The image includes `kubectl`, which is required for drain operations.
+- The image includes `kubectl-ko`, so OVN inspection views work without an extra plugin mount.
 - The image includes `ssh`, which is still used for several host-inspection flows and legacy reboot fallback mode.
 - The web UI keeps login sessions in-process, so production deployment should start with a single replica unless you add sticky sessions or externalise session storage.
-- OVN inspection endpoints rely on `kubectl ko`; if you use those views in-cluster, also provide the `ko` plugin in the image or via a mounted binary.
 
 ### Kubernetes / Genestack deployment
 
