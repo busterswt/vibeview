@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -16,6 +17,9 @@ from pydantic import BaseModel
 _state_lock = threading.Lock()
 _reboot_in_progress = False
 _LOGGER = logging.getLogger("draino.node_agent")
+_HOST_STATIC_DETAIL_TTL = float(os.getenv("DRAINO_NODE_AGENT_HOST_DETAIL_TTL", "600"))
+_host_static_detail_cache: tuple[float, dict] | None = None
+_host_static_detail_lock = threading.Lock()
 
 
 class RebootRequest(BaseModel):
@@ -76,12 +80,67 @@ def _run_host_shell(script: str, timeout: int = 20) -> subprocess.CompletedProce
     )
 
 
-def _get_host_detail() -> dict:
-    result: dict = {
+def _get_dynamic_host_detail() -> dict:
+    result = {
         "hostname": None,
         "architecture": None,
         "kernel_version": None,
         "uptime": None,
+        "error": None,
+    }
+
+    script = (
+        "echo __N__; hostname 2>/dev/null; "
+        "echo __A__; uname -m 2>/dev/null; "
+        "echo __U__; uptime -p 2>/dev/null | sed 's/^up //'; "
+        "echo __R__; uname -r 2>/dev/null; "
+        "echo __END__"
+    )
+
+    try:
+        proc = _run_host_shell(script)
+    except Exception as exc:
+        result["error"] = str(exc)
+        return result
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        result["error"] = stderr or f"dynamic host detail command exited {proc.returncode}"
+        return result
+
+    section = None
+    for line in proc.stdout.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s == "__N__":
+            section = "hostname"
+            continue
+        if s == "__A__":
+            section = "arch"
+            continue
+        if s == "__U__":
+            section = "uptime"
+            continue
+        if s == "__R__":
+            section = "kernel"
+            continue
+        if s == "__END__":
+            break
+        if section == "hostname":
+            result["hostname"] = s
+        elif section == "arch":
+            result["architecture"] = s
+        elif section == "uptime":
+            result["uptime"] = s
+        elif section == "kernel":
+            result["kernel_version"] = s
+
+    return result
+
+
+def _get_static_host_detail() -> dict:
+    result: dict = {
         "vendor": None,
         "product": None,
         "bios_version": None,
@@ -98,10 +157,6 @@ def _get_host_detail() -> dict:
     }
 
     script = (
-        "echo __N__; hostname 2>/dev/null; "
-        "echo __A__; uname -m 2>/dev/null; "
-        "echo __U__; uptime -p 2>/dev/null | sed 's/^up //'; "
-        "echo __R__; uname -r 2>/dev/null; "
         "echo __V__; cat /sys/class/dmi/id/sys_vendor 2>/dev/null; "
         "echo __P__; cat /sys/class/dmi/id/product_name 2>/dev/null; "
         "echo __B__; cat /sys/class/dmi/id/bios_version 2>/dev/null; "
@@ -136,18 +191,6 @@ def _get_host_detail() -> dict:
         s = line.strip()
         if not s:
             continue
-        if s == "__N__":
-            section = "hostname"
-            continue
-        if s == "__A__":
-            section = "arch"
-            continue
-        if s == "__U__":
-            section = "uptime"
-            continue
-        if s == "__R__":
-            section = "kernel"
-            continue
         if s == "__V__":
             section = "vendor"
             continue
@@ -175,15 +218,7 @@ def _get_host_detail() -> dict:
         if s == "__END__":
             break
 
-        if section == "hostname":
-            result["hostname"] = s
-        elif section == "arch":
-            result["architecture"] = s
-        elif section == "uptime":
-            result["uptime"] = s
-        elif section == "kernel":
-            result["kernel_version"] = s
-        elif section == "vendor":
+        if section == "vendor":
             result["vendor"] = s
         elif section == "product":
             result["product"] = s
@@ -245,6 +280,28 @@ def _get_host_detail() -> dict:
         result["ram_speed"] = Counter(dmi_speeds).most_common(1)[0][0]
     if dmi_mfrs:
         result["ram_manufacturer"] = Counter(dmi_mfrs).most_common(1)[0][0]
+    return result
+
+
+def _get_cached_static_host_detail(now: float | None = None) -> dict:
+    global _host_static_detail_cache
+    check_time = time.time() if now is None else now
+    with _host_static_detail_lock:
+        if _host_static_detail_cache is not None:
+            expires_at, payload = _host_static_detail_cache
+            if check_time < expires_at:
+                return dict(payload)
+        payload = _get_static_host_detail()
+        _host_static_detail_cache = (check_time + _HOST_STATIC_DETAIL_TTL, dict(payload))
+        return payload
+
+
+def _get_host_detail() -> dict:
+    dynamic = _get_dynamic_host_detail()
+    static = _get_cached_static_host_detail()
+    result = {**dynamic, **static}
+    errors = [err for err in (dynamic.get("error"), static.get("error")) if err]
+    result["error"] = "; ".join(errors) if errors else None
     return result
 
 

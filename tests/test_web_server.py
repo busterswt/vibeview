@@ -220,6 +220,70 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert captured["api_k8s_auth"] == captured["login_k8s_auth"]
 
 
+def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
+    captured: dict[str, int] = {"k8s": 0, "hw": 0, "nova": 0}
+
+    initial_nodes = [{"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False}]
+
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: initial_nodes)
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_k8s_detail",
+        lambda node_name, auth=None: captured.__setitem__("k8s", captured["k8s"] + 1) or {"node": node_name},
+    )
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_hardware_info",
+        lambda node_name, hostname=None: captured.__setitem__("hw", captured["hw"] + 1) or {"hostname": hostname or node_name},
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_detail",
+        lambda hypervisor, auth=None: captured.__setitem__("nova", captured["nova"] + 1) or {"hypervisor": hypervisor},
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        first = client.get("/api/nodes/node-a/detail")
+        second = client.get("/api/nodes/node-a/detail")
+        refreshed = client.get("/api/nodes/node-a/detail?refresh=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert captured == {"k8s": 2, "hw": 2, "nova": 2}
+
+
 def test_websocket_requires_session_and_uses_session_server(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])

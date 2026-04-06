@@ -63,6 +63,7 @@ _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
 _SESSION_TTL = 60 * 60 * 12
 _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
+_NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
 _audit_log_path: Optional[str] = None
 _LOGGER = logging.getLogger("draino.web")
@@ -188,6 +189,7 @@ class DrainoServer:
         self._last_k8s_nodes:  list[dict]           = []
         self._etcd_node_names: set[str]             = set()
         self._host_signal_refresh_at: dict[str, float] = {}
+        self._node_detail_cache: dict[str, tuple[float, dict]] = {}
 
         self._clients: Set[WebSocket]                        = set()
         self._loop:    Optional[asyncio.AbstractEventLoop]   = None
@@ -272,6 +274,7 @@ class DrainoServer:
         for removed_name in previous_names - current_names:
             self.node_states.pop(removed_name, None)
             self._host_signal_refresh_at.pop(removed_name, None)
+            self._node_detail_cache.pop(removed_name, None)
 
         for nd in nodes:
             name     = nd["name"]
@@ -360,6 +363,24 @@ class DrainoServer:
         if last_refresh is None:
             return True
         return (now - last_refresh) >= _HOST_SIGNALS_TTL
+
+    def get_cached_node_detail(self, node_name: str, now: float | None = None) -> dict | None:
+        entry = self._node_detail_cache.get(node_name)
+        if entry is None:
+            return None
+        check_time = time.time() if now is None else now
+        expires_at, payload = entry
+        if check_time >= expires_at:
+            self._node_detail_cache.pop(node_name, None)
+            return None
+        return payload
+
+    def set_cached_node_detail(self, node_name: str, payload: dict, now: float | None = None) -> None:
+        cache_time = time.time() if now is None else now
+        self._node_detail_cache[node_name] = (cache_time + _NODE_DETAIL_TTL, payload)
+
+    def invalidate_node_detail(self, node_name: str) -> None:
+        self._node_detail_cache.pop(node_name, None)
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
@@ -1124,6 +1145,12 @@ async def api_node_detail(node_name: str, request: Request):
     """Return detailed K8s + Nova + hardware stats for the summary tab."""
     session = _get_session_record(request)
     server = session.server
+    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+    if force_refresh:
+        server.invalidate_node_detail(node_name)
+    cached = server.get_cached_node_detail(node_name)
+    if cached is not None:
+        return cached
     loop = asyncio.get_running_loop()
     state = server.node_states.get(node_name)
     k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
@@ -1140,7 +1167,9 @@ async def api_node_detail(node_name: str, request: Request):
 
     k8s = await k8s_future
     hw  = await hw_future
-    return {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
+    payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
+    server.set_cached_node_detail(node_name, payload)
+    return payload
 
 
 @fastapi_app.get("/api/nodes/{node_name}/ovn-annotations")

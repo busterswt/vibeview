@@ -1343,11 +1343,12 @@ function ensureSelectedEtcdHealthCheck() {
     wsSend({ action: 'check_etcd' });
 }
 
-async function loadNodeDetail(name) {
+async function loadNodeDetail(name, force = false) {
   nodeDetailCache[name] = { loading: true, k8s: null, nova: null, hw: null, error: null };
   if (activeTab === 'summary') renderSummaryTab(nodes[name]);
   try {
-    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail`);
+    const qs = force ? '?refresh=1' : '';
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail${qs}`);
     const json = await resp.json();
     nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, hw: json.hw || {}, error: json.error || null };
   } catch (e) {
@@ -3412,12 +3413,12 @@ function updateActionButtons(nd) {
 function actionRefreshNode() {
   if (!selectedNode) return;
   delete nodeDetailCache[selectedNode];
-  loadNodeDetail(selectedNode);
+  loadNodeDetail(selectedNode, true);
 }
 
 function actionRefreshAll()  {
   Object.keys(nodeDetailCache).forEach((name) => delete nodeDetailCache[name]);
-  if (selectedNode) loadNodeDetail(selectedNode);
+  if (selectedNode) loadNodeDetail(selectedNode, true);
   wsSend({ action: 'refresh' });
 }
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }

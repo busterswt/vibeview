@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.error
 
-from draino import node_agent_client
+from draino import node_agent, node_agent_client
 from draino.operations import k8s_ops
 
 
@@ -261,3 +261,46 @@ def test_request_json_invalidates_cached_host_on_url_error(monkeypatch, tmp_path
         raise AssertionError("expected RuntimeError")
 
     assert "node-1" not in node_agent_client._endpoint_cache
+
+
+def test_node_agent_static_host_detail_cache_reuses_expensive_probe(monkeypatch):
+    node_agent._host_static_detail_cache = None
+    calls = {"static": 0}
+
+    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(
+        node_agent,
+        "_get_static_host_detail",
+        lambda: calls.__setitem__("static", calls["static"] + 1) or {"vendor": "Dell", "error": None},
+    )
+
+    first = node_agent._get_cached_static_host_detail()
+    second = node_agent._get_cached_static_host_detail()
+
+    assert first["vendor"] == "Dell"
+    assert second["vendor"] == "Dell"
+    assert calls["static"] == 1
+
+
+def test_node_agent_host_detail_combines_dynamic_with_cached_static(monkeypatch):
+    node_agent._host_static_detail_cache = None
+
+    monkeypatch.setattr(node_agent, "_get_cached_static_host_detail", lambda now=None: {"vendor": "Dell", "error": None})
+    monkeypatch.setattr(
+        node_agent,
+        "_get_dynamic_host_detail",
+        lambda: {
+            "hostname": "node-1",
+            "architecture": "x86_64",
+            "kernel_version": "6.8.0",
+            "uptime": "3 days",
+            "error": None,
+        },
+    )
+
+    result = node_agent._get_host_detail()
+
+    assert result["hostname"] == "node-1"
+    assert result["kernel_version"] == "6.8.0"
+    assert result["vendor"] == "Dell"
+    assert result["error"] is None
