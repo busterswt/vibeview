@@ -55,8 +55,6 @@ Requires Python 3.11+.
 
 ## Prerequisites
 
-- SSH access from the machine running draino to each hypervisor (used for etcd health
-  checks and issuing reboots)
 - etcd nodes must be labeled with `node-role.kubernetes.io/etcd` or Draino cannot
   identify them for quorum-aware reboot protection
 
@@ -153,7 +151,6 @@ Notes:
 
 - The image includes `kubectl`, which is required for drain operations.
 - The image includes `kubectl-ko`, so OVN inspection views work without an extra plugin mount.
-- The image includes `ssh`, which is still used for several host-inspection flows and legacy reboot fallback mode.
 - The web UI keeps login sessions in-process, so production deployment should start with a single replica unless you add sticky sessions or externalise session storage.
 
 ### Kubernetes / Genestack deployment
@@ -171,10 +168,8 @@ The intended deployment pattern is:
 This chart is Gateway API only and is intended for environments that expose applications
 through Envoy Gateway.
 
-The default reboot path now uses a node-local HTTPS agent instead of a shared SSH key in
-the web pod. Legacy SSH reboot support remains available only as a fallback, and the
-documented Secret name for that mode is `draino-ssh`. Using one SSH private key that is
-trusted across all nodes is not recommended.
+Reboot and host-inspection flows now rely on the node-local HTTPS agent rather than SSH
+from the web pod.
 
 The node-local agent design is documented in
 `docs/node-local-reboot-agent.md`.

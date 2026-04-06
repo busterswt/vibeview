@@ -283,73 +283,18 @@ def get_node_k8s_detail(
 
 
 def check_etcd_service(node_name: str, hostname: str | None = None) -> Optional[bool]:
-    """SSH to *hostname* and check whether the etcd systemd service is active.
-
-    Returns True if active, False if inactive/failed, None if the check
-    could not be completed (SSH unreachable, timeout, etc.).
-    """
-    if node_agent_client.enabled():
-        try:
-            result = node_agent_client.get_etcd_status(node_name)
-            return result.get("active")
-        except Exception:
-            return None
-
-    ssh_host = hostname or node_name
+    """Check whether the etcd systemd service is active via the node agent."""
     try:
-        result = subprocess.run(
-            [
-                "ssh",
-                "-o", "ConnectTimeout=5",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                ssh_host,
-                "systemctl", "is-active", "etcd",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return result.stdout.strip() == "active"
+        result = node_agent_client.get_etcd_status(node_name)
+        return result.get("active")
     except Exception:
         return None
 
 
 def get_node_host_signals(node_name: str, hostname: str | None = None) -> dict:
-    """Return lightweight reboot/kernel signals for a node."""
-    if node_agent_client.enabled():
-        try:
-            return node_agent_client.get_host_signals(node_name)
-        except Exception as exc:
-            return {
-                "kernel_version": None,
-                "latest_kernel_version": None,
-                "reboot_required": False,
-                "error": str(exc),
-            }
-
-    ssh_host = hostname or node_name
+    """Return lightweight reboot/kernel signals for a node via the node agent."""
     try:
-        proc = subprocess.run(
-            [
-                "ssh",
-                "-o", "ConnectTimeout=5",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                ssh_host,
-                (
-                    "running=$(uname -r 2>/dev/null); "
-                    "latest=$(ls -1 /lib/modules 2>/dev/null | sort -V | tail -n1); "
-                    "need=no; "
-                    "[ -f /var/run/reboot-required ] && need=yes; "
-                    "if [ -n \"$latest\" ] && [ -n \"$running\" ] && [ \"$latest\" != \"$running\" ]; then need=yes; fi; "
-                    "printf 'running=%s\nlatest=%s\nreboot_required=%s\n' \"$running\" \"$latest\" \"$need\""
-                ),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        return node_agent_client.get_host_signals(node_name)
     except Exception as exc:
         return {
             "kernel_version": None,
@@ -357,34 +302,6 @@ def get_node_host_signals(node_name: str, hostname: str | None = None) -> dict:
             "reboot_required": False,
             "error": str(exc),
         }
-
-    if proc.returncode != 0 and not proc.stdout.strip():
-        stderr = proc.stderr.strip()
-        return {
-            "kernel_version": None,
-            "latest_kernel_version": None,
-            "reboot_required": False,
-            "error": stderr or f"SSH exited {proc.returncode}",
-        }
-
-    data = {
-        "kernel_version": None,
-        "latest_kernel_version": None,
-        "reboot_required": False,
-        "error": None,
-    }
-    for raw_line in proc.stdout.splitlines():
-        line = raw_line.strip()
-        if "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        if key == "running":
-            data["kernel_version"] = val or None
-        elif key == "latest":
-            data["latest_kernel_version"] = val or None
-        elif key == "reboot_required":
-            data["reboot_required"] = val.strip().lower() in {"yes", "true", "1"}
-    return data
 
 
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
@@ -462,16 +379,7 @@ def uncordon_node(
 
 
 def get_node_hardware_info(node_name: str, hostname: str | None = None) -> dict:
-    """SSH to *hostname* and return chassis, CPU, and RAM hardware details.
-
-    Reads /sys/class/dmi/id/ (no sudo) for vendor/product info,
-    /proc/cpuinfo (no sudo) for CPU model and topology, and tries
-    dmidecode -t 17 (sudo -n, non-interactive) for RAM type/speed.
-    Returns a dict with all keys present; unknown values are None.
-    """
-    import re as _re
-    from collections import Counter
-
+    """Return chassis, CPU, and RAM hardware details via the node agent."""
     result: dict = {
         "hostname":            None,
         "architecture":        None,
@@ -492,163 +400,13 @@ def get_node_hardware_info(node_name: str, hostname: str | None = None) -> dict:
         "error":               None,
     }
 
-    if node_agent_client.enabled():
-        try:
-            result.update(node_agent_client.get_host_detail(node_name))
-            result.setdefault("error", None)
-            return result
-        except Exception as exc:
-            result["error"] = str(exc)
-            return result
-
-    # Single SSH session — all reads in one round-trip
-    ssh_host = hostname or node_name
-    script = (
-        "echo __N__; hostname 2>/dev/null; "
-        "echo __A__; uname -m 2>/dev/null; "
-        "echo __U__; uptime -p 2>/dev/null | sed 's/^up //'; "
-        "echo __R__; uname -r 2>/dev/null; "
-        "echo __V__; cat /sys/class/dmi/id/sys_vendor 2>/dev/null; "
-        "echo __P__; cat /sys/class/dmi/id/product_name 2>/dev/null; "
-        "echo __B__; cat /sys/class/dmi/id/bios_version 2>/dev/null; "
-        "echo __C__; grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
-        "echo __S__; grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l; "
-        "echo __K__; grep -m1 'cpu cores' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
-        "echo __H__; grep -m1 'siblings' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'; "
-        "echo __D__; (sudo -n dmidecode -t 17 2>/dev/null || dmidecode -t 17 2>/dev/null) | "
-        r"grep -E '^\s+(Size|Type|Speed|Manufacturer):' | "
-        "grep -v 'No Module Installed'; "
-        "echo __END__"
-    )
-
     try:
-        proc = subprocess.run(
-            [
-                "ssh",
-                "-o", "ConnectTimeout=5",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                ssh_host,
-                script,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except Exception as e:
-        result["error"] = str(e)
+        result.update(node_agent_client.get_host_detail(node_name))
+        result.setdefault("error", None)
         return result
-
-    if proc.returncode != 0 and not proc.stdout.strip():
-        stderr = proc.stderr.strip()
-        result["error"] = f"SSH failed: {stderr}" if stderr else f"SSH exited {proc.returncode}"
+    except Exception as exc:
+        result["error"] = str(exc)
         return result
-
-    section = None
-    dmi_sizes: list[int] = []
-    dmi_types: list[str] = []
-    dmi_speeds: list[str] = []
-    dmi_mfrs: list[str] = []
-
-    for line in proc.stdout.splitlines():
-        s = line.strip()
-        if not s:
-            continue
-
-        # Section markers
-        if s == "__N__":   section = "hostname"; continue
-        if s == "__A__":   section = "arch";     continue
-        if s == "__U__":   section = "uptime";   continue
-        if s == "__R__":   section = "kernel";   continue
-        if s == "__V__":   section = "vendor";   continue
-        if s == "__P__":   section = "product";  continue
-        if s == "__B__":   section = "bios";     continue
-        if s == "__C__":   section = "cpu";      continue
-        if s == "__S__":   section = "sockets";  continue
-        if s == "__K__":   section = "cores";    continue
-        if s == "__H__":   section = "siblings"; continue
-        if s == "__D__":   section = "dmi";      continue
-        if s == "__END__": break
-
-        if section == "hostname":
-            result["hostname"] = s
-        elif section == "arch":
-            result["architecture"] = s
-        elif section == "uptime":
-            result["uptime"] = s
-        elif section == "kernel":
-            result["kernel_version"] = s
-        elif section == "vendor":
-            result["vendor"] = s
-        elif section == "product":
-            result["product"] = s
-        elif section == "bios":
-            result["bios_version"] = s
-        elif section == "cpu":
-            # Clean up: remove (R)/(TM), " CPU @ X.XXGHz", "XX-Core Processor"
-            m = _re.sub(r'\([RT]M\)', '', s)
-            m = _re.sub(r'\bCPU\s+@\s+[\d.]+\s*GHz\b', '', m)
-            m = _re.sub(r'\b\d+-Core\s+Processor\b', '', m, flags=_re.IGNORECASE)
-            m = _re.sub(r'\s{2,}', ' ', m).strip()
-            result["cpu_model"] = m
-        elif section == "sockets":
-            try:
-                n = int(s)
-                result["cpu_sockets"] = n if n > 0 else 1
-            except Exception:
-                pass
-        elif section == "cores":
-            try:
-                result["cpu_cores_per_socket"] = int(s)
-            except Exception:
-                pass
-        elif section == "siblings":
-            try:
-                siblings = int(s)
-                cps = result["cpu_cores_per_socket"]
-                if cps and cps > 0:
-                    result["cpu_threads_per_core"] = siblings // cps
-            except Exception:
-                pass
-        elif section == "dmi":
-            if ":" not in s:
-                continue
-            key, _, val = s.partition(":")
-            key = key.strip()
-            val = val.strip()
-            if key == "Size":
-                parts = val.split()
-                if len(parts) >= 2:
-                    try:
-                        num = int(parts[0])
-                        unit = parts[1].upper()
-                        gb = num if unit == "GB" else num // 1024 if unit == "MB" else None
-                        if gb is not None and gb > 0:
-                            dmi_sizes.append(gb)
-                    except Exception:
-                        pass
-            elif key == "Type":
-                if val and val not in ("Unknown", "Other", ""):
-                    dmi_types.append(val)
-            elif key == "Speed":
-                if val and val not in ("Unknown", "0 MT/s", "0 MHz", ""):
-                    dmi_speeds.append(val)
-            elif key == "Manufacturer":
-                if val and val not in ("Unknown", "Not Specified", ""):
-                    dmi_mfrs.append(val)
-
-    # Aggregate DMI memory info
-    if dmi_sizes:
-        result["ram_total_gb"]  = sum(dmi_sizes)
-        result["ram_slots_used"] = len(dmi_sizes)
-    if dmi_types:
-        result["ram_type"] = Counter(dmi_types).most_common(1)[0][0]
-    if dmi_speeds:
-        result["ram_speed"] = Counter(dmi_speeds).most_common(1)[0][0]
-    if dmi_mfrs:
-        result["ram_manufacturer"] = Counter(dmi_mfrs).most_common(1)[0][0]
-
-    return result
 
 
 OVN_ANNOTATION_KEYS = [
@@ -695,170 +453,11 @@ def patch_node_annotation(
 
 
 def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> dict:
-    """SSH to *hostname* and return physical and bond network interfaces.
-
-    Reads /sys/class/net/ without root; uses ethtool -i for driver names
-    and udevadm for human-readable model/vendor strings.
-
-    Returns::
-
-        {
-          "interfaces": [
-            {
-              "name": "ens2f0np0",
-              "type": "physical",          # "physical" | "bond"
-              "status": "up",              # "up" | "down" | "unknown"
-              "speed": "25G",              # formatted string, None if unknown
-              "speed_mbps": 25000,         # int raw, None if unknown
-              "mac": "18:c0:4d:...",
-              "duplex": "full",
-              "driver": "ice",             # physical only
-              "model": "Ethernet E810-C",  # physical only, may be None
-              "vendor": "Intel Corp",      # physical only, may be None
-              "members": ["ens2f0np0"],    # bond only
-              "mode": "802.3ad",           # bond only
-            },
-            ...
-          ],
-          "error": None                    # str if SSH failed
-        }
-    """
-    script = r"""
-for d in /sys/class/net/*/; do
-  name=$(basename "$d")
-  is_phys=0; is_bond=0
-  [ -e "${d}device" ] && is_phys=1
-  [ -d "${d}bonding" ] && is_bond=1
-  [ "$is_phys" = "0" ] && [ "$is_bond" = "0" ] && continue
-  printf '__NIC__ %s\n' "$name"
-  printf 'oper=%s\n'      "$(cat ${d}operstate 2>/dev/null)"
-  printf 'mac=%s\n'       "$(cat ${d}address 2>/dev/null)"
-  printf 'speed_mbps=%s\n' "$(cat ${d}speed 2>/dev/null)"
-  printf 'duplex=%s\n'    "$(cat ${d}duplex 2>/dev/null)"
-  printf 'ipv4=%s\n'     "$(ip -4 addr show "$name" 2>/dev/null | awk '/inet /{print $2}' | paste -sd, -)"
-  printf 'ipv6=%s\n'     "$(ip -6 addr show "$name" 2>/dev/null | awk '/inet6 / && $2 !~ /^fe80/{print $2}' | paste -sd, -)"
-  if [ "$is_bond" = "1" ]; then
-    printf 'type=bond\n'
-    printf 'slaves=%s\n'  "$(cat ${d}bonding/slaves 2>/dev/null)"
-    printf 'mode=%s\n'    "$(cat ${d}bonding/mode 2>/dev/null | cut -d' ' -f1)"
-  else
-    printf 'type=physical\n'
-    printf 'driver=%s\n'  "$(ethtool -i "$name" 2>/dev/null | awk '/^driver:/{print $2}')"
-    printf 'model=%s\n'   "$(udevadm info "${d}" 2>/dev/null | awk -F= '/^E: ID_MODEL_FROM_DATABASE=/{sub(/^[^=]*=/, ""); print; exit}')"
-    printf 'vendor=%s\n'  "$(udevadm info "${d}" 2>/dev/null | awk -F= '/^E: ID_VENDOR_FROM_DATABASE=/{sub(/^[^=]*=/, ""); print; exit}')"
-  fi
-  printf '__END_NIC__\n'
-done
-"""
-
-    def _fmt_speed(mbps_str: str) -> tuple[str | None, int | None]:
-        """Convert Mbps string to (human, int). Returns (None, None) if unknown."""
-        try:
-            v = int(mbps_str)
-        except (ValueError, TypeError):
-            return None, None
-        if v <= 0:
-            return None, None
-        if v >= 100_000:
-            return "100G", v
-        if v >= 40_000:
-            return "40G", v
-        if v >= 25_000:
-            return "25G", v
-        if v >= 10_000:
-            return "10G", v
-        if v >= 1_000:
-            return "1G", v
-        return f"{v}M", v
-
-    if node_agent_client.enabled():
-        try:
-            return node_agent_client.get_network_interfaces(node_name)
-        except Exception as exc:
-            return {"interfaces": [], "error": str(exc)}
-
-    ssh_host = hostname or node_name
-
+    """Return physical and bond network interfaces via the node agent."""
     try:
-        proc = subprocess.run(
-            ["ssh",
-             "-o", "ConnectTimeout=5",
-             "-o", "BatchMode=yes",
-             "-o", "StrictHostKeyChecking=no",
-             ssh_host, script],
-            capture_output=True, text=True, timeout=20,
-        )
+        return node_agent_client.get_network_interfaces(node_name)
     except Exception as exc:
         return {"interfaces": [], "error": str(exc)}
-
-    if proc.returncode != 0 and not proc.stdout.strip():
-        stderr = proc.stderr.strip()
-        return {
-            "interfaces": [],
-            "error": f"SSH failed: {stderr}" if stderr else f"SSH exited {proc.returncode}",
-        }
-
-    interfaces: list[dict] = []
-    current: dict | None = None
-
-    for raw_line in proc.stdout.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("__NIC__ "):
-            current = {
-                "name": line[len("__NIC__ "):].strip(),
-                "type": "physical",
-                "status": "unknown",
-                "speed": None,
-                "speed_mbps": None,
-                "mac": None,
-                "duplex": None,
-                "driver": None,
-                "model": None,
-                "vendor": None,
-                "members": [],
-                "mode": None,
-                "ipv4": [],
-                "ipv6": [],
-            }
-        elif line == "__END_NIC__":
-            if current is not None:
-                interfaces.append(current)
-            current = None
-        elif current is not None and "=" in line:
-            key, _, val = line.partition("=")
-            val = val.strip()
-            if key == "oper":
-                current["status"] = val if val else "unknown"
-            elif key == "mac":
-                current["mac"] = val or None
-            elif key == "speed_mbps":
-                spd, raw = _fmt_speed(val)
-                current["speed"] = spd
-                current["speed_mbps"] = raw
-            elif key == "duplex":
-                current["duplex"] = val or None
-            elif key == "type":
-                current["type"] = val
-            elif key == "driver":
-                current["driver"] = val or None
-            elif key == "model":
-                current["model"] = val or None
-            elif key == "vendor":
-                current["vendor"] = val or None
-            elif key == "slaves":
-                current["members"] = [s for s in val.split() if s]
-            elif key == "mode":
-                current["mode"] = val or None
-            elif key == "ipv4":
-                current["ipv4"] = [a for a in val.split(",") if a.strip()]
-            elif key == "ipv6":
-                current["ipv6"] = [a for a in val.split(",") if a.strip()]
-
-    # Sort: bonds first, then physicals alphabetically
-    interfaces.sort(key=lambda x: (0 if x["type"] == "bond" else 1, x["name"]))
-    return {"interfaces": interfaces, "error": None}
 
 
 def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:

@@ -1,7 +1,6 @@
-"""Reboot backend helpers."""
+"""Reboot helpers."""
 from __future__ import annotations
 
-import subprocess
 from typing import Callable
 
 from . import node_agent_client
@@ -33,32 +32,6 @@ def is_ready_for_reboot(state: NodeState) -> tuple[bool, str]:
 
 
 def issue_reboot(state: NodeState, log: LogFn) -> None:
-    if node_agent_client.enabled():
-        _issue_node_agent_reboot(state, log)
-        return
-    _issue_ssh_reboot(state, log)
-
-
-def _issue_ssh_reboot(state: NodeState, log: LogFn) -> None:
-    try:
-        subprocess.run(
-            [
-                "ssh",
-                "-o", "ConnectTimeout=10",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                state.hypervisor,
-                "sudo", "reboot",
-            ],
-            timeout=15,
-            capture_output=True,
-        )
-    except subprocess.TimeoutExpired:
-        pass
-    log(f"Reboot command sent to '{state.hypervisor}' via SSH")
-
-
-def _issue_node_agent_reboot(state: NodeState, log: LogFn) -> None:
     body = node_agent_client.post_reboot(state.k8s_name, state.hypervisor)
     if not body.get("accepted"):
         raise RuntimeError("node-agent rejected the reboot request")

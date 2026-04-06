@@ -32,7 +32,7 @@ _cache_lock = threading.Lock()
 
 
 def enabled() -> bool:
-    return (os.getenv("DRAINO_REBOOT_BACKEND", "ssh").strip().lower() or "ssh") == "node-agent"
+    return True
 
 
 def load_config_from_env() -> NodeAgentConfig:

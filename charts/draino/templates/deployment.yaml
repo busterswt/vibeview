@@ -19,7 +19,7 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "draino.serviceAccountName" . }}
-      automountServiceAccountToken: {{ or .Values.serviceAccount.automountServiceAccountToken .Values.nodeAgent.enabled }}
+      automountServiceAccountToken: true
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -58,11 +58,7 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.nodeAgent.enabled .Values.extraEnv }}
           env:
-            {{- if .Values.nodeAgent.enabled }}
-            - name: DRAINO_REBOOT_BACKEND
-              value: node-agent
             - name: DRAINO_NODE_AGENT_NAMESPACE
               value: {{ .Release.Namespace | quote }}
             - name: DRAINO_NODE_AGENT_SERVICE_NAME
@@ -75,49 +71,29 @@ spec:
               value: /var/run/draino-node-agent/ca.crt
             - name: DRAINO_NODE_AGENT_TOKEN_FILE
               value: /var/run/draino-node-agent/token
-            {{- end }}
-          {{- with .Values.extraEnv }}
+            {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- end }}
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled .Values.nodeAgent.enabled }}
           volumeMounts:
             {{- if .Values.tmpVolume.enabled }}
             - name: tmp
               mountPath: /tmp
             {{- end }}
-            {{- if .Values.ssh.enabled }}
-            - name: ssh
-              mountPath: {{ .Values.ssh.mountPath }}
-              readOnly: true
-            {{- end }}
-            {{- if .Values.nodeAgent.enabled }}
             - name: node-agent-auth
               mountPath: /var/run/draino-node-agent
               readOnly: true
-            {{- end }}
-          {{- end }}
-      {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled .Values.nodeAgent.enabled }}
       volumes:
         {{- if .Values.tmpVolume.enabled }}
         - name: tmp
           emptyDir: {}
         {{- end }}
-        {{- if .Values.ssh.enabled }}
-        - name: ssh
-          secret:
-            secretName: {{ .Values.ssh.secretName | quote }}
-        {{- end }}
-        {{- if .Values.nodeAgent.enabled }}
         - name: node-agent-auth
           secret:
             secretName: {{ include "draino.nodeAgentSecretName" . }}
-        {{- end }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

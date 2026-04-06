@@ -1,4 +1,3 @@
-{{- if .Values.nodeAgent.enabled -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -23,4 +22,3 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "draino.fullname" . }}
-{{- end -}}

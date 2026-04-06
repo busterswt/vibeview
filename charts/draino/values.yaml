@@ -26,7 +26,6 @@ service:
   targetPort: 8000
 
 nodeAgent:
-  enabled: true
   port: 8443
   labelSelector: ""
   podAnnotations: {}
@@ -99,11 +98,6 @@ extraEnv: []
 
 auditLog:
   path: /tmp/draino-audit.log
-
-ssh:
-  enabled: false
-  secretName: ""
-  mountPath: /home/draino/.ssh
 
 tmpVolume:
   enabled: true

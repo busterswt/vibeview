@@ -7,7 +7,7 @@ This chart deploys the Draino web UI.
 - `replicaCount=1` because login sessions are stored in-process
 - `gateway.enabled=true`
 - `service.type=ClusterIP`
-- `nodeAgent.enabled=true` for reboot support via a node-local HTTPS agent
+- node-local HTTPS reboot agent enabled for host actions and inspection
 
 ## Install
 
@@ -88,22 +88,7 @@ By default the DaemonSet is scheduled only on nodes labeled with one of:
 
 This intentionally excludes generic worker nodes unless you override `nodeAgent.affinity`.
 
-This is materially safer than mounting a single SSH private key into the web pod, but it
-is still a privileged design because the agent can reboot its host.
-
-Legacy SSH mode remains available only as a fallback:
-
-```bash
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
-  --create-namespace \
-  --set nodeAgent.enabled=false \
-  --set ssh.enabled=true \
-  --set ssh.secretName=draino-ssh
-```
-
-That fallback is intentionally discouraged. Reusing one SSH private key across all nodes
-gives the web pod a very large blast radius if it is compromised.
+This is still a privileged design because the agent can reboot its host.
 
 ## External hostname
 

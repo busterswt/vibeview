@@ -619,14 +619,14 @@ class DrainoApp(App):
     # ── etcd helpers ──────────────────────────────────────────────────────────
 
     def _check_etcd_health_bg(self) -> None:
-        """SSH-check etcd service on all etcd nodes and refresh the workflow view."""
+        """Check etcd service on all etcd nodes and refresh the workflow view."""
         for state in list(self.node_states.values()):
             if state.is_etcd:
                 state.etcd_healthy = k8s_ops.check_etcd_service(state.k8s_name, state.hypervisor)
         self.call_from_thread(self._refresh_workflow)
 
     def _etcd_reboot_preflight(self, node_name: str) -> None:
-        """Check etcd quorum health via SSH; push confirm dialog or block."""
+        """Check etcd quorum health; push confirm dialog or block."""
         etcd_states   = [s for s in self.node_states.values() if s.is_etcd]
         etcd_total    = len(etcd_states)
         quorum_needed = (etcd_total // 2) + 1

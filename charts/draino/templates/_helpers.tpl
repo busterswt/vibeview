@@ -51,11 +51,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Service account name.
 */}}
 {{- define "draino.serviceAccountName" -}}
-{{- if or .Values.serviceAccount.create .Values.nodeAgent.enabled -}}
 {{- default (include "draino.fullname" .) .Values.serviceAccount.name -}}
-{{- else -}}
-{{- default "default" .Values.serviceAccount.name -}}
-{{- end -}}
 {{- end -}}
 
 {{/*

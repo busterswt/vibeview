@@ -10,7 +10,7 @@ plain-YAML reference equivalent.
 - `draino --web` already exposes the browser UI over HTTP/WebSockets.
 - Browser users provide Kubernetes and OpenStack credentials at login, so the pod does not need broad ambient cluster or OpenStack credentials.
 - Session state is stored in-process, so start with `replicas: 1`. If you later scale out, you will need sticky sessions or an external session store.
-- Reboot now uses a node-local HTTPS agent deployed as a DaemonSet, rather than direct SSH from the web pod.
+- Reboot now uses a node-local HTTPS agent deployed as a DaemonSet.
 
 ## Build and push
 
@@ -168,7 +168,7 @@ Operational implications:
 
 - each node gets one reboot-agent pod
 - the agent can reboot only the node it runs on
-- the web pod no longer needs a shared SSH private key for normal reboot support
+- the web pod does not use SSH for reboot or host inspection
 - the chart creates the internal TLS/token Secret automatically
 
 This is still a sensitive design because the agent is privileged. Restrict who can
@@ -183,4 +183,4 @@ For a more complete design outline, see
 - The chart supports this by creating an `HTTPRoute` and attaching it to an existing shared `Gateway`.
 - The app needs `kubectl` for drain operations. The Docker image includes it.
 - OVN inspection endpoints call `kubectl ko nbctl ...`. The Docker image now includes `kubectl-ko`, so no separate plugin mount is required.
-- Reboot support defaults to the node-local HTTPS agent. SSH is now a legacy fallback only.
+- Reboot support relies on the node-local HTTPS agent.
