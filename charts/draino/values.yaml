@@ -34,7 +34,30 @@ nodeAgent:
   resources: {}
   nodeSelector: {}
   tolerations: []
-  affinity: {}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: openstack-compute-node
+                operator: In
+                values:
+                  - enabled
+          - matchExpressions:
+              - key: openstack-network-node
+                operator: In
+                values:
+                  - enabled
+          - matchExpressions:
+              - key: openstack-control-plane
+                operator: In
+                values:
+                  - enabled
+          - matchExpressions:
+              - key: openstack-storage-node
+                operator: In
+                values:
+                  - enabled
   securityContext:
     privileged: true
     allowPrivilegeEscalation: true

@@ -74,10 +74,19 @@ that agent over HTTPS after the node has already been cordoned and drained.
 
 Default behavior:
 
-- one privileged agent pod per node
+- one privileged agent pod per labeled OpenStack infrastructure node
 - one headless Service for per-node HTTPS discovery
 - one generated Secret containing the agent TLS material and bearer token
 - the web pod uses in-cluster RBAC only to find the correct agent pod for the selected node
+
+By default the DaemonSet is scheduled only on nodes labeled with one of:
+
+- `openstack-compute-node=enabled`
+- `openstack-network-node=enabled`
+- `openstack-control-plane=enabled`
+- `openstack-storage-node=enabled`
+
+This intentionally excludes generic worker nodes unless you override `nodeAgent.affinity`.
 
 This is materially safer than mounting a single SSH private key into the web pod, but it
 is still a privileged design because the agent can reboot its host.
