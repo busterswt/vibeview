@@ -264,8 +264,14 @@ class DrainoServer:
             self._push({"type": "log", "node": "-", "message": "Refreshing node list…", "color": "dim"})
         threading.Thread(target=self._load_nodes_bg, args=(cached_nodes, silent), daemon=True).start()
 
-    def _apply_k8s_nodes(self, nodes: list[dict]) -> None:
+    def _apply_k8s_nodes(self, nodes: list[dict]) -> bool:
         self._last_k8s_nodes = nodes
+        previous_names = set(self.node_states)
+        current_names = {nd["name"] for nd in nodes}
+
+        for removed_name in previous_names - current_names:
+            self.node_states.pop(removed_name, None)
+            self._host_signal_refresh_at.pop(removed_name, None)
 
         for nd in nodes:
             name     = nd["name"]
@@ -281,8 +287,18 @@ class DrainoServer:
             if ready_since is not None:
                 state.uptime = format_uptime(ready_since)
 
-        # Push K8s-only view immediately so the page shows nodes fast.
-        self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
+        return previous_names != current_names
+
+    def _push_inventory_state(self, force_full_state: bool = False) -> None:
+        if force_full_state:
+            self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
+            return
+        for node_name, state in self.node_states.items():
+            self._push({
+                "type": "state_update",
+                "node": node_name,
+                "data": _serialise(state),
+            })
 
     def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
         nodes = cached_nodes
@@ -293,7 +309,9 @@ class DrainoServer:
                 self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
                 return
 
-        self._apply_k8s_nodes(nodes)
+        membership_changed = self._apply_k8s_nodes(nodes)
+        # Push K8s-only view immediately so the page shows nodes fast.
+        self._push_inventory_state(force_full_state=membership_changed)
 
         def _os_log(msg: str) -> None:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})
@@ -331,7 +349,7 @@ class DrainoServer:
                 state.reboot_required = bool(signals.get("reboot_required", False))
                 self._host_signal_refresh_at[name] = now
 
-        self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
+        self._push_inventory_state(force_full_state=membership_changed)
         if not silent:
             self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
 

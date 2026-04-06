@@ -361,3 +361,56 @@ def test_load_nodes_bg_refreshes_host_signals_again_after_ttl(monkeypatch, tmp_p
     server._load_nodes_bg(cached_nodes=nodes, silent=True)
 
     assert signal_calls == [("node-1", "hv-1"), ("node-1", "hv-1")]
+
+
+def test_load_nodes_bg_uses_state_updates_when_membership_is_unchanged(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server.node_states["node-1"] = NodeState(k8s_name="node-1", hypervisor="hv-1")
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    pushed: list[dict] = []
+
+    monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(server, "_push", pushed.append)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert [msg["type"] for msg in pushed] == ["state_update", "state_update"]
+    assert all(msg["node"] == "node-1" for msg in pushed)
+
+
+def test_load_nodes_bg_uses_full_state_when_membership_changes(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server.node_states["node-old"] = NodeState(k8s_name="node-old", hypervisor="hv-old")
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    pushed: list[dict] = []
+
+    monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(server, "_push", pushed.append)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert [msg["type"] for msg in pushed] == ["full_state", "full_state"]
+    assert "node-old" not in server.node_states
+    assert "node-1" in server.node_states
