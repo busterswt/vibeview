@@ -18,7 +18,8 @@ and a browser-based web UI (powered by FastAPI + WebSockets).
 - **Quick-drain shortcut** — cordon + K8s pod eviction only, skipping OpenStack steps
 - **Undrain / re-enable** — uncordon and re-enable Nova compute in one action
 - **etcd quorum awareness** — identifies etcd nodes, checks peer health before reboot,
-  and blocks a reboot if it would break quorum
+  and blocks a reboot if it would break quorum. This requires etcd nodes to be labeled
+  with `node-role.kubernetes.io/etcd`
 - **Live pod view** — lists all pods on the selected node with status, restarts, and age;
   Succeeded pods hidden by default with a toggle
 - **Pre-flight instance preview** — shows VMs and Amphora instances on a compute node
@@ -56,6 +57,8 @@ Requires Python 3.11+.
 
 - SSH access from the machine running draino to each hypervisor (used for etcd health
   checks and issuing reboots)
+- etcd nodes must be labeled with `node-role.kubernetes.io/etcd` or Draino cannot
+  identify them for quorum-aware reboot protection
 
 ### Terminal UI auth
 
@@ -278,6 +281,7 @@ Reverses a cordon/disable.
 
 Issues a reboot after evacuation is complete.  For etcd nodes, peer health of all etcd
 peers is checked first; the reboot is blocked if it would reduce the cluster below quorum.
+This protection depends on the node carrying the `node-role.kubernetes.io/etcd` label.
 
 In the web UI, reboot is only available to authenticated sessions with the OpenStack
 `admin` role.
