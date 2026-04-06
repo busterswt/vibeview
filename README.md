@@ -149,7 +149,7 @@ docker push registry.example.com/operations/draino:0.1.0
 Notes:
 
 - The image includes `kubectl`, which is required for drain operations.
-- The image includes `ssh`, which is required for reboot and several host-inspection flows.
+- The image includes `ssh`, which is still used for several host-inspection flows and legacy reboot fallback mode.
 - The web UI keeps login sessions in-process, so production deployment should start with a single replica unless you add sticky sessions or externalise session storage.
 - OVN inspection endpoints rely on `kubectl ko`; if you use those views in-cluster, also provide the `ko` plugin in the image or via a mounted binary.
 
@@ -163,16 +163,15 @@ The intended deployment pattern is:
 - one `Deployment` replica for the web server
 - one `ClusterIP` `Service`
 - one `HTTPRoute` attached to Envoy Gateway for external user access
-- optional mounted SSH secret for reboot support
+- one node-local reboot-agent `DaemonSet` for reboot support
 
 This chart is Gateway API only and is intended for environments that expose applications
 through Envoy Gateway.
 
-If you enable reboot support, the documented Secret name is `draino-ssh`. Using one SSH
-private key that is trusted across all nodes is not recommended. It is a temporary
-bootstrap option with high blast radius. Prefer a node-local reboot agent, short-lived
-credentials, or an external maintenance service over a long-lived shared SSH key in a
-Kubernetes Secret.
+The default reboot path now uses a node-local HTTPS agent instead of a shared SSH key in
+the web pod. Legacy SSH reboot support remains available only as a fallback, and the
+documented Secret name for that mode is `draino-ssh`. Using one SSH private key that is
+trusted across all nodes is not recommended.
 
 The node-local agent design is documented in
 `docs/node-local-reboot-agent.md`.

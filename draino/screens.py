@@ -38,7 +38,7 @@ class ConfirmRebootScreen(ModalScreen):
             yield Label("[bold red]⚠  REBOOT NODE[/bold red]")
             yield Label(f"[bold]{self._node_name}[/bold]")
             yield Label("")
-            yield Label("This will SSH into the node and issue [bold]sudo reboot[/bold].")
+            yield Label("This will send a reboot request to the node-local agent on the host.")
             yield Label("Downtime will be measured until K8s reports the node Ready again.")
             yield Label("")
             yield Label("Type [bold]YES[/bold] and press Enter to confirm:")

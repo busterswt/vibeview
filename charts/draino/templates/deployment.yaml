@@ -19,7 +19,7 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "draino.serviceAccountName" . }}
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      automountServiceAccountToken: {{ or .Values.serviceAccount.automountServiceAccountToken .Values.nodeAgent.enabled }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -58,15 +58,33 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.extraEnv }}
+          {{- if or .Values.nodeAgent.enabled .Values.extraEnv }}
           env:
+            {{- if .Values.nodeAgent.enabled }}
+            - name: DRAINO_REBOOT_BACKEND
+              value: node-agent
+            - name: DRAINO_NODE_AGENT_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: DRAINO_NODE_AGENT_SERVICE_NAME
+              value: {{ include "draino.nodeAgentName" . | quote }}
+            - name: DRAINO_NODE_AGENT_LABEL_SELECTOR
+              value: {{ default (printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=node-agent" (include "draino.name" .) .Release.Name) .Values.nodeAgent.labelSelector | quote }}
+            - name: DRAINO_NODE_AGENT_PORT
+              value: {{ .Values.nodeAgent.port | quote }}
+            - name: DRAINO_NODE_AGENT_CA_FILE
+              value: /var/run/draino-node-agent/ca.crt
+            - name: DRAINO_NODE_AGENT_TOKEN_FILE
+              value: /var/run/draino-node-agent/token
+            {{- end }}
+          {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled }}
+          {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled .Values.nodeAgent.enabled }}
           volumeMounts:
             {{- if .Values.tmpVolume.enabled }}
             - name: tmp
@@ -77,8 +95,13 @@ spec:
               mountPath: {{ .Values.ssh.mountPath }}
               readOnly: true
             {{- end }}
+            {{- if .Values.nodeAgent.enabled }}
+            - name: node-agent-auth
+              mountPath: /var/run/draino-node-agent
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled }}
+      {{- if or .Values.tmpVolume.enabled .Values.ssh.enabled .Values.nodeAgent.enabled }}
       volumes:
         {{- if .Values.tmpVolume.enabled }}
         - name: tmp
@@ -88,6 +111,11 @@ spec:
         - name: ssh
           secret:
             secretName: {{ .Values.ssh.secretName | quote }}
+        {{- end }}
+        {{- if .Values.nodeAgent.enabled }}
+        - name: node-agent-auth
+          secret:
+            secretName: {{ include "draino.nodeAgentSecretName" . }}
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}

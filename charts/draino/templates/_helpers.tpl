@@ -51,9 +51,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Service account name.
 */}}
 {{- define "draino.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create -}}
+{{- if or .Values.serviceAccount.create .Values.nodeAgent.enabled -}}
 {{- default (include "draino.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Node agent resource names.
+*/}}
+{{- define "draino.nodeAgentName" -}}
+{{- printf "%s-node-agent" (include "draino.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "draino.nodeAgentSecretName" -}}
+{{- printf "%s-node-agent-auth" (include "draino.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

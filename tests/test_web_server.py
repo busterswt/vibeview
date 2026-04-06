@@ -233,3 +233,32 @@ def test_reboot_request_requires_admin_role(tmp_path):
         "message": "Reboot requires the OpenStack 'admin' role.",
         "color": "warn",
     }]
+
+
+def test_reboot_request_requires_node_to_be_drained(tmp_path):
+    server = web_server.DrainoServer(
+        role_names=["admin"],
+        audit_log=str(tmp_path / "audit.log"),
+    )
+    state = NodeState(
+        k8s_name="node-1",
+        hypervisor="hv-1",
+        is_compute=True,
+        k8s_cordoned=True,
+        compute_status="disabled",
+        vm_count=2,
+        amphora_count=0,
+    )
+    server.node_states["node-1"] = state
+
+    pushed: list[dict] = []
+    server._push = pushed.append
+
+    server.action_reboot_request("node-1")
+
+    assert pushed == [{
+        "type": "log",
+        "node": "node-1",
+        "message": "Compute node must be drained of VMs and pods before reboot.",
+        "color": "warn",
+    }]

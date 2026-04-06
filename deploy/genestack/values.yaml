@@ -16,6 +16,9 @@ gateway:
   hostnames:
     - draino.example.com
 
+nodeAgent:
+  enabled: true
+
 ssh:
   enabled: false
   secretName: draino-ssh

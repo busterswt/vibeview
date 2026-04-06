@@ -1,0 +1,94 @@
+{{- if .Values.nodeAgent.enabled -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "draino.nodeAgentName" . }}
+  labels:
+    {{- include "draino.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node-agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "draino.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node-agent
+  template:
+    metadata:
+      labels:
+        {{- include "draino.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node-agent
+      {{- with .Values.nodeAgent.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      hostPID: {{ .Values.nodeAgent.hostPID }}
+      automountServiceAccountToken: false
+      subdomain: {{ include "draino.nodeAgentName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: node-agent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - draino
+          args:
+            - --node-agent
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.nodeAgent.port | quote }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.nodeAgent.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+          securityContext:
+            {{- toYaml .Values.nodeAgent.securityContext | nindent 12 }}
+          env:
+            - name: DRAINO_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DRAINO_NODE_AGENT_TOKEN_FILE
+              value: /var/run/draino-node-agent/token
+            - name: DRAINO_NODE_AGENT_TLS_CERT_FILE
+              value: /var/run/draino-node-agent/tls.crt
+            - name: DRAINO_NODE_AGENT_TLS_KEY_FILE
+              value: /var/run/draino-node-agent/tls.key
+          {{- with .Values.nodeAgent.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: node-agent-auth
+              mountPath: /var/run/draino-node-agent
+              readOnly: true
+      volumes:
+        - name: node-agent-auth
+          secret:
+            secretName: {{ include "draino.nodeAgentSecretName" . }}
+      {{- with .Values.nodeAgent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeAgent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeAgent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end -}}

@@ -25,6 +25,24 @@ service:
   port: 80
   targetPort: 8000
 
+nodeAgent:
+  enabled: true
+  port: 8443
+  labelSelector: ""
+  podAnnotations: {}
+  hostPID: true
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  securityContext:
+    privileged: true
+    allowPrivilegeEscalation: true
+    readOnlyRootFilesystem: false
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+
 gateway:
   enabled: true
   gatewayClassName: envoy-gateway-class

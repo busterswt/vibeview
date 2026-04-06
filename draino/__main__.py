@@ -9,6 +9,7 @@ def main() -> None:
         prog="draino",
         description="Drain OpenStack hypervisors and K8s nodes before a reboot.",
     )
+    mode = parser.add_mutually_exclusive_group()
     parser.add_argument(
         "--cloud",
         metavar="NAME",
@@ -27,10 +28,15 @@ def main() -> None:
         default=None,
         help="Path for the compliance audit log (default: ~/.draino/audit.log)",
     )
-    parser.add_argument(
+    mode.add_argument(
         "--web",
         action="store_true",
         help="Launch the web UI instead of the TUI (requires draino[web])",
+    )
+    mode.add_argument(
+        "--node-agent",
+        action="store_true",
+        help="Launch the node-local reboot agent instead of the TUI (requires draino[web])",
     )
     parser.add_argument(
         "--host",
@@ -50,9 +56,9 @@ def main() -> None:
     if args.web:
         try:
             from .web.server import run as web_run
-        except ImportError:
+        except ImportError as exc:
             print("Web UI requires extra dependencies: pip install 'draino[web]'")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
         web_run(
             cloud=args.cloud,
             context=args.context,
@@ -60,6 +66,15 @@ def main() -> None:
             host=args.host,
             port=args.port,
         )
+        return
+
+    if args.node_agent:
+        try:
+            from .node_agent import run as node_agent_run
+        except ImportError as exc:
+            print("Node agent requires extra dependencies: pip install 'draino[web]'")
+            raise SystemExit(1) from exc
+        node_agent_run(host=args.host, port=args.port)
         return
 
     from .app import DrainoApp

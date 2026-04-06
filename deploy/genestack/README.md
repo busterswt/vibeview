@@ -10,7 +10,7 @@ plain-YAML reference equivalent.
 - `draino --web` already exposes the browser UI over HTTP/WebSockets.
 - Browser users provide Kubernetes and OpenStack credentials at login, so the pod does not need broad ambient cluster or OpenStack credentials.
 - Session state is stored in-process, so start with `replicas: 1`. If you later scale out, you will need sticky sessions or an external session store.
-- Reboot and several hardware inspection paths use `ssh` from the container to the target node, so the pod must be able to reach node management addresses and have a suitable SSH key/config.
+- Reboot now uses a node-local HTTPS agent deployed as a DaemonSet, rather than direct SSH from the web pod.
 
 ## Build and push
 
@@ -34,7 +34,6 @@ Update these fields first:
 - image tag
 - Gateway parent reference name and namespace
 - external hostname
-- optional SSH secret name
 
 Then deploy with Helm using the Genestack override file:
 
@@ -159,39 +158,21 @@ and those route manifests are applied with:
 kubectl apply -f /etc/genestack/gateway-api/routes
 ```
 
-## SSH secret for reboot support
+## Node-local reboot agent
 
-If you want the web UI to issue reboots, create a Secret named `draino-ssh` in the
-`draino` namespace:
+The Helm chart deploys a node-local reboot agent by default. That agent runs as a
+privileged DaemonSet and listens on HTTPS inside the cluster. Draino only triggers the
+reboot after the node has already been cordoned and drained.
 
-```bash
-kubectl -n draino create secret generic draino-ssh \
-  --from-file=id_rsa=/path/to/private_key \
-  --from-file=known_hosts=/path/to/known_hosts
-```
+Operational implications:
 
-Then enable it in
-`/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`:
+- each node gets one reboot-agent pod
+- the agent can reboot only the node it runs on
+- the web pod no longer needs a shared SSH private key for normal reboot support
+- the chart creates the internal TLS/token Secret automatically
 
-```yaml
-ssh:
-  enabled: true
-  secretName: draino-ssh
-```
-
-The secret is mounted at `/home/draino/.ssh` inside the pod. The remote SSH account
-must be able to reach all target nodes and must be permitted to run `sudo reboot`.
-
-This is insecure if the same private key is trusted on every node. It creates a single
-credential with broad node-level access and high blast radius. Use it only as a
-temporary operational shortcut and treat the Secret as highly sensitive.
-
-Better approaches:
-
-- use a node-local reboot agent or privileged DaemonSet instead of direct SSH from the web pod
-- use short-lived SSH certificates or other ephemeral credentials instead of one shared private key
-- scope credentials per node or per host group with restricted `sudoers`
-- move reboot execution into an external automation service and let Draino call that service
+This is still a sensitive design because the agent is privileged. Restrict who can
+change the chart, read the generated Secret, or reach the agent over the cluster network.
 
 For a more complete design outline, see
 `docs/node-local-reboot-agent.md`.
@@ -202,4 +183,4 @@ For a more complete design outline, see
 - The chart supports this by creating an `HTTPRoute` and attaching it to an existing shared `Gateway`.
 - The app needs `kubectl` for drain operations. The Docker image includes it.
 - OVN inspection endpoints call `kubectl ko nbctl ...`. If your Genestack operators use the `ko` plugin, mount or bake that plugin into the image too. Core drain/evacuation workflows do not depend on it.
-- Reboot support uses the `draino-ssh` Secret mounted at `/home/draino/.ssh` when `ssh.enabled=true`.
+- Reboot support defaults to the node-local HTTPS agent. SSH is now a legacy fallback only.

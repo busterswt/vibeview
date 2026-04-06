@@ -47,14 +47,14 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import FileResponse
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from .. import worker
 from ..audit import AuditLogger
 from ..models import NodePhase, NodeState
 from ..operations import k8s_ops, openstack_ops
+from ..reboot import is_ready_for_reboot
 from ..render import format_uptime
 
 _STATIC = Path(__file__).parent / "static"
@@ -439,8 +439,9 @@ class DrainoServer:
         state = self.node_states.get(node_name)
         if not state:
             return
-        if state.phase in (NodePhase.REBOOTING, NodePhase.RUNNING, NodePhase.UNDRAINING):
-            self._push({"type": "log", "node": node_name, "message": "Cannot reboot while operation is in progress.", "color": "warn"})
+        reboot_ready, detail = is_ready_for_reboot(state)
+        if not reboot_ready:
+            self._push({"type": "log", "node": node_name, "message": detail, "color": "warn"})
             return
 
         if state.is_etcd:

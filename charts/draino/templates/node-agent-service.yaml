@@ -1,0 +1,19 @@
+{{- if .Values.nodeAgent.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "draino.nodeAgentName" . }}
+  labels:
+    {{- include "draino.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node-agent
+spec:
+  clusterIP: None
+  selector:
+    {{- include "draino.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: node-agent
+  ports:
+    - name: https
+      port: {{ .Values.nodeAgent.port }}
+      targetPort: https
+      protocol: TCP
+{{- end -}}

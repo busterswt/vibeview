@@ -8,11 +8,12 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import Button, DataTable, Footer, Header, RichLog, Static
 
-from .audit import AuditLogger
-from .models import NodePhase, NodeState, StepStatus
-from .operations import k8s_ops, openstack_ops
-from .screens import ConfirmRebootScreen
 from . import render, worker
+from .audit import AuditLogger
+from .models import NodePhase, NodeState
+from .operations import k8s_ops, openstack_ops
+from .reboot import is_ready_for_reboot
+from .screens import ConfirmRebootScreen
 
 # ── Column keys — compute table ───────────────────────────────────────────────
 _COL_NODE   = "col_node"
@@ -584,6 +585,11 @@ class DrainoApp(App):
             )
             return
 
+        reboot_ready, detail = is_ready_for_reboot(state)
+        if not reboot_ready:
+            self._global_log(f"[yellow]{detail}[/yellow]")
+            return
+
         node_name = self.selected_node
 
         if state.is_etcd:
@@ -718,8 +724,9 @@ class DrainoApp(App):
             reboot_btn.label    = "⏻  Reboot Node"
             reboot_btn.disabled = True
         else:
+            reboot_ready = bool(state and is_ready_for_reboot(state)[0])
             reboot_btn.label    = "⏻  Reboot Node"
-            reboot_btn.disabled = False
+            reboot_btn.disabled = not reboot_ready
 
     def _tick_rebooting(self) -> None:
         """Refresh the workflow view every second while any node is rebooting."""

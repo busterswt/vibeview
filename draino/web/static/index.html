@@ -803,9 +803,9 @@ body.no-hints .vmware-ref-card { display: none !important; }
   <div class="modal-box">
     <h2>⚠ Reboot Node</h2>
     <div class="modal-node" id="modal-node-name"></div>
-    <p>This will SSH into the node and issue <strong>sudo reboot</strong>.</p>
+    <p>This will send a reboot request to the node-local agent on the selected host.</p>
     <p>Downtime is measured until K8s reports the node Ready again.</p>
-    <label>Type <strong>YES</strong> and press Enter to confirm:</label>
+    <label>Type <strong>YES</strong> and click Reboot to confirm:</label>
     <input id="modal-input" type="text" placeholder="YES" autocomplete="off">
     <div class="modal-actions">
       <button class="btn" onclick="cancelReboot()">Cancel</button>
@@ -3342,6 +3342,9 @@ function updateActionButtons(nd) {
 
   const phase   = nd.phase;
   const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  const rebootReady = nd.is_compute
+    ? drained && nd.compute_status === 'disabled' && nd.vm_count === 0 && nd.amphora_count === 0
+    : nd.k8s_cordoned;
   const busy    = ['running','rebooting','undraining'].includes(phase);
 
   const evBtn = document.getElementById('bc-evacuate');
@@ -3358,8 +3361,12 @@ function updateActionButtons(nd) {
   drBtn.className   = `btn ${drained && !busy ? 'warning' : ''}`;
 
   rbBtn.textContent = phase === 'rebooting'  ? '⏻ Rebooting…'  : '⏻ Reboot';
-  rbBtn.disabled    = busy || !authInfo?.is_admin;
-  rbBtn.title       = authInfo?.is_admin ? '' : "Requires OpenStack admin role";
+  rbBtn.disabled    = busy || !authInfo?.is_admin || !rebootReady;
+  rbBtn.title       = !authInfo?.is_admin
+    ? "Requires OpenStack admin role"
+    : !rebootReady
+      ? "Reboot is available only after the node has been cordoned and fully drained"
+      : '';
 
   poBtn.disabled = false;
 }

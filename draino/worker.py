@@ -1,12 +1,12 @@
 """Background workflow runners.  Execute entirely in worker threads."""
 from __future__ import annotations
 
-import subprocess
 import time
 from typing import Callable, Optional
 
 from .models import InstanceInfo, NodePhase, NodeState, StepStatus
 from .operations import k8s_ops, openstack_ops
+from .reboot import issue_reboot
 
 UpdateFn  = Callable[[], None]
 LogFn     = Callable[[str], None]
@@ -288,7 +288,7 @@ def run_reboot(
     audit_cb: Optional[AuditCb] = None,
     k8s_auth: Optional[k8s_ops.K8sAuth] = None,
 ) -> None:
-    """Issue a reboot via SSH and track downtime.  Runs in a daemon thread."""
+    """Issue a reboot and track downtime.  Runs in a daemon thread."""
 
     def step_set(key: str, status: StepStatus, detail: str = "") -> None:
         step = state.get_step(key)
@@ -329,30 +329,15 @@ def run_reboot(
     except Exception:
         pass
 
-    # ── Step 1: SSH reboot ────────────────────────────────────────────────
-    step_set("ssh_reboot", StepStatus.RUNNING)
+    # ── Step 1: Trigger reboot ────────────────────────────────────────────
+    step_set("issue_reboot", StepStatus.RUNNING)
     try:
-        subprocess.run(
-            [
-                "ssh",
-                "-o", "ConnectTimeout=10",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                state.hypervisor,
-                "sudo", "reboot",
-            ],
-            timeout=15,
-            capture_output=True,
-        )
-    except subprocess.TimeoutExpired:
-        # SSH drops when the node reboots — this is expected and counts as success.
-        pass
+        issue_reboot(state, log)
     except Exception as exc:
-        abort("ssh_reboot", str(exc))
+        abort("issue_reboot", str(exc))
         return
 
-    log(f"Reboot command sent to '{state.hypervisor}'")
-    step_set("ssh_reboot", StepStatus.SUCCESS)
+    step_set("issue_reboot", StepStatus.SUCCESS)
 
     # ── Step 2: Wait for node to go offline (best-effort) ─────────────────
     # Fast reboots may never register NotReady in K8s (kubelet reconnects

@@ -7,7 +7,7 @@ This chart deploys the Draino web UI.
 - `replicaCount=1` because login sessions are stored in-process
 - `gateway.enabled=true`
 - `service.type=ClusterIP`
-- optional SSH secret mount for reboot support
+- `nodeAgent.enabled=true` for reboot support via a node-local HTTPS agent
 
 ## Install
 
@@ -69,41 +69,32 @@ own `Gateway` objects.
 
 ## Reboot support
 
-If you want in-app reboot support, mount an SSH secret named `draino-ssh`:
+The chart now deploys a node-local reboot agent as a DaemonSet by default. Draino calls
+that agent over HTTPS after the node has already been cordoned and drained.
 
-```bash
-kubectl -n draino create secret generic draino-ssh \
-  --from-file=id_rsa=/path/to/private_key \
-  --from-file=known_hosts=/path/to/known_hosts
-```
+Default behavior:
 
-Then enable the mount in Helm:
+- one privileged agent pod per node
+- one headless Service for per-node HTTPS discovery
+- one generated Secret containing the agent TLS material and bearer token
+- the web pod uses in-cluster RBAC only to find the correct agent pod for the selected node
+
+This is materially safer than mounting a single SSH private key into the web pod, but it
+is still a privileged design because the agent can reboot its host.
+
+Legacy SSH mode remains available only as a fallback:
 
 ```bash
 helm upgrade --install draino ./charts/draino \
   --namespace draino \
   --create-namespace \
-  --set image.repository=ghcr.io/busterswt/draino-claude \
-  --set image.tag=main \
+  --set nodeAgent.enabled=false \
   --set ssh.enabled=true \
   --set ssh.secretName=draino-ssh
 ```
 
-The mounted key must allow SSH from the pod to the target nodes and the remote account
-must be allowed to run `sudo reboot`.
-
-This is intentionally documented as a stopgap, not a preferred design. Reusing one SSH
-private key across all nodes gives the `draino` pod a very large blast radius. If that
-pod, its secret, or an authenticated session is compromised, an attacker may gain broad
-node-level access. Treat `draino-ssh` as highly sensitive, mount it read-only, and
-restrict who can read Secrets in the namespace.
-
-Safer patterns:
-
-- a privileged node-local agent or DaemonSet that exposes only a narrow reboot action
-- SSH certificates or short-lived credentials issued per session instead of one long-lived key
-- per-node or per-role credentials with tight `sudoers` and forced-command restrictions
-- an out-of-band maintenance service or automation job that performs the reboot on behalf of the UI
+That fallback is intentionally discouraged. Reusing one SSH private key across all nodes
+gives the web pod a very large blast radius if it is compromised.
 
 ## External hostname
 
