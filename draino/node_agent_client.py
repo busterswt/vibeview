@@ -76,11 +76,11 @@ def _request_json(
     if not config_data.token_file or not config_data.ca_file:
         raise RuntimeError("node-agent client is not configured with token/CA files")
 
-    pod_dns = _discover_agent_pod_dns(node_name, config_data)
+    pod_host = _discover_agent_pod_host(node_name, config_data)
     token = _read_secret_file(config_data.token_file)
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
-        f"https://{pod_dns}:{config_data.port}{path}",
+        f"https://{pod_host}:{config_data.port}{path}",
         data=body,
         method=method,
         headers={
@@ -89,6 +89,7 @@ def _request_json(
         },
     )
     ssl_context = ssl.create_default_context(cafile=config_data.ca_file)
+    ssl_context.check_hostname = False
 
     try:
         with urllib.request.urlopen(
@@ -104,7 +105,7 @@ def _request_json(
         raise RuntimeError(f"node-agent request failed: {exc.reason}") from exc
 
 
-def _discover_agent_pod_dns(node_name: str, agent_config: NodeAgentConfig) -> str:
+def _discover_agent_pod_host(node_name: str, agent_config: NodeAgentConfig) -> str:
     try:
         config.load_incluster_config()
     except ConfigException as exc:
@@ -122,8 +123,8 @@ def _discover_agent_pod_dns(node_name: str, agent_config: NodeAgentConfig) -> st
             continue
         conditions = pod.status.conditions or []
         ready = any(cond.type == "Ready" and cond.status == "True" for cond in conditions)
-        if ready and pod.metadata and pod.metadata.name:
-            return f"{pod.metadata.name}.{agent_config.service_name}.{agent_config.namespace}.svc"
+        if ready and pod.status and pod.status.pod_ip:
+            return pod.status.pod_ip
 
     raise RuntimeError(f"no ready node-agent pod found for node '{node_name}'")
 

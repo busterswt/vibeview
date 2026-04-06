@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+from draino import node_agent_client
 from draino.operations import k8s_ops
 
 
@@ -63,3 +66,66 @@ def test_check_etcd_service_uses_node_agent(monkeypatch):
     )
 
     assert k8s_ops.check_etcd_service("node-1", "hv-1") is True
+
+
+def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, tmp_path):
+    token_file = tmp_path / "token"
+    ca_file = tmp_path / "ca.crt"
+    token_file.write_text("secret-token", encoding="utf-8")
+    ca_file.write_text("ca", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        node_agent_client,
+        "_discover_agent_pod_host",
+        lambda node_name, cfg: "10.0.0.42",
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps({"active": True, "error": None}).encode("utf-8")
+
+    class FakeSSLContext:
+        def __init__(self):
+            self.check_hostname = True
+
+    ssl_ctx = FakeSSLContext()
+
+    def fake_urlopen(request, timeout=None, context=None):
+        captured["url"] = request.full_url
+        captured["auth"] = request.headers["Authorization"]
+        captured["timeout"] = timeout
+        captured["context"] = context
+        return FakeResponse()
+
+    monkeypatch.setattr(node_agent_client.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(node_agent_client.ssl, "create_default_context", lambda cafile=None: ssl_ctx)
+
+    result = node_agent_client._request_json(
+        "node-1",
+        "GET",
+        "/host/etcd",
+        agent_config=node_agent_client.NodeAgentConfig(
+            namespace="draino",
+            service_name="draino-node-agent",
+            label_selector="app=node-agent",
+            port=8443,
+            ca_file=str(ca_file),
+            token_file=str(token_file),
+            request_timeout=5.0,
+        ),
+    )
+
+    assert result["active"] is True
+    assert captured["url"] == "https://10.0.0.42:8443/host/etcd"
+    assert captured["auth"] == "Bearer secret-token"
+    assert captured["timeout"] == 5.0
+    assert captured["context"] is ssl_ctx
+    assert ssl_ctx.check_hostname is False
