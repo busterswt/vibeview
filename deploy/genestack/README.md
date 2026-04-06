@@ -87,7 +87,7 @@ Example listener fragment for a dedicated Draino hostname:
 Save that as:
 
 ```bash
-/etc/genestack/gateway-api/listeners/draino-listener.json
+/etc/genestack/gateway-api/listeners/draino-https.json
 ```
 
 Then patch the shared gateway, for example:
@@ -95,7 +95,7 @@ Then patch the shared gateway, for example:
 ```bash
 kubectl patch -n envoy-gateway gateway flex-gateway \
   --type='json' \
-  --patch="$(cat /etc/genestack/gateway-api/listeners/draino-listener.json)"
+  --patch="$(cat /etc/genestack/gateway-api/listeners/draino-https.json)"
 ```
 
 Adjust `envoy-gateway`, `flex-gateway`, the listener name, hostname, and TLS secret to
