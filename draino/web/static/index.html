@@ -649,8 +649,9 @@ body.no-hints .vmware-ref-card { display: none !important; }
       <button class="btn"         id="bc-drain"    onclick="actionDrainOrUndrain()">▽ Drain</button>
       <button class="btn"         id="bc-pods"     onclick="actionPods()">⬡ Pods</button>
       <button class="btn danger"  id="bc-reboot"   onclick="actionReboot()">⏻ Reboot</button>
+      <button class="btn"         id="bc-refresh-node" onclick="actionRefreshNode()">↺ Refresh Node</button>
     </div>
-    <button class="btn" id="bc-refresh" onclick="actionRefresh()">⟳ Refresh</button>
+    <button class="btn" id="bc-refresh" onclick="actionRefreshAll()">⟳ Refresh All</button>
   </div>
   <!-- Network / Storage refresh -->
   <div class="bc-actions" id="bc-net-actions" style="display:none">
@@ -1039,7 +1040,7 @@ function prefetchAllNodeDetails() {
   const names = Object.keys(nodes);
   // Stagger fetches 200 ms apart to avoid hammering the server on load
   names.forEach((name, i) => {
-    if (!nodeDetailCache[name]) {
+    if (shouldLoadNodeDetail(name)) {
       setTimeout(() => loadNodeDetail(name), i * 200);
     }
   });
@@ -1340,7 +1341,7 @@ function selectNode(name) {
     if (nd.is_compute && nd.phase === 'idle') wsSend({ action: 'get_preflight', node: name });
   }
   // Load rich node detail if not already cached
-  if (!nodeDetailCache[name]) loadNodeDetail(name);
+  if (shouldLoadNodeDetail(name)) loadNodeDetail(name);
   // Load network config data if Configure tab is active
   if (activeTab === 'configure') _ensureNetworkDataLoaded(name);
   renderInfraDetail();
@@ -1366,6 +1367,11 @@ async function loadNodeDetail(name) {
     nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, error: String(e) };
   }
   if (selectedNode === name && activeTab === 'summary') renderSummaryTab(nodes[name]);
+}
+
+function shouldLoadNodeDetail(name) {
+  const detail = nodeDetailCache[name];
+  return !detail || detail.error;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3416,7 +3422,17 @@ function updateActionButtons(nd) {
 // § ACTIONS → WEBSOCKET
 // ════════════════════════════════════════════════════════════════════════════
 
-function actionRefresh()  { wsSend({ action: 'refresh' }); }
+function actionRefreshNode() {
+  if (!selectedNode) return;
+  delete nodeDetailCache[selectedNode];
+  loadNodeDetail(selectedNode);
+}
+
+function actionRefreshAll()  {
+  Object.keys(nodeDetailCache).forEach((name) => delete nodeDetailCache[name]);
+  if (selectedNode) loadNodeDetail(selectedNode);
+  wsSend({ action: 'refresh' });
+}
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }
 function actionReboot()   { if (selectedNode) wsSend({ action: 'reboot_request', node: selectedNode }); }
 
