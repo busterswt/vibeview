@@ -62,6 +62,7 @@ from ..render import format_uptime
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
 _SESSION_TTL = 60 * 60 * 12
+_OPENSTACK_SUMMARY_TTL = float(os.getenv("DRAINO_OPENSTACK_SUMMARY_TTL", "60"))
 _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -188,6 +189,7 @@ class DrainoServer:
         self.node_states:      dict[str, NodeState] = {}
         self._last_k8s_nodes:  list[dict]           = []
         self._etcd_node_names: set[str]             = set()
+        self._openstack_summary_cache: tuple[float, dict[str, dict]] | None = None
         self._host_signal_refresh_at: dict[str, float] = {}
         self._node_detail_cache: dict[str, tuple[float, dict]] = {}
 
@@ -303,7 +305,20 @@ class DrainoServer:
                 "data": _serialise(state),
             })
 
+    def _get_cached_openstack_summaries(self, now: float, force: bool = False) -> dict[str, dict] | None:
+        if force or self._openstack_summary_cache is None:
+            return None
+        expires_at, payload = self._openstack_summary_cache
+        if now >= expires_at:
+            self._openstack_summary_cache = None
+            return None
+        return payload
+
+    def _set_cached_openstack_summaries(self, summaries: dict[str, dict], now: float) -> None:
+        self._openstack_summary_cache = (now + _OPENSTACK_SUMMARY_TTL, summaries)
+
     def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
+        now = time.time()
         nodes = cached_nodes
         if nodes is None:
             try:
@@ -319,15 +334,17 @@ class DrainoServer:
         def _os_log(msg: str) -> None:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})
 
-        try:
-            summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
-        except Exception as exc:
-            self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
-            return
+        summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
+        if summaries is None:
+            try:
+                summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
+            except Exception as exc:
+                self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
+                return
+            self._set_cached_openstack_summaries(summaries, now=now)
 
         etcd_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
         self._etcd_node_names = etcd_names
-        now = time.time()
 
         for nd in nodes:
             name     = nd["name"]

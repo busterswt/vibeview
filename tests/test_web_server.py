@@ -478,3 +478,65 @@ def test_load_nodes_bg_uses_full_state_when_membership_changes(monkeypatch, tmp_
     assert [msg["type"] for msg in pushed] == ["full_state", "full_state"]
     assert "node-old" not in server.node_states
     assert "node-1" in server.node_states
+
+
+def test_load_nodes_bg_reuses_cached_openstack_summaries_on_silent_refresh(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    summary_calls: list[str] = []
+    now_values = iter([1000.0, 1005.0])
+
+    monkeypatch.setattr(web_server.time, "time", lambda: next(now_values))
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_all_host_summaries",
+        lambda log_cb=None, auth=None: summary_calls.append("called") or {"hv-1": {"is_compute": True, "compute_status": "up", "vm_count": 0, "amphora_count": 0}},
+    )
+    monkeypatch.setattr(server, "_push", lambda msg: None)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert summary_calls == ["called"]
+
+
+def test_load_nodes_bg_manual_refresh_bypasses_cached_openstack_summaries(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    summary_calls: list[str] = []
+    now_values = iter([1000.0, 1005.0])
+
+    monkeypatch.setattr(web_server.time, "time", lambda: next(now_values))
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_all_host_summaries",
+        lambda log_cb=None, auth=None: summary_calls.append("called") or {"hv-1": {"is_compute": True, "compute_status": "up", "vm_count": 0, "amphora_count": 0}},
+    )
+    monkeypatch.setattr(server, "_push", lambda msg: None)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+    server._load_nodes_bg(cached_nodes=nodes, silent=False)
+
+    assert summary_calls == ["called", "called"]
