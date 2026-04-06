@@ -3535,6 +3535,12 @@ setInterval(() => {
   wsSend({ action: 'refresh_preflight', node: selectedNode });
 }, 10000);
 
+// Periodic silent inventory refresh so external node changes like taints
+// show up without manual intervention.
+setInterval(() => {
+  wsSend({ action: 'refresh_silent' });
+}, 15000);
+
 // ════════════════════════════════════════════════════════════════════════════
 // § UTILS
 // ════════════════════════════════════════════════════════════════════════════

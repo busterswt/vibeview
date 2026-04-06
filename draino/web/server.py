@@ -256,9 +256,10 @@ class DrainoServer:
 
     # ── Node loading ──────────────────────────────────────────────────────────
 
-    def start_refresh(self, cached_nodes: Optional[list[dict]] = None) -> None:
-        self._push({"type": "log", "node": "-", "message": "Refreshing node list…", "color": "dim"})
-        threading.Thread(target=self._load_nodes_bg, args=(cached_nodes,), daemon=True).start()
+    def start_refresh(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
+        if not silent:
+            self._push({"type": "log", "node": "-", "message": "Refreshing node list…", "color": "dim"})
+        threading.Thread(target=self._load_nodes_bg, args=(cached_nodes, silent), daemon=True).start()
 
     def _apply_k8s_nodes(self, nodes: list[dict]) -> None:
         self._last_k8s_nodes = nodes
@@ -280,7 +281,7 @@ class DrainoServer:
         # Push K8s-only view immediately so the page shows nodes fast.
         self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
 
-    def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None) -> None:
+    def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
         nodes = cached_nodes
         if nodes is None:
             try:
@@ -325,7 +326,8 @@ class DrainoServer:
             state.reboot_required = bool(signals.get("reboot_required", False))
 
         self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
-        self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
+        if not silent:
+            self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
@@ -1251,6 +1253,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             node   = msg.get("node")
 
             if   action == "refresh":                              server.start_refresh()
+            elif action == "refresh_silent":                       server.start_refresh(silent=True)
             elif action == "evacuate"       and node:             server.action_evacuate(node)
             elif action == "drain_quick"    and node:             server.action_drain_quick(node)
             elif action == "undrain"        and node:             server.action_undrain(node)
