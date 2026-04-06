@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draino — Node Evacuation Manager</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #1a1a2e;
+    --surface:   #16213e;
+    --surface2:  #0f3460;
+    --border:    #2a4a7f;
+    --text:      #e0e0e0;
+    --dim:       #7a8a9a;
+    --green:     #4caf50;
+    --yellow:    #ffc107;
+    --red:       #f44336;
+    --cyan:      #00bcd4;
+    --magenta:   #e040fb;
+    --blue:      #2196f3;
+    --header-bg: #0d1b2a;
+  }
+
+  body {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  #header h1 { font-size: 15px; color: var(--cyan); letter-spacing: 1px; }
+  #header .clock { color: var(--dim); font-size: 12px; }
+  #ws-status { font-size: 11px; display: flex; align-items: center; gap: 6px; }
+  #ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+  #ws-dot.disconnected { background: var(--red); }
+
+  /* ── Main layout ── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ── */
+  #node-panel {
+    width: 560px;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  #compute-section { flex: 1; }
+  #other-section   { max-height: 160px; }
+
+  .section-title {
+    background: var(--surface2);
+    color: var(--text);
+    padding: 4px 12px;
+    font-weight: bold;
+    font-size: 12px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table-scroll { overflow-y: auto; flex: 1; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    background: var(--surface);
+    color: var(--dim);
+    padding: 4px 8px;
+    text-align: left;
+    font-weight: normal;
+    font-size: 11px;
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr {
+    cursor: pointer;
+    border-bottom: 1px solid rgba(42,74,127,0.3);
+  }
+  tbody tr:hover { background: rgba(0,188,212,0.06); }
+  tbody tr.selected { background: rgba(0,188,212,0.14); }
+  tbody td {
+    padding: 5px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 0;
+  }
+
+  .tag-etcd   { color: var(--red); font-weight: bold; font-size: 11px; }
+  .tag-ready  { color: var(--green); }
+  .tag-cordoned { color: var(--dim); }
+  .tag-notready { color: var(--red); }
+
+  .nova-enabled  { color: var(--green); }
+  .nova-disabled { color: var(--yellow); }
+  .nova-down     { color: var(--red); font-weight: bold; }
+  .nova-loading  { color: var(--dim); }
+
+  .phase-idle      { color: var(--text); }
+  .phase-running   { color: var(--yellow); }
+  .phase-complete  { color: var(--green); font-weight: bold; }
+  .phase-error     { color: var(--red); font-weight: bold; }
+  .phase-rebooting { color: var(--magenta); font-weight: bold; }
+  .phase-undraining{ color: var(--cyan); }
+  .phase-cordoned  { color: var(--dim); }
+
+  .num-nonzero { color: var(--cyan); }
+  .num-zero    { color: var(--dim); }
+  .dim         { color: var(--dim); }
+
+  /* ── Right panel ── */
+  #right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #workflow-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #log-panel {
+    height: 130px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  #log-title {
+    background: var(--surface2);
+    padding: 4px 12px;
+    font-weight: bold;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #log-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .log-entry { color: var(--dim); }
+  .log-entry .node-tag { color: var(--cyan); }
+  .log-entry.important { color: var(--text); }
+  .log-entry.success   { color: var(--green); font-weight: bold; }
+  .log-entry.warn      { color: var(--yellow); }
+  .log-entry.error-msg { color: var(--red); }
+
+  /* ── Action bar ── */
+  #action-bar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 14px;
+    border: 1px solid;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: opacity 0.15s, filter 0.15s;
+  }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:not(:disabled):hover { filter: brightness(1.2); }
+
+  .btn-primary  { background: #1565c0; border-color: #1976d2; color: white; }
+  .btn-warning  { background: #e65100; border-color: #ef6c00; color: white; }
+  .btn-default  { background: var(--surface2); border-color: var(--border); color: var(--text); }
+  .btn-danger   { background: #b71c1c; border-color: #c62828; color: white; }
+
+  #action-bar .spacer { flex: 1; }
+  #action-bar .hint { color: var(--dim); font-size: 11px; }
+
+  /* ── Workflow content ── */
+  .wf-header { margin-bottom: 12px; }
+  .wf-node   { font-size: 16px; font-weight: bold; }
+  .wf-badge-etcd { color: var(--red); font-weight: bold; font-size: 13px; margin-left: 8px; }
+  .wf-phase  { font-size: 12px; margin-left: 8px; padding: 2px 8px; border-radius: 3px; }
+  .wf-phase.idle      { background: rgba(224,224,224,0.12); color: var(--text); }
+  .wf-phase.running   { background: rgba(255,193,7,0.15); color: var(--yellow); }
+  .wf-phase.complete  { background: rgba(76,175,80,0.15); color: var(--green); }
+  .wf-phase.error     { background: rgba(244,67,54,0.15); color: var(--red); }
+  .wf-phase.rebooting { background: rgba(224,64,251,0.15); color: var(--magenta); }
+
+  .wf-meta    { color: var(--dim); font-size: 12px; margin-bottom: 16px; }
+
+  .etcd-warning {
+    border: 1px solid rgba(255,193,7,0.3);
+    background: rgba(255,193,7,0.05);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--yellow);
+  }
+  .etcd-warning.danger {
+    border-color: rgba(244,67,54,0.4);
+    background: rgba(244,67,54,0.07);
+    color: var(--red);
+  }
+  .etcd-nodes { color: var(--dim); font-size: 11px; margin-top: 4px; }
+
+  .steps-title   { font-weight: bold; text-decoration: underline; margin-bottom: 8px; font-size: 13px; }
+  .step-row      { display: flex; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 13px; }
+  .step-icon     { width: 14px; flex-shrink: 0; }
+  .step-label    { }
+  .step-detail   { color: var(--dim); font-size: 11px; margin-left: 4px; }
+
+  .step-pending  { color: var(--dim); }
+  .step-running  { color: var(--yellow); }
+  .step-success  { color: var(--green); }
+  .step-failed   { color: var(--red); font-weight: bold; }
+  .step-skipped  { color: var(--dim); }
+
+  .downtime-counter {
+    color: var(--magenta);
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .instance-table { margin-top: 16px; }
+  .instance-table .inst-header { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
+  .inst-row { display: flex; gap: 8px; padding: 2px 0; font-size: 12px; }
+  .inst-name { width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inst-type { width: 70px; color: var(--dim); }
+  .inst-status { width: 90px; color: var(--dim); }
+  .inst-op    { }
+  .op-migrating { color: var(--yellow); }
+  .op-complete  { color: var(--green); }
+  .op-failed    { color: var(--red); font-weight: bold; }
+  .op-queued    { color: var(--dim); }
+
+  .idle-hint { color: var(--dim); font-size: 12px; margin-top: 4px; }
+
+  /* ── Reboot modal ── */
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #modal-overlay.open { display: flex; }
+  #modal-box {
+    background: var(--surface);
+    border: 2px solid var(--red);
+    border-radius: 6px;
+    padding: 24px 28px;
+    width: 460px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  #modal-box h2 { color: var(--red); margin-bottom: 6px; font-size: 15px; }
+  #modal-box .modal-node { font-weight: bold; font-size: 14px; margin-bottom: 14px; }
+  #modal-box p { color: var(--dim); font-size: 12px; margin-bottom: 8px; line-height: 1.6; }
+  #modal-box label { color: var(--text); font-size: 12px; display: block; margin: 14px 0 6px; }
+  #modal-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    outline: none;
+  }
+  #modal-input:focus { border-color: var(--cyan); }
+  #modal-input.error { border-color: var(--red); }
+  #modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+
+  /* ── Scrollbars ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Footer ── */
+  #footer {
+    background: var(--header-bg);
+    border-top: 1px solid var(--border);
+    padding: 3px 14px;
+    font-size: 11px;
+    color: var(--dim);
+    display: flex;
+    gap: 20px;
+    flex-shrink: 0;
+  }
+  #footer span b { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div id="header">
+  <h1>⬡ DRAINO</h1>
+  <div id="ws-status">
+    <div id="ws-dot"></div>
+    <span id="ws-label">Live</span>
+  </div>
+  <div class="clock" id="clock"></div>
+</div>
+
+<!-- ── Main ── -->
+<div id="main">
+
+  <!-- ── Left: node tables ── -->
+  <div id="node-panel">
+
+    <div class="section" id="compute-section">
+      <div class="section-title">  Compute Nodes</div>
+      <div class="table-scroll">
+        <table id="compute-table">
+          <thead>
+            <tr>
+              <th style="width:150px">Node</th>
+              <th style="width:80px">Nova Svc</th>
+              <th style="width:90px">Phase</th>
+              <th style="width:40px">AMP</th>
+              <th style="width:40px">VMs</th>
+              <th style="width:70px">Uptime</th>
+              <th>Kernel</th>
+            </tr>
+          </thead>
+          <tbody id="compute-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section" id="other-section">
+      <div class="section-title">  Other Nodes</div>
+      <div class="table-scroll">
+        <table id="other-table">
+          <thead>
+            <tr>
+              <th style="width:170px">Node</th>
+              <th style="width:50px">Role</th>
+              <th style="width:90px">Status</th>
+              <th style="width:70px">Uptime</th>
+              <th>Kernel</th>
+            </tr>
+          </thead>
+          <tbody id="other-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Right: workflow + log ── -->
+  <div id="right-panel">
+    <div id="workflow-scroll">
+      <div id="workflow-content">
+        <div class="dim" style="margin-top:40px;text-align:center">Select a node from the list to view its status.</div>
+      </div>
+    </div>
+    <div id="log-panel">
+      <div id="log-title">  Event Log</div>
+      <div id="log-view"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Action bar ── -->
+<div id="action-bar">
+  <button class="btn-primary" id="btn-start"   onclick="actionStart()">▶  Start Evacuation</button>
+  <button class="btn-warning" id="btn-drain"   onclick="actionDrainOrUndrain()">▽  Drain Node</button>
+  <button class="btn-default" id="btn-pods"    onclick="actionPods()">⬡  Pods</button>
+  <button class="btn-default" id="btn-refresh" onclick="actionRefresh()">⟳  Refresh Nodes</button>
+  <button class="btn-danger"  id="btn-reboot"  onclick="actionReboot()">⏻  Reboot Node</button>
+  <div class="spacer"></div>
+  <div class="hint">S: Evacuate &nbsp; U: Drain/Undrain &nbsp; Ctrl+R: Reboot &nbsp; R: Refresh &nbsp; Q: Quit</div>
+</div>
+
+<!-- ── Footer ── -->
+<div id="footer">
+  <span><b>s</b> Start Evacuation</span>
+  <span><b>u</b> Drain / Undrain</span>
+  <span><b>p</b> Pods</span>
+  <span><b>r</b> Refresh</span>
+  <span><b>ctrl+r</b> Reboot</span>
+  <span><b>q</b> Quit</span>
+</div>
+
+<!-- ── Reboot confirm modal ── -->
+<div id="modal-overlay">
+  <div id="modal-box">
+    <h2>⚠  REBOOT NODE</h2>
+    <div class="modal-node" id="modal-node-name"></div>
+    <p>This will SSH into the node and issue <b>sudo reboot</b>.</p>
+    <p>Downtime will be measured until K8s reports the node Ready again.</p>
+    <label>Type <b>YES</b> and press Enter to confirm:</label>
+    <input id="modal-input" type="text" placeholder="YES" autocomplete="off">
+    <div id="modal-actions">
+      <button class="btn-default" onclick="closeModal()">Cancel</button>
+      <button class="btn-danger"  onclick="confirmReboot()">Reboot</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Mock data — represents the NodeState objects from the Python backend
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NODES = {
+  "compute-01": {
+    k8s_name: "compute-01", hypervisor: "compute-01.example.com",
+    is_compute: true, is_etcd: false,
+    phase: "idle", k8s_cordoned: false, k8s_ready: true,
+    compute_status: "up", amphora_count: 2, vm_count: 8,
+    uptime: "12d 4h", kernel: "5.15.0-91-generic",
+    steps: [], instances: [],
+  },
+  "compute-02": {
+    k8s_name: "compute-02", hypervisor: "compute-02.example.com",
+    is_compute: true, is_etcd: false,
+    phase: "running", k8s_cordoned: true, k8s_ready: true,
+    compute_status: "disabled", amphora_count: 0, vm_count: 3,
+    uptime: "12d 4h", kernel: "5.15.0-91-generic",
+    steps: [
+      { key: "cordon",         label: "Cordon K8s node",                  status: "success", detail: "" },
+      { key: "disable_nova",   label: "Disable Nova compute service",      status: "success", detail: "" },
+      { key: "list_instances", label: "Enumerate instances on hypervisor", status: "success", detail: "3 VM(s), 0 Amphora" },
+      { key: "migrate_vms",    label: "Live-migrate non-Amphora instances",status: "running", detail: "1/3 done, 0 failed" },
+      { key: "failover_lbs",   label: "Failover Amphora load balancers",   status: "pending", detail: "" },
+      { key: "await_empty",    label: "Wait for hypervisor to empty",      status: "pending", detail: "" },
+      { key: "drain_k8s",      label: "Drain K8s node (evict pods)",       status: "pending", detail: "" },
+    ],
+    instances: [
+      { name: "web-frontend-prod-7f9d",  is_amphora: false, status: "ACTIVE", migration_status: "complete",  failover_status: null },
+      { name: "api-backend-prod-2c1a",   is_amphora: false, status: "ACTIVE", migration_status: "migrating", failover_status: null },
+      { name: "worker-batch-prod-8e3b",  is_amphora: false, status: "ACTIVE", migration_status: "queued",    failover_status: null },
+    ],
+  },
+  "compute-03": {
+    k8s_name: "compute-03", hypervisor: "compute-03.example.com",
+    is_compute: true, is_etcd: false,
+    phase: "idle", k8s_cordoned: false, k8s_ready: true,
+    compute_status: "up", amphora_count: 0, vm_count: 0,
+    uptime: "3d 2h", kernel: "5.15.0-91-generic",
+    steps: [], instances: [],
+  },
+  "compute-04": {
+    k8s_name: "compute-04", hypervisor: "compute-04.example.com",
+    is_compute: true, is_etcd: false,
+    phase: "complete", k8s_cordoned: true, k8s_ready: true,
+    compute_status: "disabled", amphora_count: 0, vm_count: 0,
+    uptime: "14d 7h", kernel: "5.15.0-91-generic",
+    steps: [
+      { key: "cordon",         label: "Cordon K8s node",                  status: "success", detail: "" },
+      { key: "disable_nova",   label: "Disable Nova compute service",      status: "success", detail: "" },
+      { key: "list_instances", label: "Enumerate instances on hypervisor", status: "success", detail: "5 VM(s), 1 Amphora" },
+      { key: "migrate_vms",    label: "Live-migrate non-Amphora instances",status: "success", detail: "5/5 migrated" },
+      { key: "failover_lbs",   label: "Failover Amphora load balancers",   status: "success", detail: "1 LB(s) failed over" },
+      { key: "await_empty",    label: "Wait for hypervisor to empty",      status: "success", detail: "Hypervisor empty" },
+      { key: "drain_k8s",      label: "Drain K8s node (evict pods)",       status: "success", detail: "" },
+    ],
+    instances: [],
+  },
+  "control-01": {
+    k8s_name: "control-01", hypervisor: "control-01.example.com",
+    is_compute: false, is_etcd: true,
+    phase: "idle", k8s_cordoned: false, k8s_ready: true,
+    compute_status: null, amphora_count: null, vm_count: null,
+    uptime: "45d 3h", kernel: "5.15.0-91-generic",
+    etcd_healthy: true,
+    steps: [], instances: [],
+  },
+  "control-02": {
+    k8s_name: "control-02", hypervisor: "control-02.example.com",
+    is_compute: false, is_etcd: true,
+    phase: "idle", k8s_cordoned: false, k8s_ready: true,
+    compute_status: null, amphora_count: null, vm_count: null,
+    uptime: "45d 3h", kernel: "5.15.0-91-generic",
+    etcd_healthy: true,
+    steps: [], instances: [],
+  },
+  "control-03": {
+    k8s_name: "control-03", hypervisor: "control-03.example.com",
+    is_compute: false, is_etcd: true,
+    phase: "rebooting", k8s_cordoned: false, k8s_ready: false,
+    compute_status: null, amphora_count: null, vm_count: null,
+    uptime: "0m", kernel: "5.15.0-91-generic",
+    etcd_healthy: false,
+    reboot_start: Date.now() - 47000,
+    steps: [
+      { key: "ssh_reboot",    label: "Issue reboot command via SSH",    status: "success", detail: "" },
+      { key: "await_offline", label: "Wait for node to go offline",     status: "success", detail: "Node offline" },
+      { key: "await_online",  label: "Wait for node to come back online",status: "running", detail: "47s elapsed" },
+    ],
+    instances: [],
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App state
+// ─────────────────────────────────────────────────────────────────────────────
+
+let selectedNode = null;
+let pendingRebootNode = null;
+let showPods = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clock
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateClock() {
+  document.getElementById("clock").textContent =
+    new Date().toLocaleTimeString("en-GB", { hour12: false });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Table rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+function novaCell(s) {
+  if (!s) return `<span class="nova-loading">…</span>`;
+  if (s === "up")       return `<span class="nova-enabled">enabled</span>`;
+  if (s === "disabled") return `<span class="nova-disabled">disabled</span>`;
+  if (s === "down")     return `<span class="nova-down">DOWN</span>`;
+  return `<span class="dim">${s}</span>`;
+}
+
+function phaseCell(node) {
+  if (node.phase === "idle") {
+    if (node.k8s_cordoned) return `<span class="phase-cordoned">CORDONED</span>`;
+    if (!node.k8s_ready)   return `<span class="phase-notready">NOT READY</span>`;
+    return `<span class="phase-idle">IDLE</span>`;
+  }
+  const map = {
+    running:    ["phase-running",    "RUNNING"],
+    complete:   ["phase-complete",   "COMPLETE"],
+    error:      ["phase-error",      "ERROR"],
+    rebooting:  ["phase-rebooting",  "REBOOTING"],
+    undraining: ["phase-undraining", "UNDRAINING"],
+  };
+  const [cls, label] = map[node.phase] || ["dim", node.phase.toUpperCase()];
+  return `<span class="${cls}">${label}</span>`;
+}
+
+function countCell(n) {
+  if (n === null || n === undefined) return `<span class="dim">…</span>`;
+  return n > 0
+    ? `<span class="num-nonzero">${n}</span>`
+    : `<span class="num-zero">${n}</span>`;
+}
+
+function statusCell(node) {
+  if (node.k8s_cordoned) return `<span class="tag-cordoned">Cordoned</span>`;
+  if (!node.k8s_ready)   return `<span class="tag-notready">Not Ready</span>`;
+  return `<span class="tag-ready">Ready</span>`;
+}
+
+function rebuildTables() {
+  const computeTbody = document.getElementById("compute-tbody");
+  const otherTbody   = document.getElementById("other-tbody");
+  computeTbody.innerHTML = "";
+  otherTbody.innerHTML   = "";
+
+  for (const [name, node] of Object.entries(NODES)) {
+    const sel = name === selectedNode ? "selected" : "";
+    const etcdBadge = node.is_etcd ? ` <span class="tag-etcd">etcd</span>` : "";
+
+    if (node.is_compute) {
+      const tr = document.createElement("tr");
+      tr.className = sel;
+      tr.onclick   = () => selectNode(name);
+      tr.innerHTML = `
+        <td style="width:150px">${name}</td>
+        <td style="width:80px">${novaCell(node.compute_status)}</td>
+        <td style="width:90px">${phaseCell(node)}</td>
+        <td style="width:40px">${countCell(node.amphora_count)}</td>
+        <td style="width:40px">${countCell(node.vm_count)}</td>
+        <td style="width:70px"><span class="dim">${node.uptime}</span></td>
+        <td><span class="dim">${node.kernel}</span></td>`;
+      computeTbody.appendChild(tr);
+    } else {
+      const tr = document.createElement("tr");
+      tr.className = sel;
+      tr.onclick   = () => selectNode(name);
+      tr.innerHTML = `
+        <td style="width:170px">${name}${etcdBadge}</td>
+        <td style="width:50px">${node.is_etcd ? `<span class="tag-etcd">etcd</span>` : ""}</td>
+        <td style="width:90px">${statusCell(node)}</td>
+        <td style="width:70px"><span class="dim">${node.uptime}</span></td>
+        <td><span class="dim">${node.kernel}</span></td>`;
+      otherTbody.appendChild(tr);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workflow panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STEP_ICON  = { pending: "○", running: "◉", success: "✓", failed: "✗", skipped: "—" };
+const OP_COLOR   = { queued: "dim", migrating: "op-migrating", "cold-migrating": "op-migrating",
+                     confirming: "op-migrating", failing_over: "op-migrating",
+                     complete: "op-complete", failed: "op-failed", pending: "dim" };
+
+function renderWorkflow() {
+  const el = document.getElementById("workflow-content");
+  if (!selectedNode) {
+    el.innerHTML = `<div class="dim" style="margin-top:40px;text-align:center">Select a node from the list to view its status.</div>`;
+    return;
+  }
+
+  const node = NODES[selectedNode];
+  if (!node) return;
+
+  const phaseClass = { idle: "idle", running: "running", complete: "complete",
+                       error: "error", rebooting: "rebooting", undraining: "idle" }[node.phase] || "idle";
+  const phaseLabel = node.phase.toUpperCase();
+
+  let html = `<div class="wf-header">
+    <span class="wf-node">${node.k8s_name}</span>`;
+  if (node.is_etcd) html += `<span class="wf-badge-etcd">etcd</span>`;
+  html += `<span class="wf-phase ${phaseClass}">${phaseLabel}</span>
+  </div>`;
+
+  // etcd quorum block
+  if (node.is_etcd) {
+    const peers  = Object.values(NODES).filter(n => n.is_etcd);
+    const total  = peers.length;
+    const quorum = Math.floor(total / 2) + 1;
+    const safeDown = total - quorum;
+    const checked = peers.filter(n => n.etcd_healthy !== undefined);
+    if (!checked.length) {
+      html += `<div class="etcd-warning">
+        ⚠  etcd node — health unknown (will be checked before reboot)
+      </div>`;
+    } else {
+      const healthy   = peers.filter(n => n.etcd_healthy === true).length;
+      const remaining = healthy - (node.etcd_healthy === true ? 1 : 0);
+      const atRisk    = remaining < quorum;
+      const parts     = peers.map(p =>
+        `${p.k8s_name} ${p.etcd_healthy === true ? "✓" : p.etcd_healthy === false ? "✗" : "?"}`
+      ).join("  ·  ");
+      html += `<div class="etcd-warning ${atRisk ? "danger" : ""}">
+        ${atRisk
+          ? `⚠  ETCD QUORUM RISK — ${healthy}/${total} healthy, reboot would leave ${remaining} (need ${quorum})`
+          : `⚠  etcd — ${healthy}/${total} healthy, safe to work on ${safeDown} at a time`}
+        <div class="etcd-nodes">${parts}</div>
+      </div>`;
+    }
+  }
+
+  // Non-compute short path
+  if (!node.is_compute && node.phase !== "undraining" && node.phase !== "rebooting") {
+    const status = node.k8s_cordoned ? "Cordoned" : (!node.k8s_ready ? "Not Ready" : "Ready");
+    html += `<div class="wf-meta">K8s status: ${statusCell(node)}</div>
+    <div class="dim">Non-compute node — no OpenStack evacuation needed.</div>`;
+    if (node.k8s_cordoned) html += `<div class="idle-hint" style="margin-top:8px">Click <b>Undrain Node</b> to uncordon.</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  // Compute meta
+  if (node.is_compute) {
+    html += `<div class="wf-meta">Hypervisor: ${node.hypervisor} &nbsp;|&nbsp; Nova compute: ${novaCell(node.compute_status)}</div>`;
+  }
+
+  // Reboot downtime counter
+  if (node.phase === "rebooting" && node.reboot_start) {
+    const elapsed = Math.floor((Date.now() - node.reboot_start) / 1000);
+    html += `<div class="downtime-counter">⏱  Downtime: ${elapsed}s</div>`;
+  }
+
+  // Steps
+  if (node.steps && node.steps.length) {
+    html += `<div class="steps-title">Workflow Steps</div>`;
+    for (const step of node.steps) {
+      const icon = STEP_ICON[step.status] || "○";
+      html += `<div class="step-row step-${step.status}">
+        <span class="step-icon">${icon}</span>
+        <span class="step-label">${step.label}</span>
+        ${step.detail ? `<span class="step-detail">${step.detail}</span>` : ""}
+      </div>`;
+    }
+    if (node.phase === "idle") {
+      html += `<div class="idle-hint" style="margin-top:10px">✓ Reboot complete — total downtime: 94s</div>`;
+    }
+  } else {
+    html += `<div class="idle-hint">Click <b>Start Evacuation</b> to begin.</div>`;
+    if (node.k8s_cordoned || node.compute_status === "disabled") {
+      html += `<div class="idle-hint">Click <b>Undrain Node</b> to re-enable.</div>`;
+    }
+  }
+
+  // Instance table
+  if (node.instances && node.instances.length) {
+    html += `<div class="instance-table">
+      <div class="steps-title" style="margin-top:16px">Instances</div>
+      <div class="inst-header" style="margin-bottom:6px">
+        <span style="display:inline-block;width:220px">Name</span>
+        <span style="display:inline-block;width:70px">Type</span>
+        <span style="display:inline-block;width:90px">Nova State</span>
+        <span>Op Status</span>
+      </div>`;
+    for (const inst of node.instances) {
+      const itype = inst.is_amphora ? "Amphora" : "VM";
+      const op    = inst.is_amphora ? (inst.failover_status || "pending") : (inst.migration_status || "pending");
+      const opCls = OP_COLOR[op] || "";
+      const nameCls = inst.is_amphora ? "num-nonzero" : "text";
+      html += `<div class="inst-row">
+        <span class="inst-name ${nameCls}">${inst.name}</span>
+        <span class="inst-type">${itype}</span>
+        <span class="inst-status">${inst.status}</span>
+        <span class="inst-op ${opCls}">${op}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Button state
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateButtons() {
+  const node  = selectedNode ? NODES[selectedNode] : null;
+  const phase = node ? node.phase : null;
+
+  const startBtn  = document.getElementById("btn-start");
+  const drainBtn  = document.getElementById("btn-drain");
+  const rebootBtn = document.getElementById("btn-reboot");
+
+  // Evacuation
+  if (phase === "running") {
+    startBtn.textContent = "▶  Evacuating…";
+    startBtn.disabled    = true;
+  } else {
+    startBtn.textContent = "▶  Start Evacuation";
+    startBtn.disabled    = false;
+  }
+
+  // Drain / Undrain
+  const drained = node && (node.k8s_cordoned || node.compute_status === "disabled");
+  if (phase === "undraining") {
+    drainBtn.textContent = "↺  Undraining…";
+    drainBtn.disabled    = true;
+  } else if (phase === "running" || phase === "rebooting") {
+    drainBtn.textContent = drained ? "↺  Undrain Node" : "▽  Drain Node";
+    drainBtn.disabled    = true;
+  } else if (drained) {
+    drainBtn.textContent = "↺  Undrain Node";
+    drainBtn.disabled    = false;
+  } else {
+    drainBtn.textContent = "▽  Drain Node";
+    drainBtn.disabled    = false;
+  }
+
+  // Reboot
+  if (phase === "rebooting") {
+    rebootBtn.textContent = "⏻  Rebooting…";
+    rebootBtn.disabled    = true;
+  } else if (phase === "running" || phase === "undraining") {
+    rebootBtn.textContent = "⏻  Reboot Node";
+    rebootBtn.disabled    = true;
+  } else {
+    rebootBtn.textContent = "⏻  Reboot Node";
+    rebootBtn.disabled    = false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Selection
+// ─────────────────────────────────────────────────────────────────────────────
+
+function selectNode(name) {
+  selectedNode = name;
+  rebuildTables();
+  renderWorkflow();
+  updateButtons();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actions (simulated)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function addLog(msg, cls = "") {
+  const log = document.getElementById("log-view");
+  const ts  = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  const div = document.createElement("div");
+  div.className = `log-entry ${cls}`;
+  div.innerHTML = `[${ts}] ${msg}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function actionRefresh() {
+  addLog("[dim]Refreshing node list…[/dim]");
+  addLog("Refreshing node list…");
+  // Simulate a refresh
+  setTimeout(() => {
+    addLog("Node list refreshed — 4 compute, 3 other", "important");
+    rebuildTables();
+  }, 600);
+}
+
+function actionStart() {
+  if (!selectedNode) { addLog("No node selected.", "warn"); return; }
+  const node = NODES[selectedNode];
+  if (!node.is_compute) { addLog(`${selectedNode} is not a compute node.`, "warn"); return; }
+  if (node.phase === "running") { addLog("Evacuation already in progress.", "warn"); return; }
+  addLog(`Starting evacuation of ${selectedNode}…`, "important");
+}
+
+function actionDrainOrUndrain() {
+  if (!selectedNode) { addLog("No node selected.", "warn"); return; }
+  const node    = NODES[selectedNode];
+  const drained = node.k8s_cordoned || node.compute_status === "disabled";
+  if (drained) {
+    addLog(`Undraining ${selectedNode}…`, "important");
+  } else {
+    addLog(`Draining ${selectedNode}…`, "important");
+    node.phase = "running";
+    node.k8s_cordoned = true;
+    node.compute_status = "disabled";
+    node.steps = [
+      { key: "cordon",       label: "Cordon K8s node",                status: "running", detail: "" },
+      { key: "disable_nova", label: "Disable Nova compute service",    status: "pending", detail: "" },
+      { key: "drain_k8s",    label: "Drain K8s node (evict pods)",     status: "pending", detail: "" },
+    ];
+    rebuildTables();
+    renderWorkflow();
+    updateButtons();
+    // Simulate step progression
+    setTimeout(() => {
+      node.steps[0].status = "success";
+      node.steps[1].status = "running";
+      addLog(`  <span class="node-tag">${selectedNode}</span>  Node '${selectedNode}' cordoned successfully`);
+      renderWorkflow();
+    }, 800);
+    setTimeout(() => {
+      node.steps[1].status = "success";
+      node.steps[2].status = "running";
+      addLog(`  <span class="node-tag">${selectedNode}</span>  Nova compute disabled`);
+      renderWorkflow();
+    }, 1600);
+    setTimeout(() => {
+      node.steps[2].status = "success";
+      node.phase = "idle";
+      addLog(`  <span class="node-tag">${selectedNode}</span>  All pods drained from '${selectedNode}'`);
+      addLog(`✓ '${selectedNode}' drained — cordoned, nova disabled, pods evicted`, "success");
+      rebuildTables();
+      renderWorkflow();
+      updateButtons();
+    }, 2800);
+  }
+}
+
+function actionPods() {
+  showPods = !showPods;
+  const btn = document.getElementById("btn-pods");
+  if (showPods) {
+    btn.textContent = "✕  Close Pods";
+    if (selectedNode) {
+      document.getElementById("workflow-content").innerHTML = `
+        <div style="font-size:15px;font-weight:bold;margin-bottom:12px">
+          ${selectedNode} <span style="color:var(--cyan)">[ PODS ]</span>
+        </div>
+        <div class="dim">Fetching pods…</div>`;
+      setTimeout(() => {
+        document.getElementById("workflow-content").innerHTML = `
+          <div style="font-size:15px;font-weight:bold;margin-bottom:12px">
+            ${selectedNode} <span style="color:var(--cyan)">[ PODS ]</span>
+          </div>
+          <div class="dim" style="margin-bottom:8px">  Namespace           Name                                 Ready  Status       Restarts   Age</div>
+          <div style="margin-bottom:4px">  <span class="dim">kube-system        </span><span>calico-node-xp9d2                       </span><span style="color:var(--green)">1/1   </span><span style="color:var(--green)">Running     </span><span class="dim">0         </span><span style="color:var(--cyan)">12d 4h</span></div>
+          <div style="margin-bottom:4px">  <span class="dim">kube-system        </span><span>kube-proxy-9r7tk                        </span><span style="color:var(--green)">1/1   </span><span style="color:var(--green)">Running     </span><span class="dim">2         </span><span style="color:var(--cyan)">12d 4h</span></div>
+          <div style="margin-bottom:4px">  <span class="dim">openstack          </span><span>nova-compute-8f3d1                      </span><span style="color:var(--green)">1/1   </span><span style="color:var(--green)">Running     </span><span class="dim">0         </span><span style="color:var(--cyan)">12d 4h</span></div>
+          <div style="margin-bottom:4px">  <span class="dim">monitoring         </span><span>node-exporter-q2m7k                     </span><span style="color:var(--green)">1/1   </span><span style="color:var(--green)">Running     </span><span class="dim">0         </span><span style="color:var(--cyan)">12d 4h</span></div>
+          <div style="margin-top:12px" class="dim">4 pod(s)   auto-refreshing every 5s</div>`;
+      }, 400);
+    }
+  } else {
+    btn.textContent = "⬡  Pods";
+    renderWorkflow();
+  }
+}
+
+function actionReboot() {
+  if (!selectedNode) { addLog("No node selected.", "warn"); return; }
+  const node = NODES[selectedNode];
+  if (node.phase === "rebooting") { addLog("Reboot already in progress.", "warn"); return; }
+  if (node.phase === "running")   { addLog("Evacuation in progress — complete it before rebooting.", "warn"); return; }
+
+  if (node.is_etcd) {
+    addLog("Checking etcd quorum before reboot…");
+    // Show quorum check result inline via the already-rendered etcd block
+  }
+
+  pendingRebootNode = selectedNode;
+  document.getElementById("modal-node-name").textContent = selectedNode;
+  document.getElementById("modal-input").value = "";
+  document.getElementById("modal-input").classList.remove("error");
+  document.getElementById("modal-overlay").classList.add("open");
+  setTimeout(() => document.getElementById("modal-input").focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+  addLog("Reboot cancelled.", "warn");
+  pendingRebootNode = null;
+}
+
+function confirmReboot() {
+  const val = document.getElementById("modal-input").value.trim();
+  if (val !== "YES") {
+    document.getElementById("modal-input").classList.add("error");
+    document.getElementById("modal-input").focus();
+    return;
+  }
+  document.getElementById("modal-overlay").classList.remove("open");
+  const name = pendingRebootNode;
+  const node = NODES[name];
+  pendingRebootNode = null;
+
+  addLog(`Rebooting ${name}…`, "important");
+  node.phase       = "rebooting";
+  node.reboot_start = Date.now();
+  node.k8s_ready   = false;
+  if (node.is_etcd) node.etcd_healthy = false;
+  node.steps = [
+    { key: "ssh_reboot",    label: "Issue reboot command via SSH",     status: "running", detail: "" },
+    { key: "await_offline", label: "Wait for node to go offline",      status: "pending", detail: "" },
+    { key: "await_online",  label: "Wait for node to come back online", status: "pending", detail: "" },
+  ];
+  rebuildTables();
+  renderWorkflow();
+  updateButtons();
+  addLog(`  <span class="node-tag">${name}</span>  Reboot command sent to '${node.hypervisor}'`);
+
+  setTimeout(() => {
+    node.steps[0].status = "success";
+    node.steps[1].status = "running";
+    renderWorkflow();
+  }, 1000);
+  setTimeout(() => {
+    node.steps[1].status = "success";
+    node.steps[1].detail = "Node offline";
+    node.steps[2].status = "running";
+    addLog(`  <span class="node-tag">${name}</span>  Node went offline`);
+    renderWorkflow();
+  }, 3000);
+  setTimeout(() => {
+    node.steps[2].status = "success";
+    node.steps[2].detail = "Online — downtime 94s";
+    node.phase           = "idle";
+    node.k8s_ready       = true;
+    if (node.is_etcd) node.etcd_healthy = null;
+    node.reboot_downtime = 94;
+    addLog(`✓ '${name}' back online — total downtime: 94s`, "success");
+    rebuildTables();
+    renderWorkflow();
+    updateButtons();
+  }, 8000);
+}
+
+// Modal: Enter key submits, Escape cancels
+document.getElementById("modal-input").addEventListener("keydown", e => {
+  if (e.key === "Enter")  confirmReboot();
+  if (e.key === "Escape") closeModal();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard shortcuts
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", e => {
+  if (document.getElementById("modal-overlay").classList.contains("open")) return;
+  if (e.key === "s" && !e.ctrlKey) actionStart();
+  if (e.key === "u")               actionDrainOrUndrain();
+  if (e.key === "p")               actionPods();
+  if (e.key === "r" && !e.ctrlKey) actionRefresh();
+  if (e.key === "r" && e.ctrlKey)  { e.preventDefault(); actionReboot(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live simulation: tick the rebooting node downtime counter + migration progress
+// ─────────────────────────────────────────────────────────────────────────────
+
+setInterval(() => {
+  let needsRender = false;
+
+  for (const node of Object.values(NODES)) {
+    if (node.phase === "rebooting" && node.reboot_start) {
+      if (selectedNode === node.k8s_name) needsRender = true;
+      // Update the await_online detail
+      const step = node.steps.find(s => s.key === "await_online");
+      if (step && step.status === "running") {
+        const elapsed = Math.floor((Date.now() - node.reboot_start) / 1000);
+        step.detail = `${elapsed}s elapsed`;
+      }
+    }
+    if (node.phase === "running" && node.steps.length > 0) {
+      const migrateStep = node.steps.find(s => s.key === "migrate_vms" && s.status === "running");
+      if (migrateStep && selectedNode === node.k8s_name) needsRender = true;
+    }
+  }
+
+  if (needsRender) renderWorkflow();
+}, 1000);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+
+rebuildTables();
+addLog("Connected to draino server — 4 compute nodes, 3 other nodes loaded", "important");
+addLog(`  <span class="node-tag">compute-02</span>  Migration 1/3 done, 0 failed`);
+
+// Auto-select compute-02 to show an in-progress evacuation
+selectNode("compute-02");
+</script>
+</body>
+</html>
