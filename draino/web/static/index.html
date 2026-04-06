@@ -601,7 +601,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 ::-webkit-scrollbar-thumb:hover { background: #90a4ae; }
 </style>
 </head>
-<body>
+<body class="no-hints">
 
 <!-- ═══ TOP BAR ═══ -->
 <div id="top-bar">
@@ -619,7 +619,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </nav>
   <div class="top-right">
     <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
-    <button class="hint-toggle on" id="hint-toggle" onclick="toggleHints()" title="Toggle VMware terminology hints">💡 VMware hints</button>
+    <button class="hint-toggle" id="hint-toggle" onclick="toggleHints()" title="Toggle VMware terminology hints">💡 Hints off</button>
     <button class="btn top-action" id="logout-btn" onclick="logout()">Sign out</button>
     <div id="clock"></div>
     <div id="ws-pill">
@@ -870,7 +870,7 @@ let wsStatusMode = 'offline';
 const stepTimes = {};
 
 // Hints toggle
-let showHints = true;
+let showHints = false;
 
 // Per-instance migration state (outside full evacuation): instance_id → 'migrating'|'error'
 const instanceMigrateStates = {};
