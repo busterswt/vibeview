@@ -1028,6 +1028,7 @@ function onFullState(msg) {
   } else {
     renderInfraDetail();
   }
+  ensureSelectedEtcdHealthCheck();
   // Pre-fetch node details for all nodes in the background so hardware/K8s
   // info is ready by the time the user clicks any node.
   prefetchAllNodeDetails();
@@ -1045,6 +1046,7 @@ function prefetchAllNodeDetails() {
 
 function onStateUpdate(msg) {
   const prevPhase = nodes[msg.node]?.phase;
+  const prevIsEtcd = nodes[msg.node]?.is_etcd;
   nodes[msg.node] = msg.data;
   // Clear individual migrate state when a full workflow kicks off
   if (msg.data.phase === 'running' && prevPhase !== 'running') {
@@ -1054,6 +1056,7 @@ function onStateUpdate(msg) {
   trackStepTimes(msg.node, msg.data.steps || []);
   updateSidebarRow(msg.node);
   if (msg.node === selectedNode) {
+    if (msg.data.is_etcd && !prevIsEtcd) ensureSelectedEtcdHealthCheck();
     renderInfraDetail();
   } else if (msg.data.is_etcd && selectedNode && nodes[selectedNode]?.is_etcd && activeTab === 'summary') {
     // A peer etcd node's health changed — re-render so the etcd quorum block updates
@@ -1319,11 +1322,7 @@ function selectNode(name) {
 
   const nd = nodes[name];
   if (nd) {
-    if (nd.is_etcd) {
-      const peers = Object.values(nodes).filter(n => n.is_etcd);
-      if (peers.some(n => n.etcd_healthy === null || n.etcd_healthy === undefined))
-        wsSend({ action: 'check_etcd' });
-    }
+    ensureSelectedEtcdHealthCheck();
     if (nd.is_compute && nd.phase === 'idle') wsSend({ action: 'get_preflight', node: name });
   }
   // Load rich node detail if not already cached
@@ -1331,6 +1330,15 @@ function selectNode(name) {
   // Load network config data if Configure tab is active
   if (activeTab === 'configure') _ensureNetworkDataLoaded(name);
   renderInfraDetail();
+}
+
+function ensureSelectedEtcdHealthCheck() {
+  if (!selectedNode) return;
+  const nd = nodes[selectedNode];
+  if (!nd || !nd.is_etcd) return;
+  const peers = Object.values(nodes).filter(n => n.is_etcd);
+  if (peers.some(n => n.etcd_healthy === null || n.etcd_healthy === undefined))
+    wsSend({ action: 'check_etcd' });
 }
 
 async function loadNodeDetail(name) {
