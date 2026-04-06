@@ -8,6 +8,43 @@ from draino.operations.openstack_ops import OpenStackAuth
 from draino.web import server as web_server
 
 
+def test_get_networks_coerces_external_flag_strings(monkeypatch):
+    class FakeNetwork:
+        def __init__(self, network_id: str, external_value, fallback_value=False):
+            self.id = network_id
+            self.name = f"net-{network_id}"
+            self.status = "ACTIVE"
+            self.is_admin_state_up = True
+            self.is_shared = False
+            self.project_id = "proj-1"
+            self.subnet_ids = []
+            self.is_router_external = fallback_value
+            self._external_value = external_value
+
+        def to_dict(self):
+            return {"router:external": self._external_value}
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def networks():
+            return [
+                FakeNetwork("1", "False"),
+                FakeNetwork("2", "true"),
+                FakeNetwork("3", None, fallback_value=True),
+            ]
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    items = web_server._get_networks(auth=None)
+
+    assert items[0]["external"] is False
+    assert items[1]["external"] is True
+    assert items[2]["external"] is True
+
+
 def test_session_endpoint_reports_unauthenticated():
     with TestClient(web_server.fastapi_app) as client:
         resp = client.get("/api/session")

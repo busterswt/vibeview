@@ -556,19 +556,34 @@ class DrainoServer:
 
 # ── OpenStack resource helpers (called in thread pool) ───────────────────────
 
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def _get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return all Neutron networks visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)
     result = []
     for n in conn.network.networks():
         d = n.to_dict() if hasattr(n, "to_dict") else {}
+        raw_external = d.get("router:external")
+        if raw_external is None:
+            raw_external = getattr(n, "is_router_external", False)
         result.append({
             "id":           n.id,
             "name":         n.name or "(unnamed)",
             "status":       n.status or "UNKNOWN",
             "admin_state":  "up" if n.is_admin_state_up else "down",
             "shared":       bool(n.is_shared),
-            "external":     bool(d.get("router:external", False)),
+            "external":     _coerce_bool(raw_external),
             "network_type": d.get("provider:network_type") or "",
             "project_id":   n.project_id or "",
             "subnet_count": len(list(n.subnet_ids or [])),
