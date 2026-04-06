@@ -17,7 +17,7 @@ and a browser-based web UI (powered by FastAPI + WebSockets).
   Amphora LBs → drain K8s pods → reboot → wait for recovery
 - **Quick-drain shortcut** — cordon + K8s pod eviction only, skipping OpenStack steps
 - **Undrain / re-enable** — uncordon and re-enable Nova compute in one action
-- **etcd quorum awareness** — identifies etcd nodes, checks SSH health of all peers,
+- **etcd quorum awareness** — identifies etcd nodes, checks peer health before reboot,
   and blocks a reboot if it would break quorum
 - **Live pod view** — lists all pods on the selected node with status, restarts, and age;
   Succeeded pods hidden by default with a toggle
@@ -276,14 +276,14 @@ Reverses a cordon/disable.
 
 ### Reboot (`R` / Reboot Node)
 
-Issues a reboot after evacuation is complete.  For etcd nodes, SSH health of all etcd
+Issues a reboot after evacuation is complete.  For etcd nodes, peer health of all etcd
 peers is checked first; the reboot is blocked if it would reduce the cluster below quorum.
 
 In the web UI, reboot is only available to authenticated sessions with the OpenStack
 `admin` role.
 
 1. Check etcd quorum (etcd nodes only)
-2. SSH `reboot` command to the node
+2. Send a reboot request to the node-local agent
 3. Wait for the node to go `NotReady` (up to 5 min)
 4. Wait for the node to return `Ready` (up to 10 min)
 5. Report total downtime

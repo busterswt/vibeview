@@ -356,7 +356,7 @@ class DrainoServer:
             state.etcd_checking = True
             self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
         for state in etcd_states:
-            state.etcd_healthy  = k8s_ops.check_etcd_service(state.hypervisor)
+            state.etcd_healthy  = k8s_ops.check_etcd_service(state.k8s_name, state.hypervisor)
             state.etcd_checking = False
             self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
 
@@ -456,7 +456,7 @@ class DrainoServer:
         quorum_needed = (etcd_total // 2) + 1
 
         for s in etcd_states:
-            s.etcd_healthy = k8s_ops.check_etcd_service(s.hypervisor)
+            s.etcd_healthy = k8s_ops.check_etcd_service(s.k8s_name, s.hypervisor)
             self._push({"type": "state_update", "node": s.k8s_name, "data": _serialise(s)})
 
         healthy_count = sum(1 for s in etcd_states if s.etcd_healthy is True)
@@ -1059,14 +1059,17 @@ async def api_node_detail(node_name: str, request: Request):
     server = session.server
     loop = asyncio.get_running_loop()
     state = server.node_states.get(node_name)
-    hypervisor = state.hypervisor if state else node_name
-
     k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
-    hw_future  = loop.run_in_executor(None, k8s_ops.get_node_hardware_info, hypervisor)
+    hw_future  = loop.run_in_executor(
+        None,
+        k8s_ops.get_node_hardware_info,
+        node_name,
+        state.hypervisor if state else None,
+    )
 
     nova: dict = {}
     if state and state.is_compute:
-        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, hypervisor, server.openstack_auth)
+        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
 
     k8s = await k8s_future
     hw  = await hw_future
@@ -1105,13 +1108,12 @@ async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch, req
 
 @fastapi_app.get("/api/nodes/{node_name}/network-interfaces")
 async def api_node_network_interfaces(node_name: str, request: Request):
-    """Return physical and bond network interfaces discovered via SSH."""
+    """Return physical and bond network interfaces discovered from the host."""
     session = _get_session_record(request)
     loop = asyncio.get_running_loop()
     state = session.server.node_states.get(node_name)
-    hostname = state.hypervisor if state else node_name
     result = await loop.run_in_executor(
-        None, k8s_ops.get_node_network_interfaces, hostname
+        None, k8s_ops.get_node_network_interfaces, node_name, state.hypervisor if state else None
     )
     return result
 

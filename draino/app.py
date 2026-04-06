@@ -616,7 +616,7 @@ class DrainoApp(App):
         """SSH-check etcd service on all etcd nodes and refresh the workflow view."""
         for state in list(self.node_states.values()):
             if state.is_etcd:
-                state.etcd_healthy = k8s_ops.check_etcd_service(state.hypervisor)
+                state.etcd_healthy = k8s_ops.check_etcd_service(state.k8s_name, state.hypervisor)
         self.call_from_thread(self._refresh_workflow)
 
     def _etcd_reboot_preflight(self, node_name: str) -> None:
@@ -626,7 +626,7 @@ class DrainoApp(App):
         quorum_needed = (etcd_total // 2) + 1
 
         for s in etcd_states:
-            s.etcd_healthy = k8s_ops.check_etcd_service(s.hypervisor)
+            s.etcd_healthy = k8s_ops.check_etcd_service(s.k8s_name, s.hypervisor)
 
         self.call_from_thread(self._refresh_workflow)
 

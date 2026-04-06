@@ -1583,7 +1583,7 @@ function renderSummaryTab(nd) {
     const product = hwd.product || null;
     const chassis = (vendor && product) ? `${vendor} ${product}` : (vendor || product || null);
 
-    // CPU — prefer SSH data, fall back to Nova cpu_info
+    // CPU — prefer host-agent data, fall back to Nova cpu_info
     const cpuInfo   = novd.cpu_info || {};
     const novaTopo  = cpuInfo.topology || {};
     const cpuModel  = hwd.cpu_model || cpuInfo.model || cpuInfo.vendor || null;
@@ -1613,10 +1613,10 @@ function renderSummaryTab(nd) {
         ${novd.vcpus  ? `<div class="mrow"><span class="ml">vCPUs (Nova)</span><span class="mv">${novd.vcpus}</span></div>` : ''}
         ${ramStr      ? `<div class="mrow"><span class="ml">RAM</span><span class="mv">${esc(ramStr)}${ramSlots ? `<span style="color:var(--dim);font-size:10px"> (${ramSlots} DIMMs${ramMfr ? ', ' + ramMfr : ''})</span>` : ''}</span></div>` : detLoading ? `<div class="mrow"><span class="ml">RAM</span><span class="mv dim"><span class="spinner">⟳</span></span></div>` : ''}
         ${k8sd.os_image ? `<div class="mrow"><span class="ml">OS</span><span class="mv dim" style="font-size:10px">${esc(k8sd.os_image)}</span></div>` : ''}
-        ${nd.kernel_version || k8sd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim" style="font-size:10px">${esc(nd.kernel_version || k8sd.kernel_version)}</span></div>` : ''}
-        ${k8sd.architecture ? `<div class="mrow"><span class="ml">Architecture</span><span class="mv">${esc(k8sd.architecture)}</span></div>` : ''}
-        ${nd.uptime   ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
-        ${hwd.error ? `<div class="err-chip" title="${esc(hwd.error)}">⚠ SSH: ${esc(hwd.error.length > 60 ? hwd.error.slice(0,60)+'…' : hwd.error)}</div>` : ''}
+        ${hwd.kernel_version || nd.kernel_version || k8sd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim" style="font-size:10px">${esc(hwd.kernel_version || nd.kernel_version || k8sd.kernel_version)}</span></div>` : ''}
+        ${hwd.architecture || k8sd.architecture ? `<div class="mrow"><span class="ml">Architecture</span><span class="mv">${esc(hwd.architecture || k8sd.architecture)}</span></div>` : ''}
+        ${hwd.uptime || nd.uptime ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(hwd.uptime || nd.uptime)}</span></div>` : ''}
+        ${hwd.error ? `<div class="err-chip" title="${esc(hwd.error)}">⚠ Host detail: ${esc(hwd.error.length > 60 ? hwd.error.slice(0,60)+'…' : hwd.error)}</div>` : ''}
       </div>
     </div>`;
   }
@@ -2196,17 +2196,17 @@ function renderNicSection(nd) {
 
   if (cache.ifacesLoading) {
     h += `<div class="fetch-bar loading"><span class="spinner">⟳</span>
-      <span class="fb-msg">Discovering interfaces via SSH — this may take up to 20 seconds…</span></div>`;
+      <span class="fb-msg">Discovering interfaces from the node agent — this may take up to 20 seconds…</span></div>`;
     return h;
   }
   if (cache.ifacesError) {
-    h += `<div class="fetch-bar error"><span class="fb-msg">⚠ SSH error: ${esc(cache.ifacesError)}</span>
+    h += `<div class="fetch-bar error"><span class="fb-msg">⚠ Host detail error: ${esc(cache.ifacesError)}</span>
       <button class="fb-btn" onclick="loadNetworkInterfaces('${escAttr(name)}', true)">Retry</button></div>`;
     return h;
   }
   if (!cache.ifaces) {
     h += `<div class="fetch-bar loading"><span class="spinner">⟳</span>
-      <span class="fb-msg">Discovering interfaces via SSH — this may take up to 20 seconds…</span></div>`;
+      <span class="fb-msg">Discovering interfaces from the node agent — this may take up to 20 seconds…</span></div>`;
     return h;
   }
   if (cache.ifacesFetchedAt) {

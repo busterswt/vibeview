@@ -14,6 +14,8 @@ from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 from kubernetes.config.kube_config import KubeConfigLoader
 
+from .. import node_agent_client
+
 LogFn = Callable[[str], None]
 
 _CONTEXT: str | None = None
@@ -272,12 +274,20 @@ def get_node_k8s_detail(
     return result
 
 
-def check_etcd_service(hostname: str) -> Optional[bool]:
+def check_etcd_service(node_name: str, hostname: str | None = None) -> Optional[bool]:
     """SSH to *hostname* and check whether the etcd systemd service is active.
 
     Returns True if active, False if inactive/failed, None if the check
     could not be completed (SSH unreachable, timeout, etc.).
     """
+    if node_agent_client.enabled():
+        try:
+            result = node_agent_client.get_etcd_status(node_name)
+            return result.get("active")
+        except Exception:
+            return None
+
+    ssh_host = hostname or node_name
     try:
         result = subprocess.run(
             [
@@ -285,7 +295,7 @@ def check_etcd_service(hostname: str) -> Optional[bool]:
                 "-o", "ConnectTimeout=5",
                 "-o", "BatchMode=yes",
                 "-o", "StrictHostKeyChecking=no",
-                hostname,
+                ssh_host,
                 "systemctl", "is-active", "etcd",
             ],
             capture_output=True,
@@ -371,7 +381,7 @@ def uncordon_node(
     log(f"Node '{name}' uncordoned successfully")
 
 
-def get_node_hardware_info(hostname: str) -> dict:
+def get_node_hardware_info(node_name: str, hostname: str | None = None) -> dict:
     """SSH to *hostname* and return chassis, CPU, and RAM hardware details.
 
     Reads /sys/class/dmi/id/ (no sudo) for vendor/product info,
@@ -383,6 +393,10 @@ def get_node_hardware_info(hostname: str) -> dict:
     from collections import Counter
 
     result: dict = {
+        "hostname":            None,
+        "architecture":        None,
+        "kernel_version":      None,
+        "uptime":              None,
         "vendor":              None,
         "product":             None,
         "bios_version":        None,
@@ -398,8 +412,22 @@ def get_node_hardware_info(hostname: str) -> dict:
         "error":               None,
     }
 
+    if node_agent_client.enabled():
+        try:
+            result.update(node_agent_client.get_host_detail(node_name))
+            result.setdefault("error", None)
+            return result
+        except Exception as exc:
+            result["error"] = str(exc)
+            return result
+
     # Single SSH session — all reads in one round-trip
+    ssh_host = hostname or node_name
     script = (
+        "echo __N__; hostname 2>/dev/null; "
+        "echo __A__; uname -m 2>/dev/null; "
+        "echo __U__; uptime -p 2>/dev/null | sed 's/^up //'; "
+        "echo __R__; uname -r 2>/dev/null; "
         "echo __V__; cat /sys/class/dmi/id/sys_vendor 2>/dev/null; "
         "echo __P__; cat /sys/class/dmi/id/product_name 2>/dev/null; "
         "echo __B__; cat /sys/class/dmi/id/bios_version 2>/dev/null; "
@@ -420,7 +448,7 @@ def get_node_hardware_info(hostname: str) -> dict:
                 "-o", "ConnectTimeout=5",
                 "-o", "BatchMode=yes",
                 "-o", "StrictHostKeyChecking=no",
-                hostname,
+                ssh_host,
                 script,
             ],
             capture_output=True,
@@ -448,6 +476,10 @@ def get_node_hardware_info(hostname: str) -> dict:
             continue
 
         # Section markers
+        if s == "__N__":   section = "hostname"; continue
+        if s == "__A__":   section = "arch";     continue
+        if s == "__U__":   section = "uptime";   continue
+        if s == "__R__":   section = "kernel";   continue
         if s == "__V__":   section = "vendor";   continue
         if s == "__P__":   section = "product";  continue
         if s == "__B__":   section = "bios";     continue
@@ -458,7 +490,15 @@ def get_node_hardware_info(hostname: str) -> dict:
         if s == "__D__":   section = "dmi";      continue
         if s == "__END__": break
 
-        if section == "vendor":
+        if section == "hostname":
+            result["hostname"] = s
+        elif section == "arch":
+            result["architecture"] = s
+        elif section == "uptime":
+            result["uptime"] = s
+        elif section == "kernel":
+            result["kernel_version"] = s
+        elif section == "vendor":
             result["vendor"] = s
         elif section == "product":
             result["product"] = s
@@ -574,7 +614,7 @@ def patch_node_annotation(
     v1.patch_node(node_name, body)
 
 
-def get_node_network_interfaces(hostname: str) -> dict:
+def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> dict:
     """SSH to *hostname* and return physical and bond network interfaces.
 
     Reads /sys/class/net/ without root; uses ethtool -i for driver names
@@ -651,13 +691,21 @@ done
             return "1G", v
         return f"{v}M", v
 
+    if node_agent_client.enabled():
+        try:
+            return node_agent_client.get_network_interfaces(node_name)
+        except Exception as exc:
+            return {"interfaces": [], "error": str(exc)}
+
+    ssh_host = hostname or node_name
+
     try:
         proc = subprocess.run(
             ["ssh",
              "-o", "ConnectTimeout=5",
              "-o", "BatchMode=yes",
              "-o", "StrictHostKeyChecking=no",
-             hostname, script],
+             ssh_host, script],
             capture_output=True, text=True, timeout=20,
         )
     except Exception as exc:
