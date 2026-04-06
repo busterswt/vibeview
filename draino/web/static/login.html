@@ -330,12 +330,9 @@ body {
       <div class="brand-icon">D</div>
       <div>Draino <span class="logo-sub">Operator Authentication</span></div>
     </div>
-    <div class="top-right">Isolated Pre-Auth View</div>
   </div>
 
-  <div id="sub-bar">
-    Sign in to begin a server-side session. Infrastructure layout is intentionally withheld until authentication succeeds.
-  </div>
+  <div id="sub-bar"></div>
 
   <main class="shell">
     <div class="auth-shell">
@@ -348,9 +345,6 @@ body {
           </div>
         </div>
         <div class="auth-title">Authenticate Access</div>
-        <div class="auth-sub">
-          Provide both Kubernetes and OpenStack credentials for this browser session. Draino will use these credentials for all reads and actions instead of inheriting ambient access from the host.
-        </div>
       </div>
 
       <div class="auth-grid">
@@ -545,7 +539,6 @@ body {
 
       <div class="auth-actions">
         <div>
-          <div class="auth-note">Credentials stay in the active server session and are required before the UI connects.</div>
           <div class="status" id="auth-status">Waiting for credentials.</div>
         </div>
         <button class="primary" id="auth-submit" onclick="submitAuth()">Log In</button>
