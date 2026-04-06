@@ -753,12 +753,6 @@ async function submitAuth() {
   }
 }
 
-document.querySelectorAll('input, textarea').forEach(el => {
-  el.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') submitAuth();
-  });
-});
-
 applyAuthPrefs();
 clearSecretAuthInputs();
 bootstrapSession();

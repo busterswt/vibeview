@@ -780,9 +780,6 @@ body.no-hints .vmware-ref-card { display: none !important; }
 <div id="tasks-panel">
   <div class="tasks-head">
     Recent Tasks
-    <span class="tasks-head-right">
-      <b>S</b> Evacuate &nbsp; <b>U</b> Drain/Undrain &nbsp; <b>P</b> Pods &nbsp; <b>R</b> Refresh &nbsp; <b>Ctrl+R</b> Reboot
-    </span>
   </div>
   <div id="tasks-scroll">
     <table class="task-table">
@@ -2284,7 +2281,7 @@ function renderNicSection(nd) {
 function _bindConfigureTab(nodeName) {
   const inp = document.getElementById('cfg-bridge-input');
   if (inp) {
-    inp.onkeydown = e => { if (e.key === 'Enter') cfgAddBridge(); };
+    inp.onkeydown = null;
   }
 }
 
@@ -3448,28 +3445,6 @@ function confirmReboot() {
 }
 
 function closeBlocked() { document.getElementById('blocked-overlay').classList.remove('open'); }
-
-// ════════════════════════════════════════════════════════════════════════════
-// § KEYBOARD SHORTCUTS
-// ════════════════════════════════════════════════════════════════════════════
-
-document.getElementById('modal-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter')  confirmReboot();
-  if (e.key === 'Escape') cancelReboot();
-});
-
-document.addEventListener('keydown', e => {
-  if (document.getElementById('modal-overlay').classList.contains('open'))   return;
-  if (document.getElementById('ann-warn-modal').classList.contains('open'))  { if (e.key === 'Escape') annWarnCancel(); return; }
-  if (document.getElementById('blocked-overlay').classList.contains('open')) { if (e.key === 'Escape') closeBlocked(); return; }
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')         return;
-  if (activeView !== 'infrastructure') return;
-  if (e.key === 's' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionEvacuate(); }
-  if (e.key === 'u')                              { e.preventDefault(); actionDrainOrUndrain(); }
-  if (e.key === 'p')                              { e.preventDefault(); actionPods(); }
-  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); actionRefresh(); }
-  if (e.key === 'r' &&  e.ctrlKey)               { e.preventDefault(); actionReboot(); }
-});
 
 // ════════════════════════════════════════════════════════════════════════════
 // § CLOCK & LIVE TIMERS
