@@ -125,6 +125,103 @@ assignments include `admin`. Non-admin sessions can still inspect nodes and run
 non-reboot workflows, but the reboot action is disabled in the UI and rejected
 server-side.
 
+### Container image
+
+Build the web UI image:
+
+```bash
+docker build -t draino:0.1.0 .
+```
+
+Run it locally:
+
+```bash
+docker run --rm -p 8000:8000 draino:0.1.0
+```
+
+Tag and push it to your registry:
+
+```bash
+docker tag draino:0.1.0 registry.example.com/operations/draino:0.1.0
+docker push registry.example.com/operations/draino:0.1.0
+```
+
+Notes:
+
+- The image includes `kubectl`, which is required for drain operations.
+- The image includes `ssh`, which is required for reboot and several host-inspection flows.
+- The web UI keeps login sessions in-process, so production deployment should start with a single replica unless you add sticky sessions or externalise session storage.
+- OVN inspection endpoints rely on `kubectl ko`; if you use those views in-cluster, also provide the `ko` plugin in the image or via a mounted binary.
+
+### Kubernetes / Genestack deployment
+
+Example manifests for a Genestack / OpenStack-Helm environment are in
+`deploy/genestack/`.
+
+The intended deployment pattern is:
+
+- one `Deployment` replica for the web server
+- one `ClusterIP` `Service`
+- one `Ingress` for external user access
+- optional mounted SSH secret for reboot support
+
+The provided ingress manifest also sets long proxy timeouts for WebSocket traffic and
+uses cookie hashing so you can preserve session affinity if you later add more than one
+replica.
+
+### Helm chart
+
+A Helm chart for the web UI is in `charts/draino/`.
+
+Example install:
+
+```bash
+helm upgrade --install draino ./charts/draino \
+  --namespace draino \
+  --create-namespace \
+  --set image.repository=ghcr.io/busterswt/draino-claude \
+  --set image.tag=main \
+  --set ingress.hosts[0].host=draino.example.com \
+  --set ingress.tls[0].hosts[0]=draino.example.com \
+  --set ingress.tls[0].secretName=draino-tls
+```
+
+By default the chart keeps `replicaCount=1` because authenticated web sessions are stored
+in-process.
+
+### GitHub image builds
+
+If you do not build images locally, the repository can build and publish them from GitHub
+Actions using [`.github/workflows/build-image.yml`](/Users/james.denton/github/draino-claude/.github/workflows/build-image.yml).
+
+The workflow:
+
+- lints the Helm chart
+- builds the container image from `Dockerfile`
+- pushes to `ghcr.io/<owner>/<repo>`
+- tags branch builds as `:main`
+- tags release builds like `v0.1.0` as `:0.1.0` and `:latest`
+
+Typical flow:
+
+1. Push to `main` to publish `ghcr.io/<owner>/<repo>:main`
+2. Create a git tag like `v0.1.0` to publish `:0.1.0` and `:latest`
+
+To use GHCR from Kubernetes, set the Helm values:
+
+```bash
+--set image.repository=ghcr.io/busterswt/draino-claude \
+--set image.tag=main
+```
+
+The ingress hostname should stay deployment-specific. Set it with Helm values rather
+than hard-coding it into the chart:
+
+```bash
+--set ingress.hosts[0].host=draino.<environment-domain> \
+--set ingress.tls[0].hosts[0]=draino.<environment-domain>
+```
+
 ### Options
 
 | Flag | Default | Description |

@@ -16,6 +16,17 @@ def test_session_endpoint_reports_unauthenticated():
     assert resp.json() == {"authenticated": False}
 
 
+def test_health_and_readiness_endpoints():
+    with TestClient(web_server.fastapi_app) as client:
+        health = client.get("/healthz")
+        ready = client.get("/readyz")
+
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+    assert ready.status_code == 200
+    assert ready.json() == {"status": "ready"}
+
+
 def test_build_k8s_auth_from_kubeconfig():
     payload = web_server.K8sLoginPayload(
         mode="kubeconfig",

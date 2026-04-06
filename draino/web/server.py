@@ -918,6 +918,16 @@ async def index() -> FileResponse:
     return FileResponse(_STATIC / "index.html")
 
 
+@fastapi_app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@fastapi_app.get("/readyz")
+async def readyz() -> dict[str, str]:
+    return {"status": "ready"}
+
+
 @fastapi_app.get("/api/session")
 async def api_session(request: Request):
     record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
