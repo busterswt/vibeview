@@ -4,10 +4,14 @@ Verify the release:
 
   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
 
-If ingress is enabled, open:
+If Gateway API is attached to a reachable listener, open:
 
-{{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- range .Values.gateway.hostnames }}
+  https://{{ . }}
 {{- end }}
 
 This chart defaults to a single replica because web sessions are stored in-process.
+
+{{- if .Values.gateway.enabled }}
+This release exposes Draino with Gateway API resources.
+{{- end }}

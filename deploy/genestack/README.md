@@ -24,37 +24,145 @@ docker push registry.example.com/operations/draino:0.1.0
 If you use Helm, start with [values.yaml](/Users/james.denton/github/draino-claude/deploy/genestack/values.yaml):
 
 ```bash
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
-  --create-namespace \
-  -f deploy/genestack/values.yaml
+sudo mkdir -p /etc/genestack/helm-configs/draino
+sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
 ```
 
 Update these fields first:
 
 - image repository if different from `ghcr.io/busterswt/draino-claude`
 - image tag
-- ingress hostname
-- TLS secret name
+- Gateway parent reference name and namespace
+- external hostname
 - optional SSH secret name
 
-If you prefer raw manifests, update these fields in [draino.yaml](/Users/james.denton/github/draino-claude/deploy/genestack/draino.yaml):
-
-- image reference
-- ingress hostname
-- TLS secret name
-- optional SSH secret mount
-
-Then apply:
+Then deploy with Helm using the Genestack override file:
 
 ```bash
-kubectl apply -f deploy/genestack/draino.yaml
+helm upgrade --install draino ./charts/draino \
+  --namespace draino \
+  --create-namespace \
+  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+```
+
+## New Gateway listener
+
+Genestack’s Envoy Gateway flow patches listeners onto the shared `Gateway` from
+`/etc/genestack/gateway-api/listeners/`. The Rackspace Genestack docs show this patching
+model explicitly: listener fragments are stored in that directory and then applied with
+`kubectl patch` against the shared `Gateway`. Source:
+https://docs.rackspacecloud.com/infrastructure-envoy-gateway-api/
+
+Example listener fragment for a dedicated Draino hostname:
+
+```json
+[
+  {
+    "op": "add",
+    "path": "/spec/listeners/-",
+    "value": {
+      "name": "draino-https",
+      "protocol": "HTTPS",
+      "port": 443,
+      "hostname": "draino.example.com",
+      "tls": {
+        "mode": "Terminate",
+        "certificateRefs": [
+          {
+            "kind": "Secret",
+            "name": "draino-tls"
+          }
+        ]
+      },
+      "allowedRoutes": {
+        "namespaces": {
+          "from": "All"
+        }
+      }
+    }
+  }
+]
+```
+
+Save that as:
+
+```bash
+/etc/genestack/gateway-api/listeners/draino-listener.json
+```
+
+Then patch the shared gateway, for example:
+
+```bash
+kubectl patch -n envoy-gateway gateway flex-gateway \
+  --type='json' \
+  --patch="$(cat /etc/genestack/gateway-api/listeners/draino-listener.json)"
+```
+
+Adjust `envoy-gateway`, `flex-gateway`, the listener name, hostname, and TLS secret to
+match your deployment.
+
+## New Route
+
+Draino’s Helm chart already creates the `HTTPRoute`, so in most cases the route is just
+the chart install. In Genestack terms, that is the route resource that binds to the
+listener via `parentRefs.sectionName`.
+
+Your override file at
+`/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`
+should line up with the listener:
+
+```yaml
+gateway:
+  enabled: true
+  create: false
+  parentRefs:
+    - name: flex-gateway
+      namespace: envoy-gateway
+      sectionName: draino-https
+  hostnames:
+    - draino.example.com
+```
+
+That causes the chart to render an `HTTPRoute` similar to:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: draino
+spec:
+  parentRefs:
+    - name: flex-gateway
+      namespace: envoy-gateway
+      sectionName: draino-https
+  hostnames:
+    - draino.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: draino
+          port: 80
+```
+
+If you ever need to manage the route outside Helm, Genestack’s documented route path is:
+
+```bash
+/etc/genestack/gateway-api/routes/
+```
+
+and those route manifests are applied with:
+
+```bash
+kubectl apply -f /etc/genestack/gateway-api/routes
 ```
 
 ## Genestack notes
 
-- In OpenStack-Helm environments, the normal user-facing pattern is an Ingress fronting a ClusterIP service.
-- If your environment does not expose ingress for custom apps, switch the service to `NodePort` or use `hostNetwork: true` on a tightly controlled node pool.
+- In Genestack environments that use Envoy Gateway, prefer Gateway API resources over a classic `Ingress`.
+- The chart supports this by creating an `HTTPRoute` and attaching it to an existing shared `Gateway`.
 - The app needs `kubectl` for drain operations. The Docker image includes it.
 - OVN inspection endpoints call `kubectl ko nbctl ...`. If your Genestack operators use the `ko` plugin, mount or bake that plugin into the image too. Core drain/evacuation workflows do not depend on it.
 - For reboot support, mount an SSH private key into `/home/draino/.ssh` and ensure the remote host accepts `sudo reboot` for that account.

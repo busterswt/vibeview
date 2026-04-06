@@ -25,23 +25,28 @@ service:
   port: 80
   targetPort: 8000
 
-ingress:
+gateway:
   enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/upstream-hash-by: "$cookie_draino_session"
-  hosts:
-    - host: draino.example.com
-      paths:
-        - path: /
-          pathType: Prefix
+  gatewayClassName: envoy-gateway-class
+  create: false
+  name: shared-gateway
+  namespace: ""
+  parentRefs:
+    - name: shared-gateway
+      namespace: ""
+      sectionName: https
+  annotations: {}
+  hostnames:
+    - draino.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
   tls:
-    - secretName: draino-tls
-      hosts:
-        - draino.example.com
+    enabled: false
+    mode: Terminate
+    certificateRefs: []
 
 resources: {}
 

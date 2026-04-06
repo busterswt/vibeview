@@ -155,19 +155,18 @@ Notes:
 
 ### Kubernetes / Genestack deployment
 
-Example manifests for a Genestack / OpenStack-Helm environment are in
+Example Helm values for a Genestack / OpenStack-Helm environment are in
 `deploy/genestack/`.
 
 The intended deployment pattern is:
 
 - one `Deployment` replica for the web server
 - one `ClusterIP` `Service`
-- one `Ingress` for external user access
+- one `HTTPRoute` attached to Envoy Gateway for external user access
 - optional mounted SSH secret for reboot support
 
-The provided ingress manifest also sets long proxy timeouts for WebSocket traffic and
-uses cookie hashing so you can preserve session affinity if you later add more than one
-replica.
+This chart is Gateway API only and is intended for environments that expose applications
+through Envoy Gateway.
 
 ### Helm chart
 
@@ -176,14 +175,13 @@ A Helm chart for the web UI is in `charts/draino/`.
 Example install:
 
 ```bash
+sudo mkdir -p /etc/genestack/helm-configs/draino
+sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+
 helm upgrade --install draino ./charts/draino \
   --namespace draino \
   --create-namespace \
-  --set image.repository=ghcr.io/busterswt/draino-claude \
-  --set image.tag=main \
-  --set ingress.hosts[0].host=draino.example.com \
-  --set ingress.tls[0].hosts[0]=draino.example.com \
-  --set ingress.tls[0].secretName=draino-tls
+  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
 ```
 
 By default the chart keeps `replicaCount=1` because authenticated web sessions are stored
@@ -214,12 +212,11 @@ To use GHCR from Kubernetes, set the Helm values:
 --set image.tag=main
 ```
 
-The ingress hostname should stay deployment-specific. Set it with Helm values rather
-than hard-coding it into the chart:
+The external hostname should stay deployment-specific. Set it with Helm values rather
+than hard-coding it into the chart. For Envoy Gateway:
 
 ```bash
---set ingress.hosts[0].host=draino.<environment-domain> \
---set ingress.tls[0].hosts[0]=draino.<environment-domain>
+--set gateway.hostnames[0]=draino.<environment-domain>
 ```
 
 ### Options
