@@ -56,8 +56,10 @@ class NodeState:
     k8s_cordoned: bool = False
 
     # ── K8s node system info (populated by background refresh) ───────────
-    kernel_version: Optional[str] = None
-    uptime:         Optional[str] = None
+    kernel_version:        Optional[str] = None
+    latest_kernel_version: Optional[str] = None
+    uptime:                Optional[str] = None
+    reboot_required:       bool = False
 
     # ── Node roles ────────────────────────────────────────────────────────
     is_etcd:        bool = False            # True if node carries the etcd role label

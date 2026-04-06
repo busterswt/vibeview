@@ -378,6 +378,54 @@ def _get_etcd_status() -> dict:
         return {"active": None, "error": str(exc)}
 
 
+def _get_host_signals() -> dict:
+    try:
+        proc = _run_host_shell(
+            "running=$(uname -r 2>/dev/null); "
+            "latest=$(ls -1 /lib/modules 2>/dev/null | sort -V | tail -n1); "
+            "need=no; "
+            "[ -f /var/run/reboot-required ] && need=yes; "
+            "if [ -n \"$latest\" ] && [ -n \"$running\" ] && [ \"$latest\" != \"$running\" ]; then need=yes; fi; "
+            "printf 'running=%s\nlatest=%s\nreboot_required=%s\n' \"$running\" \"$latest\" \"$need\"",
+            timeout=10,
+        )
+    except Exception as exc:
+        return {
+            "kernel_version": None,
+            "latest_kernel_version": None,
+            "reboot_required": False,
+            "error": str(exc),
+        }
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {
+            "kernel_version": None,
+            "latest_kernel_version": None,
+            "reboot_required": False,
+            "error": stderr or f"host signals command exited {proc.returncode}",
+        }
+
+    data = {
+        "kernel_version": None,
+        "latest_kernel_version": None,
+        "reboot_required": False,
+        "error": None,
+    }
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.strip()
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key == "running":
+            data["kernel_version"] = val or None
+        elif key == "latest":
+            data["latest_kernel_version"] = val or None
+        elif key == "reboot_required":
+            data["reboot_required"] = val.strip().lower() in {"yes", "true", "1"}
+    return data
+
+
 node_agent_app = FastAPI(title="Draino Node Agent")
 
 
@@ -420,6 +468,13 @@ def host_etcd_status(authorization: str | None = Header(default=None)) -> dict:
     _authorise(authorization)
     _LOGGER.info("etcd status requested node=%s", _node_name())
     return _get_etcd_status()
+
+
+@node_agent_app.get("/host/signals")
+def host_signals(authorization: str | None = Header(default=None)) -> dict:
+    _authorise(authorization)
+    _LOGGER.info("host signals requested node=%s", _node_name())
+    return _get_host_signals()
 
 
 @node_agent_app.post("/reboot", status_code=status.HTTP_202_ACCEPTED)

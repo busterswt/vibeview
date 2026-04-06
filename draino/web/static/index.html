@@ -215,6 +215,8 @@ body {
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-badge.reboot { background: #fff8e1; color: #e65100; font-weight: 700; }
+.tree-badge.kernel { background: #e3f2fd; color: #1565c0; font-weight: 700; }
 
 /* ═══════════════════════════════════════════════════════
    HINT CHIPS (VMware equivalent labels)
@@ -1214,6 +1216,10 @@ function treeItemHtml(name, nd) {
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  const rebootBdg = nd.reboot_required ? `<span class="tree-badge reboot">reboot</span>` : '';
+  const kernelBdg = nd.latest_kernel_version && nd.kernel_version && nd.latest_kernel_version !== nd.kernel_version
+    ? `<span class="tree-badge kernel">kernel</span>`
+    : '';
 
   let vmBadge = '';
   if (nd.is_compute && nd.vm_count != null && nd.vm_count > 0)
@@ -1233,7 +1239,7 @@ function treeItemHtml(name, nd) {
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
@@ -1375,6 +1381,8 @@ function renderObjHeader(nd) {
   if (nd.hypervisor && nd.hypervisor !== nd.k8s_name) parts.push(`Hypervisor: ${nd.hypervisor}`);
   if (nd.uptime)         parts.push(`Uptime: ${nd.uptime}`);
   if (nd.kernel_version) parts.push(`Kernel: ${nd.kernel_version}`);
+  if (nd.latest_kernel_version && nd.latest_kernel_version !== nd.kernel_version)
+    parts.push(`Latest: ${nd.latest_kernel_version}`);
   document.getElementById('oh-sub').textContent = parts.join('  ·  ') || '';
 
   const phaseColors = { running:'yellow', complete:'green', error:'red', rebooting:'magenta', undraining:'cyan' };
@@ -1385,6 +1393,10 @@ function renderObjHeader(nd) {
   if      (!nd.k8s_ready)     badges.push(`<span class="badge red">● K8s Not Ready</span>`);
   else if (nd.k8s_cordoned)   badges.push(`<span class="badge gray">Cordoned</span>`);
   else if (nd.phase === 'idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
+  if (nd.reboot_required)
+    badges.push(`<span class="badge yellow">Reboot Needed</span>`);
+  if (nd.latest_kernel_version && nd.latest_kernel_version !== nd.kernel_version)
+    badges.push(`<span class="badge blue">New Kernel Available</span>`);
   if (nd.is_compute) {
     const ncMap = { up:'green', disabled:'yellow', down:'red' };
     const nlMap = { up:'enabled', disabled:'disabled', down:'DOWN' };
@@ -1845,7 +1857,9 @@ function renderConfigureTab(nd) {
         <div class="mrow"><span class="ml">K8s node name</span><span class="mv">${esc(nd.k8s_name)}</span></div>
         <div class="mrow"><span class="ml">Nova hypervisor <span class="hint">ESXi FQDN</span></span><span class="mv dim">${esc(nd.hypervisor)}</span></div>
         ${nd.kernel_version ? `<div class="mrow"><span class="ml">Kernel</span><span class="mv dim">${esc(nd.kernel_version)}</span></div>` : ''}
+        ${nd.latest_kernel_version ? `<div class="mrow"><span class="ml">Latest installed kernel</span><span class="mv dim">${esc(nd.latest_kernel_version)}</span></div>` : ''}
         ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
+        <div class="mrow"><span class="ml">Reboot needed</span><span class="mv ${nd.reboot_required ? 'yellow' : ''}">${nd.reboot_required ? 'Yes' : 'No'}</span></div>
         <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
         ${nd.availability_zone ? `<div class="mrow"><span class="ml">Availability zone</span><span class="mv blue">${esc(nd.availability_zone)}</span></div>` : ''}
         ${nd.aggregates?.length ? `<div class="mrow"><span class="ml">Host aggregates</span><span class="mv" style="display:flex;flex-wrap:wrap;gap:3px">${nd.aggregates.map(a => `<span class="tree-badge agg" title="${esc(a)}">${esc(a)}</span>`).join('')}</span></div>` : ''}

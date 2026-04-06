@@ -122,7 +122,9 @@ def _serialise(state: NodeState) -> dict:
         "k8s_ready":           state.k8s_ready,
         "k8s_cordoned":        state.k8s_cordoned,
         "kernel_version":      state.kernel_version,
+        "latest_kernel_version": state.latest_kernel_version,
         "uptime":              state.uptime,
+        "reboot_required":     state.reboot_required,
         "is_etcd":             state.is_etcd,
         "etcd_healthy":        state.etcd_healthy,
         "etcd_checking":       state.etcd_checking,
@@ -314,6 +316,11 @@ class DrainoServer:
                 state.compute_status = summary.get("compute_status")
                 state.amphora_count  = summary.get("amphora_count")
                 state.vm_count       = summary.get("vm_count")
+            signals = k8s_ops.get_node_host_signals(name, hostname)
+            if signals.get("kernel_version"):
+                state.kernel_version = signals.get("kernel_version")
+            state.latest_kernel_version = signals.get("latest_kernel_version")
+            state.reboot_required = bool(signals.get("reboot_required", False))
 
         self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
         self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})

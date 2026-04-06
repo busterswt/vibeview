@@ -289,6 +289,11 @@ class DrainoApp(App):
             ready_since = nd.get("ready_since")
             if ready_since is not None:
                 state.uptime = render.format_uptime(ready_since)
+            signals = k8s_ops.get_node_host_signals(name, hostname)
+            if signals.get("kernel_version"):
+                state.kernel_version = signals.get("kernel_version")
+            state.latest_kernel_version = signals.get("latest_kernel_version")
+            state.reboot_required = bool(signals.get("reboot_required", False))
 
             ct.add_row(
                 render.node_name_text(name, state),

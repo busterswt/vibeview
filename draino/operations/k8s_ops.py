@@ -307,6 +307,78 @@ def check_etcd_service(node_name: str, hostname: str | None = None) -> Optional[
         return None
 
 
+def get_node_host_signals(node_name: str, hostname: str | None = None) -> dict:
+    """Return lightweight reboot/kernel signals for a node."""
+    if node_agent_client.enabled():
+        try:
+            return node_agent_client.get_host_signals(node_name)
+        except Exception as exc:
+            return {
+                "kernel_version": None,
+                "latest_kernel_version": None,
+                "reboot_required": False,
+                "error": str(exc),
+            }
+
+    ssh_host = hostname or node_name
+    try:
+        proc = subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=5",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no",
+                ssh_host,
+                (
+                    "running=$(uname -r 2>/dev/null); "
+                    "latest=$(ls -1 /lib/modules 2>/dev/null | sort -V | tail -n1); "
+                    "need=no; "
+                    "[ -f /var/run/reboot-required ] && need=yes; "
+                    "if [ -n \"$latest\" ] && [ -n \"$running\" ] && [ \"$latest\" != \"$running\" ]; then need=yes; fi; "
+                    "printf 'running=%s\nlatest=%s\nreboot_required=%s\n' \"$running\" \"$latest\" \"$need\""
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        return {
+            "kernel_version": None,
+            "latest_kernel_version": None,
+            "reboot_required": False,
+            "error": str(exc),
+        }
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {
+            "kernel_version": None,
+            "latest_kernel_version": None,
+            "reboot_required": False,
+            "error": stderr or f"SSH exited {proc.returncode}",
+        }
+
+    data = {
+        "kernel_version": None,
+        "latest_kernel_version": None,
+        "reboot_required": False,
+        "error": None,
+    }
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.strip()
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key == "running":
+            data["kernel_version"] = val or None
+        elif key == "latest":
+            data["latest_kernel_version"] = val or None
+        elif key == "reboot_required":
+            data["reboot_required"] = val.strip().lower() in {"yes", "true", "1"}
+    return data
+
+
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role.
 

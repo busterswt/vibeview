@@ -68,6 +68,26 @@ def test_check_etcd_service_uses_node_agent(monkeypatch):
     assert k8s_ops.check_etcd_service("node-1", "hv-1") is True
 
 
+def test_get_node_host_signals_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(k8s_ops.node_agent_client, "enabled", lambda: True)
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_signals",
+        lambda node_name: {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_host_signals("node-1", "hv-1")
+
+    assert result["kernel_version"] == "6.8.0"
+    assert result["latest_kernel_version"] == "6.8.12"
+    assert result["reboot_required"] is True
+
+
 def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, tmp_path):
     token_file = tmp_path / "token"
     ca_file = tmp_path / "ca.crt"

@@ -65,6 +65,10 @@ def get_etcd_status(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/etcd")
 
 
+def get_host_signals(node_name: str) -> dict:
+    return _request_json(node_name, "GET", "/host/signals")
+
+
 def _request_json(
     node_name: str,
     method: str,

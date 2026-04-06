@@ -75,11 +75,20 @@ def format_uptime(since) -> str:
 # ── Table cell helpers ────────────────────────────────────────────────────────
 
 def node_name_text(name: str, state: Optional["NodeState"] = None) -> Text:
-    if state is not None and state.is_etcd:
-        t = Text(name)
-        t.append("  etcd", style="bold red")
+    t = Text(name)
+    if state is None:
         return t
-    return Text(name)
+    if state.is_etcd:
+        t.append("  etcd", style="bold red")
+    if state.reboot_required:
+        t.append("  reboot", style="bold yellow")
+    if (
+        state.latest_kernel_version
+        and state.kernel_version
+        and state.latest_kernel_version != state.kernel_version
+    ):
+        t.append("  kernel", style="bold cyan")
+    return t
 
 
 def role_text(state: NodeState) -> Text:
