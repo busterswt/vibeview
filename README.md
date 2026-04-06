@@ -174,6 +174,9 @@ bootstrap option with high blast radius. Prefer a node-local reboot agent, short
 credentials, or an external maintenance service over a long-lived shared SSH key in a
 Kubernetes Secret.
 
+The node-local agent design is documented in
+`docs/node-local-reboot-agent.md`.
+
 ### Helm chart
 
 A Helm chart for the web UI is in `charts/draino/`.

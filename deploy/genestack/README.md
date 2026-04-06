@@ -193,6 +193,9 @@ Better approaches:
 - scope credentials per node or per host group with restricted `sudoers`
 - move reboot execution into an external automation service and let Draino call that service
 
+For a more complete design outline, see
+`docs/node-local-reboot-agent.md`.
+
 ## Genestack notes
 
 - In Genestack environments that use Envoy Gateway, prefer Gateway API resources over a classic `Ingress`.
