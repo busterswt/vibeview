@@ -90,6 +90,23 @@ This intentionally excludes generic worker nodes unless you override `nodeAgent.
 
 This is still a privileged design because the agent can reboot its host.
 
+Security concerns to understand before deployment:
+
+- the agent is privileged on every managed node
+- the web pod can discover and call every agent
+- the current implementation uses shared in-cluster trust material for agent access
+- this is safer than shared SSH keys, but it is not equivalent to a strongly isolated
+  maintenance control plane
+
+Recommended hardening:
+
+- add `NetworkPolicy` so only the Draino web pod can reach the agent
+- keep the Draino namespace tightly restricted
+- restrict access to the generated node-agent Secret
+- prefer future migration to mTLS or per-agent credentials
+- consider an external maintenance service or out-of-band power control for stricter
+  environments
+
 ## External hostname
 
 The external hostname is intentionally value-driven because it varies by environment.

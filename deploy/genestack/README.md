@@ -174,6 +174,22 @@ Operational implications:
 This is still a sensitive design because the agent is privileged. Restrict who can
 change the chart, read the generated Secret, or reach the agent over the cluster network.
 
+Important security caveat:
+
+- the current implementation still concentrates reboot authority inside the Draino trust
+  boundary
+- compromise of the web pod or mounted agent credentials can still expose broad reboot
+  capability across managed nodes
+- this is safer than the old SSH model, but it is not a low-privilege design
+
+Safer alternatives or future improvements:
+
+- enforce `NetworkPolicy` around the agent
+- move to mTLS or per-agent credentials instead of shared token-based trust
+- place the agent in a stricter dedicated namespace
+- replace the in-cluster privileged agent with an external maintenance service
+- prefer out-of-band power control if your environment supports it
+
 For a more complete design outline, see
 `docs/node-local-reboot-agent.md`.
 

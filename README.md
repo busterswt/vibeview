@@ -174,6 +174,14 @@ from the web pod.
 The node-local agent design is documented in
 `docs/node-local-reboot-agent.md`.
 
+Security note:
+
+- the current node-agent model is still privileged and high-trust
+- the web pod can reach node agents and request host actions through in-cluster trust
+- this should be treated as safer than shared SSH, not as a strong isolation boundary
+- review `docs/node-local-reboot-agent.md` before using this in a high-sensitivity
+  environment
+
 ### Helm chart
 
 A Helm chart for the web UI is in `charts/draino/`.
