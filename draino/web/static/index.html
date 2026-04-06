@@ -215,6 +215,7 @@ body {
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.reboot { background: #fff8e1; color: #e65100; font-weight: 700; }
 .tree-badge.kernel { background: #e3f2fd; color: #1565c0; font-weight: 700; }
 
@@ -1213,12 +1214,25 @@ function phaseColor(nd) {
   return 'green';
 }
 
+function noScheduleTaints(nd) {
+  return (nd.k8s_taints || []).filter(t => t.effect === 'NoSchedule');
+}
+
+function taintLabel(t) {
+  const value = t.value ? `=${t.value}` : '';
+  return `${t.key}${value}`;
+}
+
 function treeItemHtml(name, nd) {
   const sel     = name === selectedNode ? ' selected' : '';
   const ico     = nd.is_compute ? '🖥️' : nd.is_etcd ? '🔵' : '⚙️';
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  const noSched = noScheduleTaints(nd);
+  const noSchedBdg = noSched.length
+    ? `<span class="tree-badge nosched" title="${escAttr(noSched.map(taintLabel).join(', '))}">NoSchedule</span>`
+    : '';
   const rebootBdg = nd.reboot_required ? `<span class="tree-badge reboot">reboot</span>` : '';
   const kernelBdg = nd.latest_kernel_version && nd.kernel_version && nd.latest_kernel_version !== nd.kernel_version
     ? `<span class="tree-badge kernel">kernel</span>`
@@ -1242,7 +1256,7 @@ function treeItemHtml(name, nd) {
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
@@ -1396,11 +1410,14 @@ function renderObjHeader(nd) {
   const phaseColors = { running:'yellow', complete:'green', error:'red', rebooting:'magenta', undraining:'cyan' };
   const phaseLabels = { running:'Workflow Running', complete:'Complete', error:'Error', rebooting:'Rebooting', undraining:'Undraining' };
   const badges = [];
+  const noSched = noScheduleTaints(nd);
   if (nd.phase !== 'idle')
     badges.push(`<span class="badge ${phaseColors[nd.phase]||'gray'}">${phaseLabels[nd.phase]||nd.phase.toUpperCase()}</span>`);
   if      (!nd.k8s_ready)     badges.push(`<span class="badge red">● K8s Not Ready</span>`);
   else if (nd.k8s_cordoned)   badges.push(`<span class="badge gray">Cordoned</span>`);
   else if (nd.phase === 'idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
+  if (noSched.length)
+    badges.push(`<span class="badge red">NoSchedule</span>`);
   if (nd.reboot_required)
     badges.push(`<span class="badge yellow">Reboot Needed</span>`);
   if (nd.latest_kernel_version && nd.latest_kernel_version !== nd.kernel_version)
@@ -1868,6 +1885,8 @@ function renderConfigureTab(nd) {
         ${nd.latest_kernel_version ? `<div class="mrow"><span class="ml">Latest installed kernel</span><span class="mv dim">${esc(nd.latest_kernel_version)}</span></div>` : ''}
         ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
         <div class="mrow"><span class="ml">Reboot needed</span><span class="mv ${nd.reboot_required ? 'yellow' : ''}">${nd.reboot_required ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">NoSchedule taint</span><span class="mv ${noScheduleTaints(nd).length ? 'red' : ''}">${noScheduleTaints(nd).length ? 'Yes' : 'No'}</span></div>
+        ${noScheduleTaints(nd).length ? `<div class="mrow"><span class="ml">Taint details</span><span class="mv mono" style="font-size:10px">${esc(noScheduleTaints(nd).map(taintLabel).join(', '))}</span></div>` : ''}
         <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
         ${nd.availability_zone ? `<div class="mrow"><span class="ml">Availability zone</span><span class="mv blue">${esc(nd.availability_zone)}</span></div>` : ''}
         ${nd.aggregates?.length ? `<div class="mrow"><span class="ml">Host aggregates</span><span class="mv" style="display:flex;flex-wrap:wrap;gap:3px">${nd.aggregates.map(a => `<span class="tree-badge agg" title="${esc(a)}">${esc(a)}</span>`).join('')}</span></div>` : ''}

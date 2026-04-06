@@ -285,6 +285,7 @@ class DrainoApp(App):
             state = self.node_states[name]
             state.k8s_ready      = nd.get("ready", True)
             state.k8s_cordoned   = nd.get("cordoned", False)
+            state.k8s_taints     = list(nd.get("taints", []))
             state.kernel_version = nd.get("kernel_version")
             ready_since = nd.get("ready_since")
             if ready_since is not None:

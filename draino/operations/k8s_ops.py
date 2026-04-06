@@ -162,6 +162,14 @@ def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
                 "name": name,
                 "hostname": hostname,
                 "cordoned": unschedulable,
+                "taints": [
+                    {
+                        "key": t.key,
+                        "value": t.value or "",
+                        "effect": t.effect or "",
+                    }
+                    for t in (node.spec.taints or [])
+                ],
                 "ready": ready,
                 "ready_since": ready_since,
                 "kernel_version": kernel_version,

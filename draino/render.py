@@ -80,6 +80,8 @@ def node_name_text(name: str, state: Optional["NodeState"] = None) -> Text:
         return t
     if state.is_etcd:
         t.append("  etcd", style="bold red")
+    if any(taint.get("effect") == "NoSchedule" for taint in state.k8s_taints):
+        t.append("  nosched", style="bold red")
     if state.reboot_required:
         t.append("  reboot", style="bold yellow")
     if (

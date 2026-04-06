@@ -54,6 +54,7 @@ class NodeState:
     # ── K8s node attributes (from get_nodes()) ───────────────────────────
     k8s_ready:    bool = True
     k8s_cordoned: bool = False
+    k8s_taints:   list[dict] = field(default_factory=list)
 
     # ── K8s node system info (populated by background refresh) ───────────
     kernel_version:        Optional[str] = None

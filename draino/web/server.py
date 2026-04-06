@@ -121,6 +121,7 @@ def _serialise(state: NodeState) -> dict:
         "phase":               state.phase.name.lower(),
         "k8s_ready":           state.k8s_ready,
         "k8s_cordoned":        state.k8s_cordoned,
+        "k8s_taints":          list(state.k8s_taints),
         "kernel_version":      state.kernel_version,
         "latest_kernel_version": state.latest_kernel_version,
         "uptime":              state.uptime,
@@ -270,6 +271,7 @@ class DrainoServer:
             state = self.node_states[name]
             state.k8s_ready      = nd.get("ready", True)
             state.k8s_cordoned   = nd.get("cordoned", False)
+            state.k8s_taints     = list(nd.get("taints", []))
             state.kernel_version = nd.get("kernel_version")
             ready_since = nd.get("ready_since")
             if ready_since is not None:

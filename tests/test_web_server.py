@@ -45,6 +45,15 @@ def test_get_networks_coerces_external_flag_strings(monkeypatch):
     assert items[2]["external"] is True
 
 
+def test_serialise_includes_k8s_taints():
+    state = NodeState(k8s_name="node-1", hypervisor="hv-1")
+    state.k8s_taints = [{"key": "key", "value": "value", "effect": "NoSchedule"}]
+
+    data = web_server._serialise(state)
+
+    assert data["k8s_taints"] == [{"key": "key", "value": "value", "effect": "NoSchedule"}]
+
+
 def test_session_endpoint_reports_unauthenticated():
     with TestClient(web_server.fastapi_app) as client:
         resp = client.get("/api/session")
