@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import os
 import socket
 import threading
@@ -11,8 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-
 _DEFAULT_PATH = Path.home() / ".draino" / "audit.log"
+_LOGGER = logging.getLogger("draino.audit")
 
 
 class AuditLogger:
@@ -63,6 +64,7 @@ class AuditLogger:
         with self._lock:
             with self._path.open("a", encoding="utf-8") as fh:
                 fh.write(line)
+        _LOGGER.info(line.rstrip("\n"))
 
     @property
     def path(self) -> Path:

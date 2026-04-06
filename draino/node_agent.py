@@ -1,6 +1,7 @@
 """HTTPS node-local reboot agent."""
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 
 _state_lock = threading.Lock()
 _reboot_in_progress = False
+_LOGGER = logging.getLogger("draino.node_agent")
 
 
 class RebootRequest(BaseModel):
@@ -41,6 +43,7 @@ def _node_name() -> str:
 def _authorise(authorization: str | None) -> None:
     expected = f"Bearer {_read_token()}"
     if authorization != expected:
+        _LOGGER.warning("unauthorised request node=%s", os.getenv("DRAINO_NODE_NAME", "unknown"))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="unauthorised",
@@ -50,6 +53,7 @@ def _authorise(authorization: str | None) -> None:
 def _reboot_host() -> None:
     global _reboot_in_progress
     try:
+        _LOGGER.info("reboot command starting node=%s", _node_name())
         subprocess.run(
             ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "reboot"],
             timeout=15,
@@ -57,6 +61,7 @@ def _reboot_host() -> None:
             check=False,
         )
     finally:
+        _LOGGER.info("reboot command finished node=%s", _node_name())
         with _state_lock:
             _reboot_in_progress = False
 
@@ -389,6 +394,7 @@ def readyz() -> dict[str, str]:
 @node_agent_app.get("/status")
 def agent_status(authorization: str | None = Header(default=None)) -> dict[str, object]:
     _authorise(authorization)
+    _LOGGER.info("status requested node=%s", _node_name())
     return {
         "node": _node_name(),
         "reboot_in_progress": _reboot_in_progress,
@@ -398,18 +404,21 @@ def agent_status(authorization: str | None = Header(default=None)) -> dict[str, 
 @node_agent_app.get("/host/detail")
 def host_detail(authorization: str | None = Header(default=None)) -> dict:
     _authorise(authorization)
+    _LOGGER.info("host detail requested node=%s", _node_name())
     return _get_host_detail()
 
 
 @node_agent_app.get("/host/network-interfaces")
 def host_network_interfaces(authorization: str | None = Header(default=None)) -> dict:
     _authorise(authorization)
+    _LOGGER.info("network interfaces requested node=%s", _node_name())
     return _get_network_interfaces()
 
 
 @node_agent_app.get("/host/etcd")
 def host_etcd_status(authorization: str | None = Header(default=None)) -> dict:
     _authorise(authorization)
+    _LOGGER.info("etcd status requested node=%s", _node_name())
     return _get_etcd_status()
 
 
@@ -436,6 +445,7 @@ def reboot(
             )
         _reboot_in_progress = True
 
+    _LOGGER.info("reboot accepted node=%s request_id=%s", node_name, payload.request_id)
     threading.Thread(target=_reboot_host, daemon=True).start()
     return {"accepted": True, "node": node_name, "request_id": payload.request_id}
 
@@ -447,6 +457,7 @@ def run(host: str = "0.0.0.0", port: int = 8443) -> None:
     for path in (cert_file, key_file, token_file):
         if not Path(path).exists():
             raise RuntimeError(f"required file does not exist: {path}")
+    _LOGGER.info("node agent starting node=%s host=%s port=%s", _node_name(), host, port)
     uvicorn.run(
         node_agent_app,
         host=host,

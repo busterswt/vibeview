@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import secrets
 import threading
 import time
@@ -62,6 +63,7 @@ _SESSION_COOKIE = "draino_session"
 _SESSION_TTL = 60 * 60 * 12
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
 _audit_log_path: Optional[str] = None
+_LOGGER = logging.getLogger("draino.web")
 
 
 @dataclass(slots=True)
@@ -205,6 +207,13 @@ class DrainoServer:
 
     def _push(self, msg: dict) -> None:
         """Queue a broadcast from any thread (thread-safe)."""
+        if msg.get("type") == "log":
+            _LOGGER.info(
+                "node=%s color=%s message=%s",
+                msg.get("node"),
+                msg.get("color"),
+                msg.get("message"),
+            )
         if self._loop is None:
             return
         asyncio.run_coroutine_threadsafe(self._broadcast(msg), self._loop)
@@ -1284,5 +1293,5 @@ def run(
     _audit_log_path = audit_log
     openstack_ops.configure(cloud=cloud)
     k8s_ops.configure(context=context)
-    print(f"Draino web UI → http://{host}:{port}")
+    _LOGGER.info("web ui starting host=%s port=%s", host, port)
     uvicorn.run(fastapi_app, host=host, port=port, log_level="warning")

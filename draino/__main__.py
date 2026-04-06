@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import argparse
 
+from .logging_utils import configure_stdout_logging
+
 
 def main() -> None:
+    configure_stdout_logging()
     parser = argparse.ArgumentParser(
         prog="draino",
         description="Drain OpenStack hypervisors and K8s nodes before a reboot.",
