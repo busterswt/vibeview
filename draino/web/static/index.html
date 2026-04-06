@@ -1223,7 +1223,7 @@ function treeItemHtml(name, nd) {
 
   let vmBadge = '';
   if (nd.is_compute && nd.vm_count != null && nd.vm_count > 0)
-    vmBadge = `<span class="tree-badge warn">${nd.vm_count}vm</span>`;
+    vmBadge = `<span class="tree-badge warn">${nd.vm_count} vm</span>`;
 
   // Aggregate membership badges (up to 2, then "+N more")
   let aggHtml = '';
