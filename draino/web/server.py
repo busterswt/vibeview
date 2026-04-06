@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -61,6 +62,7 @@ from ..render import format_uptime
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
 _SESSION_TTL = 60 * 60 * 12
+_HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
 _audit_log_path: Optional[str] = None
 _LOGGER = logging.getLogger("draino.web")
@@ -185,6 +187,7 @@ class DrainoServer:
         self.node_states:      dict[str, NodeState] = {}
         self._last_k8s_nodes:  list[dict]           = []
         self._etcd_node_names: set[str]             = set()
+        self._host_signal_refresh_at: dict[str, float] = {}
 
         self._clients: Set[WebSocket]                        = set()
         self._loop:    Optional[asyncio.AbstractEventLoop]   = None
@@ -303,6 +306,7 @@ class DrainoServer:
 
         etcd_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
         self._etcd_node_names = etcd_names
+        now = time.time()
 
         for nd in nodes:
             name     = nd["name"]
@@ -319,15 +323,25 @@ class DrainoServer:
                 state.compute_status = summary.get("compute_status")
                 state.amphora_count  = summary.get("amphora_count")
                 state.vm_count       = summary.get("vm_count")
-            signals = k8s_ops.get_node_host_signals(name, hostname)
-            if signals.get("kernel_version"):
-                state.kernel_version = signals.get("kernel_version")
-            state.latest_kernel_version = signals.get("latest_kernel_version")
-            state.reboot_required = bool(signals.get("reboot_required", False))
+            if self._should_refresh_host_signals(name, now=now, force=not silent):
+                signals = k8s_ops.get_node_host_signals(name, hostname)
+                if signals.get("kernel_version"):
+                    state.kernel_version = signals.get("kernel_version")
+                state.latest_kernel_version = signals.get("latest_kernel_version")
+                state.reboot_required = bool(signals.get("reboot_required", False))
+                self._host_signal_refresh_at[name] = now
 
         self._push({"type": "full_state", "nodes": {k: _serialise(v) for k, v in self.node_states.items()}})
         if not silent:
             self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
+
+    def _should_refresh_host_signals(self, node_name: str, now: float, force: bool = False) -> bool:
+        if force:
+            return True
+        last_refresh = self._host_signal_refresh_at.get(node_name)
+        if last_refresh is None:
+            return True
+        return (now - last_refresh) >= _HOST_SIGNALS_TTL
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 

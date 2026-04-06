@@ -160,9 +160,10 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         captured["login_os_auth"] = auth
         return FakeConn()
 
-    def fake_refresh(self, cached_nodes=None):
+    def fake_refresh(self, cached_nodes=None, silent=False):
         captured["refreshed"] = True
         captured["cached_nodes"] = cached_nodes
+        captured["silent"] = silent
 
     def fake_list_namespaces(auth=None):
         captured["api_k8s_auth"] = auth
@@ -220,7 +221,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
 
 
 def test_websocket_requires_session_and_uses_session_server(monkeypatch):
-    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None: None)
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
 
     class FakeConn:
@@ -308,3 +309,55 @@ def test_reboot_request_requires_node_to_be_drained(tmp_path):
         "message": "Compute node must be drained of VMs and pods before reboot.",
         "color": "warn",
     }]
+
+
+def test_load_nodes_bg_skips_host_signals_during_silent_refresh_until_ttl(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    signal_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: signal_calls.append((node_name, hostname)) or {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(server, "_push", lambda msg: None)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=False)
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert signal_calls == [("node-1", "hv-1")]
+
+
+def test_load_nodes_bg_refreshes_host_signals_again_after_ttl(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
+
+    signal_calls: list[tuple[str, str]] = []
+    now_values = iter([1000.0, 1000.0 + web_server._HOST_SIGNALS_TTL + 1])
+
+    monkeypatch.setattr(web_server.time, "time", lambda: next(now_values))
+    monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_host_signals",
+        lambda node_name, hostname=None: signal_calls.append((node_name, hostname)) or {
+            "kernel_version": "6.8.0",
+            "latest_kernel_version": "6.8.12",
+            "reboot_required": True,
+        },
+    )
+    monkeypatch.setattr(server, "_push", lambda msg: None)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert signal_calls == [("node-1", "hv-1"), ("node-1", "hv-1")]
