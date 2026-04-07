@@ -73,6 +73,22 @@ body {
 }
 .top-search::placeholder { color: #78909c; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.update-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff8e1;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.update-pill.visible { display: inline-flex; }
+.update-pill:hover { background: #ffecb3; }
 #clock  { color: #90a4ae; font-size: 12px; }
 #ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
 #ws-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--red-lt); transition: background 0.3s; }
@@ -622,6 +638,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </nav>
   <div class="top-right">
     <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
+    <a id="update-pill" class="update-pill" href="#" target="_blank" rel="noopener noreferrer">Update available</a>
     <button class="hint-toggle" id="hint-toggle" onclick="toggleHints()" title="Toggle VMware terminology hints">💡 Hints off</button>
     <button class="btn top-action" id="logout-btn" onclick="logout()">Sign out</button>
     <div id="clock"></div>
@@ -867,6 +884,7 @@ let activeView   = 'infrastructure';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
+let appMetaTimer = null;
 let wsStatusMode = 'offline';
 
 // Step timing: records when each step first entered a non-pending state.
@@ -945,6 +963,33 @@ function setAuthenticatedUI(info) {
   document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
   wsSetStatus('connecting');
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
+  refreshAppMeta();
+  if (!appMetaTimer) appMetaTimer = setInterval(refreshAppMeta, 300000);
+}
+
+function renderAppMeta(meta) {
+  const pill = document.getElementById('update-pill');
+  if (!pill) return;
+  if (!meta?.update_available) {
+    pill.classList.remove('visible');
+    pill.removeAttribute('title');
+    return;
+  }
+  pill.classList.add('visible');
+  pill.href = meta.update_url || '#';
+  pill.textContent = 'Update available';
+  const currentDigest = meta.current_digest ? meta.current_digest.slice(0, 12) : 'unknown';
+  const latestDigest  = meta.latest_digest ? meta.latest_digest.slice(0, 12) : 'unknown';
+  pill.title = `Running ${meta.current_tag || 'current'} @ ${currentDigest}; upstream ${meta.track || 'main'} @ ${latestDigest}`;
+}
+
+async function refreshAppMeta() {
+  try {
+    const resp = await fetch('/api/app-meta');
+    if (!resp.ok) return;
+    const meta = await resp.json();
+    renderAppMeta(meta);
+  } catch (_) {}
 }
 
 async function bootstrapSession() {

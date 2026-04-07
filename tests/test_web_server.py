@@ -62,6 +62,12 @@ def test_session_endpoint_reports_unauthenticated():
     assert resp.json() == {"authenticated": False}
 
 
+def test_normalise_image_digest_handles_kubernetes_image_ids():
+    assert web_server._normalise_image_digest("docker-pullable://ghcr.io/busterswt/draino-claude@sha256:abc123") == "sha256:abc123"
+    assert web_server._normalise_image_digest("sha256:def456") == "sha256:def456"
+    assert web_server._normalise_image_digest("ghcr.io/busterswt/draino-claude:main") is None
+
+
 def test_root_serves_login_when_unauthenticated():
     with TestClient(web_server.fastapi_app) as client:
         resp = client.get("/")
@@ -218,6 +224,57 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert namespaces.status_code == 200
         assert namespaces.json()["items"][0]["name"] == "default"
         assert captured["api_k8s_auth"] == captured["login_k8s_auth"]
+
+
+def test_app_meta_endpoint_returns_update_status(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server,
+        "_get_app_update_status",
+        lambda force=False: {
+            "current_tag": "0.1.0",
+            "current_digest": "sha256:111",
+            "track": "main",
+            "latest_digest": "sha256:222",
+            "update_available": True,
+            "update_url": "https://example.com/update",
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        meta = client.get("/api/app-meta")
+
+    assert meta.status_code == 200
+    assert meta.json()["update_available"] is True
+    assert meta.json()["track"] == "main"
 
 
 def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):

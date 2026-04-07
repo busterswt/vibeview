@@ -30,9 +30,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +54,8 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, RedirectResponse
+from kubernetes import client, config
+from kubernetes.config.config_exception import ConfigException
 from pydantic import BaseModel
 
 from .. import worker
@@ -65,9 +71,21 @@ _SESSION_TTL = 60 * 60 * 12
 _OPENSTACK_SUMMARY_TTL = float(os.getenv("DRAINO_OPENSTACK_SUMMARY_TTL", "60"))
 _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
+_APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
+_IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
+_IMAGE_TAG = os.getenv("DRAINO_IMAGE_TAG", "main")
+_UPDATE_TRACK = os.getenv("DRAINO_UPDATE_TRACK", "main")
+_UPDATE_URL = os.getenv(
+    "DRAINO_UPDATE_URL",
+    "https://github.com/busterswt/draino-claude/blob/main/deploy/genestack/README.md#updating-a-deployment",
+)
+_POD_NAME = os.getenv("DRAINO_POD_NAME") or os.getenv("HOSTNAME", "")
+_POD_NAMESPACE = os.getenv("DRAINO_POD_NAMESPACE", "default")
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
 _audit_log_path: Optional[str] = None
 _LOGGER = logging.getLogger("draino.web")
+_update_cache_lock = threading.Lock()
+_app_update_cache: tuple[float, dict] | None = None
 
 
 @dataclass(slots=True)
@@ -113,6 +131,158 @@ class SessionStore:
 
 
 _sessions = SessionStore()
+
+
+def _normalise_image_digest(image_id: str | None) -> str | None:
+    if not image_id:
+        return None
+    image_id = image_id.strip()
+    if "@" in image_id:
+        return image_id.rsplit("@", 1)[1]
+    if image_id.startswith("sha256:"):
+        return image_id
+    return None
+
+
+def _platform_arch() -> str:
+    machine = os.uname().machine.lower()
+    return {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(machine, machine)
+
+
+def _parse_www_authenticate(header: str) -> dict[str, str]:
+    if not header or not header.startswith("Bearer "):
+        raise RuntimeError("unsupported GHCR auth challenge")
+    pairs = re.findall(r'([a-zA-Z_]+)="([^"]+)"', header)
+    return {key: value for key, value in pairs}
+
+
+def _ghcr_json_request(url: str, headers: dict[str, str] | None = None) -> tuple[dict, dict[str, str]]:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+        return payload, dict(response.headers.items())
+
+
+def _ghcr_manifest_request(
+    repository_path: str,
+    reference: str,
+    token: str | None = None,
+) -> tuple[dict, dict[str, str]]:
+    headers = {
+        "Accept": ",".join([
+            "application/vnd.oci.image.index.v1+json",
+            "application/vnd.docker.distribution.manifest.list.v2+json",
+            "application/vnd.oci.image.manifest.v1+json",
+            "application/vnd.docker.distribution.manifest.v2+json",
+        ]),
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    url = f"https://ghcr.io/v2/{repository_path}/manifests/{reference}"
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload, dict(response.headers.items())
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401 or token:
+            raise
+        challenge = exc.headers.get("WWW-Authenticate", "")
+        params = _parse_www_authenticate(challenge)
+        token_url = f"{params['realm']}?{urllib.parse.urlencode({'service': params.get('service', ''), 'scope': params.get('scope', '')})}"
+        token_payload, _ = _ghcr_json_request(token_url)
+        access_token = token_payload.get("token") or token_payload.get("access_token")
+        if not access_token:
+            raise RuntimeError("GHCR token response did not include a token") from exc
+        return _ghcr_manifest_request(repository_path, reference, token=access_token)
+
+
+def _resolve_remote_track_digest(image_repository: str, reference: str) -> str | None:
+    repository_path = image_repository
+    if repository_path.startswith("ghcr.io/"):
+        repository_path = repository_path[len("ghcr.io/"):]
+
+    manifest, _headers = _ghcr_manifest_request(repository_path, reference)
+    media_type = manifest.get("mediaType", "")
+    if media_type in {
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+    }:
+        target_os = "linux"
+        target_arch = _platform_arch()
+        manifests = manifest.get("manifests", [])
+        for entry in manifests:
+            platform = entry.get("platform") or {}
+            if platform.get("os") == target_os and platform.get("architecture") == target_arch:
+                return entry.get("digest")
+        if manifests:
+            return manifests[0].get("digest")
+        return None
+    return _headers.get("Docker-Content-Digest") or manifest.get("config", {}).get("digest")
+
+
+def _get_running_image_digest() -> str | None:
+    if not _POD_NAME:
+        return None
+    try:
+        config.load_incluster_config()
+    except ConfigException:
+        return None
+
+    core = client.CoreV1Api()
+    pods = core.list_namespaced_pod(namespace=_POD_NAMESPACE, field_selector=f"metadata.name={_POD_NAME}")
+    if not pods.items:
+        return None
+
+    pod = pods.items[0]
+    container_statuses = pod.status.container_statuses or []
+    for container_status in container_statuses:
+        if container_status.name == "draino":
+            return _normalise_image_digest(container_status.image_id)
+    if container_statuses:
+        return _normalise_image_digest(container_statuses[0].image_id)
+    return None
+
+
+def _compute_update_status() -> dict:
+    current_digest = _get_running_image_digest()
+    latest_digest = None
+    error = None
+    try:
+        latest_digest = _resolve_remote_track_digest(_IMAGE_REPOSITORY, _UPDATE_TRACK)
+    except Exception as exc:  # pragma: no cover - network failure path
+        error = str(exc)
+        _LOGGER.warning("failed to resolve upstream image digest: %s", exc)
+
+    update_available = bool(current_digest and latest_digest and current_digest != latest_digest)
+    return {
+        "image_repository": _IMAGE_REPOSITORY,
+        "current_tag": _IMAGE_TAG,
+        "current_digest": current_digest,
+        "track": _UPDATE_TRACK,
+        "latest_digest": latest_digest,
+        "update_available": update_available,
+        "update_url": _UPDATE_URL,
+        "error": error,
+    }
+
+
+def _get_app_update_status(force: bool = False) -> dict:
+    now = time.time()
+    global _app_update_cache
+    with _update_cache_lock:
+        if not force and _app_update_cache and now < _app_update_cache[0]:
+            return dict(_app_update_cache[1])
+    status = _compute_update_status()
+    with _update_cache_lock:
+        _app_update_cache = (now + _APP_UPDATE_TTL, dict(status))
+    return status
 
 
 # ── State serialisation ───────────────────────────────────────────────────────
@@ -1058,6 +1228,13 @@ async def api_session(request: Request):
         "role_names": record.role_names,
         "is_admin": record.is_admin,
     }
+
+
+@fastapi_app.get("/api/app-meta")
+async def api_app_meta(request: Request):
+    _get_session_record(request)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _get_app_update_status)
 
 
 @fastapi_app.post("/api/session")

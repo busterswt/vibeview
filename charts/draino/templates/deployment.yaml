@@ -71,6 +71,18 @@ spec:
               value: /var/run/draino-node-agent/ca.crt
             - name: DRAINO_NODE_AGENT_TOKEN_FILE
               value: /var/run/draino-node-agent/token
+            - name: DRAINO_IMAGE_REPOSITORY
+              value: {{ .Values.image.repository | quote }}
+            - name: DRAINO_IMAGE_TAG
+              value: {{ .Values.image.tag | quote }}
+            - name: DRAINO_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: DRAINO_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

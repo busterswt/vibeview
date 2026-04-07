@@ -44,6 +44,37 @@ helm upgrade --install draino ./charts/draino \
   -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
 ```
 
+## Updating a deployment
+
+To update an existing Genestack deployment to the newest published image:
+
+1. Push the repo change and wait for the GitHub image build to publish a new image.
+2. Update the image tag in `/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`.
+3. Re-run Helm:
+
+```bash
+helm upgrade --install draino ./charts/draino \
+  --namespace draino \
+  --create-namespace \
+  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+```
+
+4. Verify the rollout:
+
+```bash
+kubectl -n draino rollout status deployment/draino
+kubectl -n draino rollout status daemonset/draino-node-agent
+kubectl -n draino get pods -o wide
+```
+
+If you are still deploying `image.tag: main`, restart the workloads after the Helm upgrade
+to force a fresh pull on every node:
+
+```bash
+kubectl -n draino rollout restart deployment/draino
+kubectl -n draino rollout restart daemonset/draino-node-agent
+```
+
 ## New Gateway listener
 
 Genestack’s Envoy Gateway flow patches listeners onto the shared `Gateway` from
