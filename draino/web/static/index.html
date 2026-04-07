@@ -841,6 +841,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
       <button class="btn"         id="bc-drain"    onclick="actionDrainOrUndrain()">▽ Drain</button>
       <button class="btn"         id="bc-pods"     onclick="actionPods()">⬡ Pods</button>
       <button class="btn danger"  id="bc-reboot"   onclick="actionReboot()">⏻ Reboot</button>
+      <button class="btn"         id="bc-noschedule" onclick="actionToggleNoSchedule()">＋ Add NoSchedule</button>
       <button class="btn"         id="bc-refresh-node" onclick="actionRefreshNode()">↺ Refresh Node</button>
     </div>
     <button class="btn" id="bc-refresh" onclick="actionRefreshAll()">⟳ Refresh All</button>
@@ -1670,6 +1671,10 @@ function phaseColor(nd) {
 
 function noScheduleTaints(nd) {
   return (nd.k8s_taints || []).filter(t => t.effect === 'NoSchedule');
+}
+
+function hasManagedNoScheduleTaint(nd) {
+  return noScheduleTaints(nd).some(t => t.key === 'draino.openstack.org/maintenance');
 }
 
 function taintLabel(t) {
@@ -2617,6 +2622,8 @@ function renderConfigureTab(nd) {
   const _nc = nodeNetworkCache[nd.k8s_name];
   if (_nc?.annotations && netEdit.node !== nd.k8s_name) _initNetEdit(nd.k8s_name);
 
+  const managedNoSchedule = hasManagedNoScheduleTaint(nd);
+  const noSchedule = noScheduleTaints(nd);
   let h = `<div class="summary-grid" style="margin-bottom:16px">
     <div class="card">
       <div class="card-title">Node Details</div>
@@ -2627,8 +2634,10 @@ function renderConfigureTab(nd) {
         ${nd.latest_kernel_version ? `<div class="mrow"><span class="ml">Latest installed kernel</span><span class="mv dim">${esc(nd.latest_kernel_version)}</span></div>` : ''}
         ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
         <div class="mrow"><span class="ml">Reboot needed</span><span class="mv ${nd.reboot_required ? 'yellow' : ''}">${nd.reboot_required ? 'Yes' : 'No'}</span></div>
-        <div class="mrow"><span class="ml">NoSchedule taint</span><span class="mv ${noScheduleTaints(nd).length ? 'red' : ''}">${noScheduleTaints(nd).length ? 'Yes' : 'No'}</span></div>
-        ${noScheduleTaints(nd).length ? `<div class="mrow"><span class="ml">Taint details</span><span class="mv mono" style="font-size:10px">${esc(noScheduleTaints(nd).map(taintLabel).join(', '))}</span></div>` : ''}
+        <div class="mrow"><span class="ml">NoSchedule taint</span><span class="mv ${noSchedule.length ? 'red' : ''}">${noSchedule.length ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">Draino-managed NoSchedule</span><span class="mv ${managedNoSchedule ? 'yellow' : ''}">${managedNoSchedule ? 'Yes' : 'No'}</span></div>
+        ${noSchedule.length ? `<div class="mrow"><span class="ml">Taint details</span><span class="mv mono" style="font-size:10px">${esc(noSchedule.map(taintLabel).join(', '))}</span></div>` : ''}
+        <div class="mrow"><span class="ml">Maintenance taint action</span><span class="mv"><button class="btn ${managedNoSchedule ? 'warning' : ''}" onclick="actionToggleNoSchedule()">${managedNoSchedule ? '↺ Remove NoSchedule' : '＋ Add NoSchedule'}</button></span></div>
         <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
         ${nd.availability_zone ? `<div class="mrow"><span class="ml">Availability zone</span><span class="mv blue">${esc(nd.availability_zone)}</span></div>` : ''}
         ${nd.aggregates?.length ? `<div class="mrow"><span class="ml">Host aggregates</span><span class="mv" style="display:flex;flex-wrap:wrap;gap:3px">${nd.aggregates.map(a => `<span class="tree-badge agg" title="${esc(a)}">${esc(a)}</span>`).join('')}</span></div>` : ''}
@@ -4140,6 +4149,7 @@ function updateActionButtons(nd) {
   const drBtn = document.getElementById('bc-drain');
   const rbBtn = document.getElementById('bc-reboot');
   const poBtn = document.getElementById('bc-pods');
+  const nsBtn = document.getElementById('bc-noschedule');
 
   evBtn.textContent = phase === 'running'    ? '▶ Evacuating…' : '▶ Evacuate';
   evBtn.disabled    = busy || !nd.is_compute;
@@ -4158,6 +4168,13 @@ function updateActionButtons(nd) {
       : '';
 
   poBtn.disabled = false;
+  const managedNoSchedule = hasManagedNoScheduleTaint(nd);
+  nsBtn.textContent = managedNoSchedule ? '↺ Remove NoSchedule' : '＋ Add NoSchedule';
+  nsBtn.disabled = busy;
+  nsBtn.className = `btn ${managedNoSchedule ? 'warning' : ''}`;
+  nsBtn.title = managedNoSchedule
+    ? 'Remove Draino-managed maintenance NoSchedule taint'
+    : 'Add Draino-managed maintenance NoSchedule taint';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -4181,6 +4198,25 @@ function actionRefreshAll()  {
 }
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }
 function actionReboot()   { if (selectedNode) wsSend({ action: 'reboot_request', node: selectedNode }); }
+async function actionToggleNoSchedule() {
+  if (!selectedNode) return;
+  const nd = nodes[selectedNode];
+  if (!nd) return;
+  const enabled = !hasManagedNoScheduleTaint(nd);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(selectedNode)}/taints/noschedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.ok === false) throw new Error(data.error || `HTTP ${resp.status}`);
+    actionRefreshNode();
+    wsSend({ action: 'refresh_silent' });
+  } catch (err) {
+    addLog(selectedNode, `NoSchedule taint error: ${err.message || err}`, 'red');
+  }
+}
 
 function podsButtonText() {
   if (!showPods)           return '⬡ Pods';

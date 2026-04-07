@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from draino.models import NodeState
+from draino.operations import k8s_ops
 from draino.operations.k8s_ops import K8sAuth
 from draino.operations.openstack_ops import OpenStackAuth
 from draino.web import server as web_server
@@ -533,6 +534,102 @@ def test_node_network_stats_endpoint_returns_agent_data(monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["interfaces"][0]["name"] == "bond0"
+
+
+def test_set_managed_noschedule_taint_preserves_unrelated_taints(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeTaint:
+        def __init__(self, key: str, value: str | None, effect: str):
+            self.key = key
+            self.value = value
+            self.effect = effect
+
+        def to_dict(self):
+            return {"key": self.key, "value": self.value, "effect": self.effect}
+
+    class FakeSpec:
+        taints = [
+            FakeTaint("custom", "value", "NoSchedule"),
+            FakeTaint(k8s_ops.MANAGED_NOSCHEDULE_TAINT_KEY, "true", "NoSchedule"),
+            FakeTaint("other", None, "PreferNoSchedule"),
+        ]
+
+    class FakeNode:
+        spec = FakeSpec()
+
+    class FakeCoreV1Api:
+        def __init__(self, api_client):
+            captured["api_client"] = api_client
+
+        def read_node(self, name: str):
+            captured["read_name"] = name
+            return FakeNode()
+
+        def patch_node(self, name: str, body: dict):
+            captured["patch_name"] = name
+            captured["body"] = body
+
+    monkeypatch.setattr(k8s_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_ops.client, "CoreV1Api", FakeCoreV1Api)
+
+    k8s_ops.set_managed_noschedule_taint("node-a", enabled=False)
+
+    assert captured["read_name"] == "node-a"
+    assert captured["patch_name"] == "node-a"
+    assert captured["body"] == {
+        "spec": {
+            "taints": [
+                {"key": "custom", "value": "value", "effect": "NoSchedule"},
+                {"key": "other", "value": None, "effect": "PreferNoSchedule"},
+            ]
+        }
+    }
+
+
+def test_patch_managed_noschedule_taint_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    def fake_set_managed_noschedule_taint(node_name, enabled, auth=None):
+        captured["node_name"] = node_name
+        captured["enabled"] = enabled
+        captured["auth"] = auth
+
+    monkeypatch.setattr(web_server.k8s_ops, "set_managed_noschedule_taint", fake_set_managed_noschedule_taint)
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        resp = client.post("/api/nodes/node-a/taints/noschedule", json={"enabled": True})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "error": None}
+    assert captured["node_name"] == "node-a"
+    assert captured["enabled"] is True
+    assert captured["auth"] == record.server.k8s_auth
 
 
 def test_websocket_requires_session_and_uses_session_server(monkeypatch):

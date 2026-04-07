@@ -1597,6 +1597,33 @@ async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch, req
         return {"ok": False, "error": str(exc)}
 
 
+class ManagedNoSchedulePatch(BaseModel):
+    enabled: bool
+
+
+@fastapi_app.post("/api/nodes/{node_name}/taints/noschedule")
+async def api_patch_managed_noschedule_taint(
+    node_name: str,
+    payload: ManagedNoSchedulePatch,
+    request: Request,
+):
+    """Add or remove Draino's managed NoSchedule taint on a K8s node."""
+    session = _get_session_record(request)
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(
+            None,
+            k8s_ops.set_managed_noschedule_taint,
+            node_name,
+            payload.enabled,
+            session.server.k8s_auth,
+        )
+        session.server.start_refresh(silent=True)
+        return {"ok": True, "error": None}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @fastapi_app.get("/api/nodes/{node_name}/network-interfaces")
 async def api_node_network_interfaces(node_name: str, request: Request):
     """Return physical and bond network interfaces discovered from the host."""

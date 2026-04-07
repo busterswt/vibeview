@@ -20,6 +20,9 @@ from .. import node_agent_client
 LogFn = Callable[[str], None]
 
 _CONTEXT: str | None = None
+MANAGED_NOSCHEDULE_TAINT_KEY = "draino.openstack.org/maintenance"
+MANAGED_NOSCHEDULE_TAINT_VALUE = "true"
+MANAGED_NOSCHEDULE_TAINT_EFFECT = "NoSchedule"
 
 
 @dataclass(slots=True)
@@ -474,6 +477,51 @@ def patch_node_annotation(
     v1 = client.CoreV1Api(_api_client(auth))
     body = {"metadata": {"annotations": {key: value}}}
     v1.patch_node(node_name, body)
+
+
+def has_managed_noschedule_taint(taints: list[dict] | None) -> bool:
+    """Return True when Draino's managed NoSchedule taint is present."""
+    if not taints:
+        return False
+    for taint in taints:
+        if (
+            taint.get("key") == MANAGED_NOSCHEDULE_TAINT_KEY
+            and taint.get("effect") == MANAGED_NOSCHEDULE_TAINT_EFFECT
+        ):
+            return True
+    return False
+
+
+def set_managed_noschedule_taint(
+    node_name: str,
+    enabled: bool,
+    auth: K8sAuth | None = None,
+) -> None:
+    """Add or remove Draino's managed NoSchedule taint on a K8s node.
+
+    Only the Draino-managed taint is touched so unrelated scheduler policy
+    remains intact.
+    """
+    v1 = client.CoreV1Api(_api_client(auth))
+    node = v1.read_node(node_name)
+    existing = []
+    for taint in node.spec.taints or []:
+        item = taint.to_dict() if hasattr(taint, "to_dict") else dict(taint)
+        if (
+            item.get("key") == MANAGED_NOSCHEDULE_TAINT_KEY
+            and item.get("effect") == MANAGED_NOSCHEDULE_TAINT_EFFECT
+        ):
+            continue
+        existing.append(item)
+
+    if enabled:
+        existing.append({
+            "key": MANAGED_NOSCHEDULE_TAINT_KEY,
+            "value": MANAGED_NOSCHEDULE_TAINT_VALUE,
+            "effect": MANAGED_NOSCHEDULE_TAINT_EFFECT,
+        })
+
+    v1.patch_node(node_name, {"spec": {"taints": existing}})
 
 
 def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> dict:
