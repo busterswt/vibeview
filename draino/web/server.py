@@ -58,7 +58,7 @@ from kubernetes import client, config
 from kubernetes.config.config_exception import ConfigException
 from pydantic import BaseModel
 
-from .. import worker
+from .. import node_agent_client, worker
 from ..audit import AuditLogger
 from ..models import NodePhase, NodeState
 from ..operations import k8s_ops, openstack_ops
@@ -391,6 +391,7 @@ def _serialise(state: NodeState) -> dict:
         "latest_kernel_version": state.latest_kernel_version,
         "uptime":              state.uptime,
         "reboot_required":     state.reboot_required,
+        "node_agent_ready":    state.node_agent_ready,
         "is_edge":             state.is_edge,
         "is_etcd":             state.is_etcd,
         "etcd_healthy":        state.etcd_healthy,
@@ -607,6 +608,17 @@ class DrainoServer:
         membership_changed = self._apply_k8s_nodes(nodes)
         # Push K8s-only view immediately so the page shows nodes fast.
         self._push_inventory_state(force_full_state=membership_changed)
+
+        try:
+            ready_node_agents = node_agent_client.get_ready_node_names()
+        except Exception as exc:
+            ready_node_agents = set()
+            if not silent:
+                self._push({"type": "log", "node": "-", "message": f"Node-agent readiness probe failed: {exc}", "color": "warn"})
+        for nd in nodes:
+            state = self.node_states.get(nd["name"])
+            if state:
+                state.node_agent_ready = nd["name"] in ready_node_agents
 
         def _os_log(msg: str) -> None:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})

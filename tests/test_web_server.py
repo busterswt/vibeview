@@ -49,11 +49,13 @@ def test_serialise_includes_k8s_taints():
     state = NodeState(k8s_name="node-1", hypervisor="hv-1")
     state.k8s_taints = [{"key": "key", "value": "value", "effect": "NoSchedule"}]
     state.is_edge = True
+    state.node_agent_ready = False
 
     data = web_server._serialise(state)
 
     assert data["k8s_taints"] == [{"key": "key", "value": "value", "effect": "NoSchedule"}]
     assert data["is_edge"] is True
+    assert data["node_agent_ready"] is False
 
 
 def test_session_endpoint_reports_unauthenticated():
@@ -462,6 +464,31 @@ def test_node_metrics_endpoint_caches_and_refreshes(monkeypatch):
     assert second.status_code == 200
     assert refreshed.status_code == 200
     assert captured == {"metrics": 2}
+
+
+def test_refresh_marks_missing_node_agents(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(
+        k8s_auth=None,
+        openstack_auth=None,
+        role_names=["admin"],
+        audit_log=str(tmp_path / "audit.log"),
+    )
+    nodes = [
+        {"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False, "taints": [], "kernel_version": None},
+        {"name": "node-b", "hostname": "hv-b", "ready": True, "cordoned": False, "taints": [], "kernel_version": None},
+    ]
+
+    monkeypatch.setattr(web_server.node_agent_client, "get_ready_node_names", lambda: {"node-a"})
+    monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(web_server.k8s_ops, "get_node_host_signals", lambda node_name, hostname=None: {"kernel_version": None, "latest_kernel_version": None, "reboot_required": False})
+    monkeypatch.setattr(web_server.k8s_ops, "get_ovn_edge_nodes", lambda auth=None: set())
+    monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
+    monkeypatch.setattr(server, "_push", lambda message: None)
+
+    server._load_nodes_bg(cached_nodes=nodes, silent=True)
+
+    assert server.node_states["node-a"].node_agent_ready is True
+    assert server.node_states["node-b"].node_agent_ready is False
 
 
 def test_node_network_stats_endpoint_returns_agent_data(monkeypatch):

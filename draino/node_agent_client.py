@@ -85,6 +85,31 @@ def get_host_network_stats(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/network-stats")
 
 
+def get_ready_node_names(agent_config: NodeAgentConfig | None = None) -> set[str]:
+    config_data = agent_config or load_config_from_env()
+
+    try:
+        config.load_incluster_config()
+    except ConfigException as exc:
+        raise RuntimeError("node-agent client requires in-cluster Kubernetes access") from exc
+
+    core = client.CoreV1Api()
+    pods = core.list_namespaced_pod(
+        namespace=config_data.namespace,
+        label_selector=config_data.label_selector,
+    )
+
+    ready_nodes: set[str] = set()
+    for pod in pods.items:
+        if pod.status.phase != "Running":
+            continue
+        conditions = pod.status.conditions or []
+        ready = any(cond.type == "Ready" and cond.status == "True" for cond in conditions)
+        if ready and pod.spec and pod.spec.node_name:
+            ready_nodes.add(pod.spec.node_name)
+    return ready_nodes
+
+
 def _request_json(
     node_name: str,
     method: str,

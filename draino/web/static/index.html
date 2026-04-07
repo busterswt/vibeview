@@ -1489,6 +1489,9 @@ function treeItemHtml(name, nd) {
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  const agentBdg = nd.node_agent_ready === false
+    ? `<span class="tree-badge red" title="No ready node-agent pod on this node">agent</span>`
+    : '';
   const edgeBdg = nd.is_edge ? `<span class="tree-badge edge">edge</span>` : '';
   const noSched = noScheduleTaints(nd);
   const noSchedBdg = noSched.length
@@ -1517,7 +1520,7 @@ function treeItemHtml(name, nd) {
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${agentBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
