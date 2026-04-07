@@ -70,6 +70,27 @@ def test_normalise_image_digest_handles_kubernetes_image_ids():
     assert web_server._normalise_image_digest("ghcr.io/busterswt/draino-claude:main") is None
 
 
+def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_ghcr_manifest_request",
+        lambda repository_path, reference, token=None: (
+            {
+                "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+                "manifests": [
+                    {"digest": "sha256:child1", "platform": {"os": "linux", "architecture": "amd64"}},
+                    {"digest": "sha256:child2", "platform": {"os": "linux", "architecture": "arm64"}},
+                ],
+            },
+            {"Docker-Content-Digest": "sha256:toplevel"},
+        ),
+    )
+
+    digest = web_server._resolve_remote_track_digest("ghcr.io/busterswt/draino-claude", "main")
+
+    assert digest == "sha256:toplevel"
+
+
 def test_root_serves_login_when_unauthenticated():
     with TestClient(web_server.fastapi_app) as client:
         resp = client.get("/")

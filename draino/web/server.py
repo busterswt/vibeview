@@ -149,16 +149,6 @@ def _normalise_image_digest(image_id: str | None) -> str | None:
     return None
 
 
-def _platform_arch() -> str:
-    machine = os.uname().machine.lower()
-    return {
-        "x86_64": "amd64",
-        "amd64": "amd64",
-        "aarch64": "arm64",
-        "arm64": "arm64",
-    }.get(machine, machine)
-
-
 def _parse_www_authenticate(header: str) -> dict[str, str]:
     if not header or not header.startswith("Bearer "):
         raise RuntimeError("unsupported GHCR auth challenge")
@@ -213,23 +203,8 @@ def _resolve_remote_track_digest(image_repository: str, reference: str) -> str |
     if repository_path.startswith("ghcr.io/"):
         repository_path = repository_path[len("ghcr.io/"):]
 
-    manifest, _headers = _ghcr_manifest_request(repository_path, reference)
-    media_type = manifest.get("mediaType", "")
-    if media_type in {
-        "application/vnd.oci.image.index.v1+json",
-        "application/vnd.docker.distribution.manifest.list.v2+json",
-    }:
-        target_os = "linux"
-        target_arch = _platform_arch()
-        manifests = manifest.get("manifests", [])
-        for entry in manifests:
-            platform = entry.get("platform") or {}
-            if platform.get("os") == target_os and platform.get("architecture") == target_arch:
-                return entry.get("digest")
-        if manifests:
-            return manifests[0].get("digest")
-        return None
-    return _headers.get("Docker-Content-Digest") or manifest.get("config", {}).get("digest")
+    _manifest, headers = _ghcr_manifest_request(repository_path, reference)
+    return headers.get("Docker-Content-Digest")
 
 
 def _get_running_image_digest() -> str | None:
