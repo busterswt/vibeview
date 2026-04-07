@@ -1823,7 +1823,10 @@ function selectNode(name) {
   }
   // Load rich node detail if not already cached
   if (shouldLoadNodeDetail(name)) loadNodeDetail(name);
-  if (activeTab === 'monitor' && shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
+  if (activeTab === 'monitor') {
+    if (shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
+    _ensureNetworkDataLoaded(name);
+  }
   // Load network config data if Configure tab is active
   if (activeTab === 'configure') _ensureNetworkDataLoaded(name);
   renderInfraDetail();
