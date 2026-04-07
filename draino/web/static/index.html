@@ -89,24 +89,6 @@ body {
 }
 .update-pill.visible { display: inline-flex; }
 .update-pill:hover { background: #ffecb3; }
-.version-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  color: #cfd8dc;
-  border: 1px solid rgba(255,255,255,0.14);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.version-pill .mono,
-.update-pill .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-}
 #clock  { color: #90a4ae; font-size: 12px; }
 #ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
 #ws-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--red-lt); transition: background 0.3s; }
@@ -691,8 +673,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </nav>
   <div class="top-right">
     <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
-    <span id="current-version-pill" class="version-pill">Running <span class="mono">unknown</span></span>
-    <a id="update-pill" class="update-pill" href="#" target="_blank" rel="noopener noreferrer">Available <span class="mono">unknown</span></a>
+    <a id="update-pill" class="update-pill" href="#" target="_blank" rel="noopener noreferrer">Update Available</a>
     <button class="hint-toggle" id="hint-toggle" onclick="toggleHints()" title="Toggle VMware terminology hints">💡 Hints off</button>
     <button class="btn top-action" id="logout-btn" onclick="logout()">Sign out</button>
     <div id="clock"></div>
@@ -1034,12 +1015,10 @@ function setAuthenticatedUI(info) {
 }
 
 function renderAppMeta(meta) {
-  const currentPill = document.getElementById('current-version-pill');
   const pill = document.getElementById('update-pill');
-  if (!pill || !currentPill) return;
+  if (!pill) return;
   const currentTag = meta?.current_tag || 'unknown';
   const currentDigest = meta?.current_digest ? meta.current_digest.slice(0, 12) : 'unknown';
-  currentPill.innerHTML = `Running <span class="mono">${esc(currentTag)} @ ${esc(currentDigest)}</span>`;
 
   if (!meta?.update_available) {
     pill.classList.remove('visible');
@@ -1048,9 +1027,9 @@ function renderAppMeta(meta) {
   }
   pill.classList.add('visible');
   pill.href = meta.update_url || '#';
+  pill.textContent = 'Update Available';
   const availableTrack = meta.track || 'main';
   const latestDigest  = meta.latest_digest ? meta.latest_digest.slice(0, 12) : 'unknown';
-  pill.innerHTML = `Available <span class="mono">${esc(availableTrack)} @ ${esc(latestDigest)}</span>`;
   pill.title = `Running ${currentTag} @ ${currentDigest}; upstream ${availableTrack} @ ${latestDigest}`;
 }
 
