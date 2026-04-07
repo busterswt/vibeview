@@ -455,7 +455,15 @@ body.no-hints .vmware-ref-card { display: none !important; }
    MONITOR TAB — event-list cards
 ═══════════════════════════════════════════════════════ */
 .app-runtime-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.runtime-chart { width: 100%; height: 84px; display: block; background: #fafbfc; border: 1px solid var(--border); border-radius: 4px; }
+.runtime-chart {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 8 / 3;
+  display: block;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
 .runtime-note { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .event-list { background: var(--white); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 .event-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f0f2f5; font-size: 12px; }
@@ -1092,7 +1100,7 @@ function buildRuntimeChart(history, key, color, formatter, maxLabel) {
   const latest = values[values.length - 1];
   const baselineY = topPad + plotHeight;
   return `
-    <svg class="runtime-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+    <svg class="runtime-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
       <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
       <line x1="${leftPad}" y1="${baselineY}" x2="${width - rightPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
       <text x="4" y="${topPad + 10}" fill="#78909c" font-size="10">${esc(maxLabel(max))}</text>
