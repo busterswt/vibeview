@@ -1,8 +1,7 @@
 """FastAPI web server for Draino.
 
-Replaces the Textual TUI with a browser-based UI.  All worker logic
-(worker.py, operations/) is reused unchanged.  The Textual layer is
-swapped for a FastAPI app + WebSocket push model.
+All worker logic (worker.py, operations/) is reused unchanged. The operator
+interface is delivered as a FastAPI app with WebSocket push updates.
 
 WebSocket message protocol
 ──────────────────────────
@@ -63,7 +62,7 @@ from ..audit import AuditLogger
 from ..models import NodePhase, NodeState
 from ..operations import k8s_ops, openstack_ops
 from ..reboot import is_ready_for_reboot
-from ..render import format_uptime
+from ..time_utils import format_uptime
 
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"

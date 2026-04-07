@@ -5,12 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "draino"
 version = "0.1.0"
-description = "TUI for draining OpenStack hypervisors and Kubernetes nodes before a reboot"
+description = "Web UI for draining OpenStack hypervisors and Kubernetes nodes before a reboot"
 requires-python = ">=3.11"
 dependencies = [
-    "textual>=0.52.0",
+    "fastapi>=0.110.0",
     "kubernetes>=28.1.0",
     "openstacksdk>=2.0.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [project.scripts]
@@ -25,9 +26,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.11.0",
-    "textual-dev",
 ]
-web = ["fastapi>=0.110.0", "uvicorn[standard]>=0.27.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

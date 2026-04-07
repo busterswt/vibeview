@@ -6,8 +6,8 @@ live-migrating VMs, failing over Octavia load balancers, evicting pods — and t
 the reboot and waits for the node to return.  Every action is recorded to a compliance
 audit log.
 
-It ships with two UIs: a terminal TUI (powered by [Textual](https://textual.textualize.io/))
-and a browser-based web UI (powered by FastAPI + WebSockets).
+It ships as a browser-based web UI powered by FastAPI and WebSockets, with a
+node-local agent for reboot and host-inspection operations.
 
 ---
 
@@ -26,18 +26,15 @@ and a browser-based web UI (powered by FastAPI + WebSockets).
   before evacuation begins
 - **Compliance audit log** — every action (started / completed / failed / blocked /
   cancelled) is appended as a structured JSONL entry to `~/.draino/audit.log`
-- **Two UIs** — terminal TUI and browser web UI, both driven by the same backend logic
+- **Browser-based operations UI** — web UI for infrastructure, Kubernetes, networking,
+  and storage views
 
 ---
 
 ## Installation
 
 ```bash
-# TUI only
 pip install .
-
-# TUI + web UI
-pip install ".[web]"
 ```
 
 Requires Python 3.11+.
@@ -46,10 +43,9 @@ Requires Python 3.11+.
 
 | Dependency | Purpose |
 |---|---|
-| `textual >= 0.52` | Terminal UI framework |
 | `kubernetes >= 28` | K8s node/pod operations |
 | `openstacksdk >= 2` | Nova compute & Octavia LB operations |
-| `fastapi`, `uvicorn` | Web UI server (`[web]` extra) |
+| `fastapi`, `uvicorn` | Web UI server and node-local agent |
 
 ---
 
@@ -57,13 +53,6 @@ Requires Python 3.11+.
 
 - etcd nodes must be labeled with `node-role.kubernetes.io/etcd` or Draino cannot
   identify them for quorum-aware reboot protection
-
-### Terminal UI auth
-
-The TUI still uses local operator credentials from the runtime environment:
-
-- A valid `~/.kube/config` (or `KUBECONFIG`) pointing at the target cluster
-- OpenStack credentials in `~/.config/openstack/clouds.yaml` (or `OS_CLOUD` env var)
 
 ### Web UI auth
 
@@ -97,18 +86,11 @@ Why:
 
 ## Usage
 
-### Terminal UI
-
-```bash
-draino
-draino --cloud mycloud --context staging
-```
-
 ### Web UI
 
 ```bash
-draino --web
-draino --web --host 127.0.0.1 --port 9000
+draino
+draino --host 127.0.0.1 --port 9000
 ```
 
 Then open `http://localhost:8000` in a browser and authenticate with both:
@@ -237,21 +219,17 @@ than hard-coding it into the chart. For Envoy Gateway:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--cloud NAME` | `$OS_CLOUD` | OpenStack cloud name from `clouds.yaml` for the TUI |
-| `--context NAME` | current context | Kubernetes context from `kubeconfig` for the TUI |
 | `--audit-log PATH` | `~/.draino/audit.log` | Path for the compliance audit log |
-| `--web` | off | Launch the web UI instead of the TUI |
-| `--host HOST` | `0.0.0.0` | Bind address for the web server |
-| `--port PORT` | `8000` | Port for the web server |
-
-When `--web` is used, `--cloud` and `--context` are no longer required for normal use
-because the browser login provides explicit OpenStack and Kubernetes credentials.
+| `--web` | off | Launch the web UI explicitly (same behavior as the default mode) |
+| `--node-agent` | off | Launch the node-local reboot agent |
+| `--host HOST` | `0.0.0.0` | Bind address for the web server or node agent |
+| `--port PORT` | `8000` | Port for the web server or node agent |
 
 ---
 
 ## Workflows
 
-### Full Evacuation (`S` / Start Evacuation)
+### Full Evacuation
 
 Intended for nodes that need a full maintenance window.
 
@@ -264,7 +242,7 @@ Intended for nodes that need a full maintenance window.
 7. Drain the K8s node (evict all pods)
 8. *(Proceed to reboot)*
 
-### Quick Drain (`D` / Quick Drain)
+### Quick Drain
 
 For nodes where OpenStack evacuation is not needed (e.g. control-plane nodes, or when
 VMs have already been migrated manually).
@@ -273,14 +251,14 @@ VMs have already been migrated manually).
 2. *(Compute nodes only)* Disable Nova compute service
 3. Drain the K8s node
 
-### Undrain (`U` / Undrain Node)
+### Undrain
 
 Reverses a cordon/disable.
 
 1. *(Compute nodes only)* Re-enable Nova compute service
 2. Uncordon the K8s node
 
-### Reboot (`R` / Reboot Node)
+### Reboot
 
 Issues a reboot after evacuation is complete.  For etcd nodes, peer health of all etcd
 peers is checked first; the reboot is blocked if it would reduce the cluster below quorum.
@@ -297,26 +275,12 @@ In the web UI, reboot is only available to authenticated sessions with the OpenS
 
 ---
 
-## Keyboard shortcuts (TUI)
-
-| Key | Action |
-|---|---|
-| `S` | Start full evacuation |
-| `D` | Quick drain (cordon + pod evict) |
-| `U` | Undrain (uncordon + re-enable Nova) |
-| `R` | Reboot node |
-| `P` | Toggle pods view |
-| `H` | Show / hide Succeeded pods |
-| `↑ / ↓` | Navigate node list |
-
----
-
 ## Development
 
 Install development tooling:
 
 ```bash
-pip install -e ".[dev,web]"
+pip install -e ".[dev]"
 ```
 
 Run the automated checks:
@@ -356,18 +320,18 @@ draino/
   __main__.py        CLI entry point
   models.py          NodeState, InstanceInfo, WorkflowStep, enums
   worker.py          Background workflow runners (evacuation, drain, reboot)
-  app.py             Textual TUI application
-  render.py          Pure rendering helpers (Rich markup / Text cells)
-  screens.py         Textual modal screens (confirm dialogs)
+  time_utils.py      Shared time-formatting helpers
   audit.py           Compliance audit logger (JSONL)
   operations/
     k8s_ops.py       Kubernetes client helpers
     openstack_ops.py OpenStack / Nova / Octavia helpers
+  node_agent.py      Node-local FastAPI reboot/inspection agent
   web/
     server.py        FastAPI + WebSocket backend
     static/
       index.html     Single-page browser UI
-      login-mockup.html Standalone login mockup
+      login.html     Standalone login page
+      login-isolated-mockup.html Standalone login mockup
 ```
 
 ---
