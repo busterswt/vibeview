@@ -1618,8 +1618,13 @@ function updateSidebarRow(name) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function selectNode(name) {
+  const previousNode = selectedNode;
   // Bug fix: clear all existing selected items before setting new one
   document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+
+  if (previousNode && previousNode !== name) {
+    delete nodeNetStatsEnabled[previousNode];
+  }
 
   selectedNode  = name;
   showPods      = false;
