@@ -99,6 +99,10 @@ nodeAgent:
       maxUnavailable: 2
 ```
 
+Both the web `Deployment` and the node-agent `DaemonSet` also carry a pod-template
+annotation based on the Helm release revision. That means a normal `helm upgrade` will
+trigger a rollout even when the image tag and other pod settings are unchanged.
+
 This is still a privileged design because the agent can reboot its host.
 
 Security concerns to understand before deployment:

@@ -13,8 +13,9 @@ spec:
     metadata:
       labels:
         {{- include "draino.selectorLabels" . | nindent 8 }}
-      {{- with .Values.podAnnotations }}
       annotations:
+        draino/release-revision: {{ .Release.Revision | quote }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
