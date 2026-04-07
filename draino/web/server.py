@@ -71,6 +71,7 @@ _SESSION_TTL = 60 * 60 * 12
 _OPENSTACK_SUMMARY_TTL = float(os.getenv("DRAINO_OPENSTACK_SUMMARY_TTL", "60"))
 _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
+_OVN_EDGE_TTL = float(os.getenv("DRAINO_OVN_EDGE_TTL", "60"))
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
 _IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
 _IMAGE_TAG = os.getenv("DRAINO_IMAGE_TAG", "main")
@@ -414,6 +415,7 @@ def _serialise(state: NodeState) -> dict:
         "latest_kernel_version": state.latest_kernel_version,
         "uptime":              state.uptime,
         "reboot_required":     state.reboot_required,
+        "is_edge":             state.is_edge,
         "is_etcd":             state.is_etcd,
         "etcd_healthy":        state.etcd_healthy,
         "etcd_checking":       state.etcd_checking,
@@ -474,6 +476,7 @@ class DrainoServer:
         self._last_k8s_nodes:  list[dict]           = []
         self._etcd_node_names: set[str]             = set()
         self._openstack_summary_cache: tuple[float, dict[str, dict]] | None = None
+        self._ovn_edge_cache: tuple[float, set[str]] | None = None
         self._host_signal_refresh_at: dict[str, float] = {}
         self._node_detail_cache: dict[str, tuple[float, dict]] = {}
 
@@ -601,6 +604,18 @@ class DrainoServer:
     def _set_cached_openstack_summaries(self, summaries: dict[str, dict], now: float) -> None:
         self._openstack_summary_cache = (now + _OPENSTACK_SUMMARY_TTL, summaries)
 
+    def _get_cached_ovn_edge_nodes(self, now: float, force: bool = False) -> set[str] | None:
+        if force or self._ovn_edge_cache is None:
+            return None
+        expires_at, payload = self._ovn_edge_cache
+        if now >= expires_at:
+            self._ovn_edge_cache = None
+            return None
+        return payload
+
+    def _set_cached_ovn_edge_nodes(self, edge_nodes: set[str], now: float) -> None:
+        self._ovn_edge_cache = (now + _OVN_EDGE_TTL, set(edge_nodes))
+
     def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
         now = time.time()
         nodes = cached_nodes
@@ -617,6 +632,19 @@ class DrainoServer:
 
         def _os_log(msg: str) -> None:
             self._push({"type": "log", "node": "-", "message": msg, "color": "dim"})
+
+        edge_nodes = self._get_cached_ovn_edge_nodes(now=now, force=not silent)
+        if edge_nodes is None:
+            try:
+                edge_nodes = k8s_ops.get_ovn_edge_nodes(auth=self.k8s_auth)
+                self._set_cached_ovn_edge_nodes(edge_nodes, now=now)
+            except Exception as exc:
+                edge_nodes = set()
+                if not silent:
+                    self._push({"type": "log", "node": "-", "message": f"OVN edge-node probe failed: {exc}", "color": "warn"})
+
+        edge_aliases = {name.lower() for name in edge_nodes}
+        edge_aliases |= {name.split(".", 1)[0].lower() for name in edge_nodes}
 
         summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
         if summaries is None:
@@ -637,6 +665,13 @@ class DrainoServer:
             state    = self.node_states.get(name)
             if not state:
                 continue
+            candidates = {
+                state.k8s_name.lower(),
+                state.k8s_name.split(".", 1)[0].lower(),
+                hostname.lower(),
+                hostname.split(".", 1)[0].lower(),
+            }
+            state.is_edge          = any(candidate in edge_aliases for candidate in candidates if candidate)
             state.is_etcd          = name in self._etcd_node_names
             state.availability_zone = summary.get("availability_zone")
             state.aggregates        = summary.get("aggregates", [])

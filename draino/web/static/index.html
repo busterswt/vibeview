@@ -261,6 +261,7 @@ body {
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
+.tree-badge.edge { background: #e8f5e9; color: #1b5e20; font-weight: 700; }
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.reboot { background: #fff8e1; color: #e65100; font-weight: 700; }
@@ -1401,6 +1402,7 @@ function treeItemHtml(name, nd) {
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  const edgeBdg = nd.is_edge ? `<span class="tree-badge edge">edge</span>` : '';
   const noSched = noScheduleTaints(nd);
   const noSchedBdg = noSched.length
     ? `<span class="tree-badge nosched" title="${escAttr(noSched.map(taintLabel).join(', '))}">NoSchedule</span>`
@@ -1428,7 +1430,7 @@ function treeItemHtml(name, nd) {
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
@@ -1610,6 +1612,8 @@ function renderObjHeader(nd) {
   else if (nd.phase === 'idle') badges.push(`<span class="badge green">● K8s Ready</span>`);
   if (noSched.length)
     badges.push(`<span class="badge red">NoSchedule</span>`);
+  if (nd.is_edge)
+    badges.push(`<span class="badge green">Edge</span>`);
   if (nd.reboot_required)
     badges.push(`<span class="badge yellow">Reboot Needed</span>`);
   if (nd.latest_kernel_version && nd.latest_kernel_version !== nd.kernel_version)

@@ -63,6 +63,7 @@ class NodeState:
     reboot_required:       bool = False
 
     # ── Node roles ────────────────────────────────────────────────────────
+    is_edge:        bool = False           # True if OVN chassis is marked as gateway/edge
     is_etcd:        bool = False            # True if node carries the etcd role label
     etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
     etcd_checking:  bool = False           # True while etcd health check is in flight

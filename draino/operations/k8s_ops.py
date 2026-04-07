@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -646,6 +647,62 @@ def get_ovn_logical_switch(
         ports.append(current)
 
     return {"ls_name": ls_name, "ls_uuid": ls_uuid, "ports": ports}
+
+
+def _parse_ovn_map(value: str) -> dict[str, str]:
+    value = value.strip().strip("{}")
+    out: dict[str, str] = {}
+    for match in re.finditer(r'([\w:.\-]+)\s*=\s*"([^"]*)"', value):
+        out[match.group(1)] = match.group(2)
+    for match in re.finditer(r'([\w:.\-]+)\s*=\s*([^",}\s]+)', value):
+        if match.group(1) not in out:
+            out[match.group(1)] = match.group(2)
+    return out
+
+
+def get_ovn_edge_nodes(auth: K8sAuth | None = None) -> set[str]:
+    """Return chassis hostnames marked with enable-chassis-as-gw via kubectl ko."""
+    cmd = ["kubectl", "ko", "sbctl", "--format=list", "list", "Chassis"]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_kubectl_plugin_env(auth),
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko sbctl list timed out") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"kubectl ko sbctl exited with code {result.returncode}")
+
+    edge_nodes: set[str] = set()
+    current_host: str | None = None
+
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip()
+
+        if key == "hostname":
+            current_host = val.strip('"')
+        elif key == "external_ids" and current_host:
+            external_ids = _parse_ovn_map(val)
+            cms_options = external_ids.get("ovn-cms-options", "")
+            options = {item.strip() for item in cms_options.split(",") if item.strip()}
+            if "enable-chassis-as-gw" in options:
+                edge_nodes.add(current_host)
+            current_host = None
+
+    return edge_nodes
 
 
 # ── Cluster-wide resource listings ───────────────────────────────────────────

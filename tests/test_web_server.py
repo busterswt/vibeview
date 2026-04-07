@@ -48,10 +48,12 @@ def test_get_networks_coerces_external_flag_strings(monkeypatch):
 def test_serialise_includes_k8s_taints():
     state = NodeState(k8s_name="node-1", hypervisor="hv-1")
     state.k8s_taints = [{"key": "key", "value": "value", "effect": "NoSchedule"}]
+    state.is_edge = True
 
     data = web_server._serialise(state)
 
     assert data["k8s_taints"] == [{"key": "key", "value": "value", "effect": "NoSchedule"}]
+    assert data["is_edge"] is True
 
 
 def test_session_endpoint_reports_unauthenticated():
@@ -542,6 +544,7 @@ def test_load_nodes_bg_uses_state_updates_when_membership_is_unchanged(monkeypat
 
     monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
     monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(web_server.k8s_ops, "get_ovn_edge_nodes", lambda auth=None: {"node-1"})
     monkeypatch.setattr(
         web_server.k8s_ops,
         "get_node_host_signals",
@@ -557,6 +560,7 @@ def test_load_nodes_bg_uses_state_updates_when_membership_is_unchanged(monkeypat
 
     assert [msg["type"] for msg in pushed] == ["state_update", "state_update"]
     assert all(msg["node"] == "node-1" for msg in pushed)
+    assert server.node_states["node-1"].is_edge is True
 
 
 def test_load_nodes_bg_uses_full_state_when_membership_changes(monkeypatch, tmp_path):
