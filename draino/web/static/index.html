@@ -2247,21 +2247,24 @@ function renderNodeMonitorTab(nd) {
       ${ifaces.length ? `
         <table class="data-table">
           <thead>
-            <tr><th>Interface</th><th>Type</th><th>Status</th><th>Speed</th><th>Duplex</th><th>Bond</th><th>IPs</th><th>Live Stats</th><th>RX</th><th>TX</th></tr>
+            <tr><th>Interface</th><th>Type</th><th>Status</th><th>Speed</th><th>Duplex</th><th>Bond Member</th><th>IPs</th><th>Live Stats</th><th>RX</th><th>TX</th></tr>
           </thead>
           <tbody>
             ${ifaces.map((iface) => {
               const checked = enabledStats.has(iface.name);
               const live = netStatsByName[iface.name] || {};
               const ipSummary = [...(iface.ipv4 || []), ...(iface.ipv6 || [])].join(', ');
-              const bondName = iface.type === 'physical' ? (bondByMember[iface.name] || '—') : '—';
+              const bondName = iface.type === 'physical' ? (bondByMember[iface.name] || '') : '';
+              const bondCell = bondName
+                ? `<span class="tree-badge" style="margin-right:3px;font-family:monospace">${esc(bondName)}</span>`
+                : '<span style="color:var(--dim)">—</span>';
               return `<tr>
                 <td><strong>${esc(iface.name)}</strong></td>
                 <td><span class="nic-type ${escAttr(iface.type || 'physical')}">${esc(iface.type || 'physical')}</span></td>
                 <td>${esc(iface.status || 'unknown')}</td>
                 <td>${esc(iface.speed || '—')}</td>
                 <td>${esc(iface.duplex || '—')}</td>
-                <td>${esc(bondName)}</td>
+                <td>${bondCell}</td>
                 <td style="font-size:11px;color:var(--dim)">${esc(ipSummary || '—')}</td>
                 <td>
                   <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
