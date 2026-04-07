@@ -1,6 +1,6 @@
-# draino
+# VibeView
 
-**draino** is an interactive operator tool for safely draining OpenStack hypervisors and
+**VibeView** is an interactive operator tool for safely draining OpenStack hypervisors and
 Kubernetes nodes before a maintenance reboot.  It automates the full evacuation workflow —
 live-migrating VMs, failing over Octavia load balancers, evicting pods — and then issues
 the reboot and waits for the node to return.  Every action is recorded to a compliance
@@ -51,7 +51,7 @@ Requires Python 3.11+.
 
 ## Prerequisites
 
-- etcd nodes must be labeled with `node-role.kubernetes.io/etcd` or Draino cannot
+- etcd nodes must be labeled with `node-role.kubernetes.io/etcd` or VibeView cannot
   identify them for quorum-aware reboot protection
 
 ### Web UI auth

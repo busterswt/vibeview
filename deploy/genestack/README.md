@@ -1,4 +1,4 @@
-# Draino on Genestack
+# VibeView on Genestack
 
 This repo can run cleanly as a single web pod in a Genestack / OpenStack-Helm environment.
 
@@ -89,7 +89,7 @@ Create the listener fragment directory if it does not already exist:
 mkdir -p /etc/genestack/gateway-api/listeners
 ```
 
-Then create the listener fragment for a dedicated Draino hostname:
+Then create the listener fragment for a dedicated VibeView hostname:
 
 ```bash
 cat >/etc/genestack/gateway-api/listeners/draino-https.json <<'EOF'
@@ -166,7 +166,7 @@ match your deployment.
 
 ## New Route
 
-Draino’s Helm chart already creates the `HTTPRoute`, so in most cases the route is just
+VibeView’s Helm chart already creates the `HTTPRoute`, so in most cases the route is just
 the chart install. In Genestack terms, that is the route resource that binds to the
 listener via `parentRefs.sectionName`.
 
@@ -225,7 +225,7 @@ kubectl apply -f /etc/genestack/gateway-api/routes
 ## Node-local reboot agent
 
 The Helm chart deploys a node-local reboot agent by default. That agent runs as a
-privileged DaemonSet and listens on HTTPS inside the cluster. Draino only triggers the
+privileged DaemonSet and listens on HTTPS inside the cluster. VibeView only triggers the
 reboot after the node has already been cordoned and drained.
 
 Operational implications:
@@ -240,7 +240,7 @@ change the chart, read the generated Secret, or reach the agent over the cluster
 
 Important security caveat:
 
-- the current implementation still concentrates reboot authority inside the Draino trust
+- the current implementation still concentrates reboot authority inside the VibeView trust
   boundary
 - compromise of the web pod or mounted agent credentials can still expose broad reboot
   capability across managed nodes

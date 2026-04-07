@@ -1,6 +1,6 @@
-# Draino Helm Chart
+# VibeView Helm Chart
 
-This chart deploys the Draino web UI.
+This chart deploys the VibeView web UI.
 
 ## Defaults
 
@@ -69,7 +69,7 @@ own `Gateway` objects.
 
 ## Reboot support
 
-The chart now deploys a node-local reboot agent as a DaemonSet by default. Draino calls
+The chart now deploys a node-local reboot agent as a DaemonSet by default. VibeView calls
 that agent over HTTPS after the node has already been cordoned and drained.
 
 Default behavior:
@@ -115,8 +115,8 @@ Security concerns to understand before deployment:
 
 Recommended hardening:
 
-- add `NetworkPolicy` so only the Draino web pod can reach the agent
-- keep the Draino namespace tightly restricted
+- add `NetworkPolicy` so only the VibeView web pod can reach the agent
+- keep the VibeView namespace tightly restricted
 - restrict access to the generated node-agent Secret
 - prefer future migration to mTLS or per-agent credentials
 - consider an external maintenance service or out-of-band power control for stricter

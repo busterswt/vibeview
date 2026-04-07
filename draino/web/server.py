@@ -1,4 +1,4 @@
-"""FastAPI web server for Draino.
+"""FastAPI web server for VibeView.
 
 All worker logic (worker.py, operations/) is reused unchanged. The operator
 interface is delivered as a FastAPI app with WebSocket push updates.
@@ -1122,7 +1122,7 @@ async def _lifespan(app: FastAPI):
     yield
 
 
-fastapi_app = FastAPI(title="Draino", lifespan=_lifespan)
+fastapi_app = FastAPI(title="VibeView", lifespan=_lifespan)
 
 
 class K8sLoginPayload(BaseModel):

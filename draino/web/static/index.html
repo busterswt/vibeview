@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Draino — Flushing Cloud Infrastructure Since 2026</title>
+<title>VibeView — Flushing Cloud Infrastructure Since 2026</title>
 <style>
 /* ═══════════════════════════════════════════════════════
    VARIABLES & RESET
@@ -800,7 +800,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 <div id="top-bar">
   <div class="logo">
     <div>
-      <div>Draino</div>
+      <div>VibeView</div>
       <div class="logo-sub">Flushing Cloud Infrastructure Since 2026</div>
     </div>
   </div>
@@ -1062,11 +1062,11 @@ body.no-hints .vmware-ref-card { display: none !important; }
         <div class="session-brand-icon">D</div>
         <div>
           <div class="session-brand" id="session-expired-title">Reconnect Required</div>
-          <div class="session-kicker">The current Draino session cannot be resumed.</div>
+          <div class="session-kicker">The current VibeView session cannot be resumed.</div>
         </div>
       </div>
       <div class="session-title">Session Lost</div>
-      <div class="session-sub">Your live connection to the Draino web pod was interrupted. A new login is required before the UI can continue.</div>
+      <div class="session-sub">Your live connection to the VibeView web pod was interrupted. A new login is required before the UI can continue.</div>
     </div>
     <div class="session-body">
       <div class="session-panel">
@@ -1077,7 +1077,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
         <div class="session-panel-body">
           <div class="session-detail-box">
             <strong>Session state is no longer valid</strong>
-            The web UI cannot safely resume after the connection is lost. Sign in again so Draino can create a fresh server-side session.
+            The web UI cannot safely resume after the connection is lost. Sign in again so VibeView can create a fresh server-side session.
           </div>
           <div class="session-actions">
             <button class="btn primary" onclick="returnToLogin()">Return to Login</button>
@@ -1339,7 +1339,7 @@ function renderMonitorView() {
   const requests = state.requests || {};
   const limits = state.limits || {};
   tab.innerHTML = `
-    <div class="tab-section-title" style="margin-bottom:10px"><span>Draino Runtime</span></div>
+    <div class="tab-section-title" style="margin-bottom:10px"><span>VibeView Runtime</span></div>
     <div class="app-runtime-grid">
       <div class="card">
         <div class="card-title">Process Usage</div>
@@ -1452,16 +1452,16 @@ function wsSetStatus(mode) {
   dot.classList.toggle('live', mode === 'live');
   if (mode === 'live') {
     label.textContent = 'Live';
-    pill.title = 'Live WebSocket connection to the Draino web pod.';
+    pill.title = 'Live WebSocket connection to the VibeView web pod.';
   } else if (mode === 'loading') {
     label.textContent = 'Loading inventory…';
     pill.title = 'Connected. Inventory is still loading.';
   } else if (mode === 'connecting') {
     label.textContent = 'Connecting…';
-    pill.title = 'Connecting to the Draino web pod.';
+    pill.title = 'Connecting to the VibeView web pod.';
   } else if (mode === 'reconnecting') {
     label.textContent = 'Reconnecting…';
-    pill.title = 'Connection to the Draino web pod was lost. If a Helm upgrade or rollout just ran, the pod may have been replaced and you may need to sign in again to recreate the session.';
+    pill.title = 'Connection to the VibeView web pod was lost. If a Helm upgrade or rollout just ran, the pod may have been replaced and you may need to sign in again to recreate the session.';
   } else {
     label.textContent = 'Offline';
     pill.title = 'WebSocket connection is offline.';
@@ -1627,12 +1627,12 @@ function switchView(name) {
           : name === 'kubernetes'
             ? 'Kubernetes'
             : name;
-    bcRoot.textContent  = 'Draino';
+    bcRoot.textContent  = 'VibeView';
     bcSep.style.display = '';
     bcNode.textContent  = label;
     // Lazy-load on first visit
     if (name === 'kubernetes') {
-      bcRoot.textContent = 'Draino';
+      bcRoot.textContent = 'VibeView';
       bcSep.style.display = '';
       bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
     }
@@ -2635,7 +2635,7 @@ function renderConfigureTab(nd) {
         ${nd.uptime         ? `<div class="mrow"><span class="ml">Uptime</span><span class="mv">${esc(nd.uptime)}</span></div>` : ''}
         <div class="mrow"><span class="ml">Reboot needed</span><span class="mv ${nd.reboot_required ? 'yellow' : ''}">${nd.reboot_required ? 'Yes' : 'No'}</span></div>
         <div class="mrow"><span class="ml">NoSchedule taint</span><span class="mv ${noSchedule.length ? 'red' : ''}">${noSchedule.length ? 'Yes' : 'No'}</span></div>
-        <div class="mrow"><span class="ml">Draino-managed NoSchedule</span><span class="mv ${managedNoSchedule ? 'yellow' : ''}">${managedNoSchedule ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">VibeView-managed NoSchedule</span><span class="mv ${managedNoSchedule ? 'yellow' : ''}">${managedNoSchedule ? 'Yes' : 'No'}</span></div>
         ${noSchedule.length ? `<div class="mrow"><span class="ml">Taint details</span><span class="mv mono" style="font-size:10px">${esc(noSchedule.map(taintLabel).join(', '))}</span></div>` : ''}
         <div class="mrow"><span class="ml">Maintenance taint action</span><span class="mv"><button class="btn ${managedNoSchedule ? 'warning' : ''}" onclick="actionToggleNoSchedule()">${managedNoSchedule ? '↺ Remove NoSchedule' : '＋ Add NoSchedule'}</button></span></div>
         <div class="mrow"><span class="ml">Is compute node</span><span class="mv">${nd.is_compute ? 'Yes' : 'No'}</span></div>
@@ -4173,8 +4173,8 @@ function updateActionButtons(nd) {
   nsBtn.disabled = busy;
   nsBtn.className = `btn ${managedNoSchedule ? 'warning' : ''}`;
   nsBtn.title = managedNoSchedule
-    ? 'Remove Draino-managed maintenance NoSchedule taint'
-    : 'Add Draino-managed maintenance NoSchedule taint';
+    ? 'Remove VibeView-managed maintenance NoSchedule taint'
+    : 'Add VibeView-managed maintenance NoSchedule taint';
 }
 
 // ════════════════════════════════════════════════════════════════════════════

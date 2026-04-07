@@ -1,4 +1,4 @@
-Draino has been deployed.
+VibeView has been deployed.
 
 Verify the release:
 
@@ -13,5 +13,5 @@ If Gateway API is attached to a reachable listener, open:
 This chart defaults to a single replica because web sessions are stored in-process.
 
 {{- if .Values.gateway.enabled }}
-This release exposes Draino with Gateway API resources.
+This release exposes VibeView with Gateway API resources.
 {{- end }}

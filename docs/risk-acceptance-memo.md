@@ -1,6 +1,6 @@
-# Risk Acceptance Memo for Draino
+# Risk Acceptance Memo for VibeView
 
-**Subject:** Risk Acceptance for Draino Operational Maintenance Application
+**Subject:** Risk Acceptance for VibeView Operational Maintenance Application
 
 **Date:** April 6, 2026
 
@@ -11,11 +11,11 @@
 
 ## Purpose
 
-This memo documents the current security and operational risks associated with the Draino application and records management's decision on whether to accept those risks for internal use. This memo is intended for internal governance and risk-management purposes only. It is not a statement that the application is free of security risk or suitable for external exposure without additional controls.
+This memo documents the current security and operational risks associated with the VibeView application and records management's decision on whether to accept those risks for internal use. This memo is intended for internal governance and risk-management purposes only. It is not a statement that the application is free of security risk or suitable for external exposure without additional controls.
 
 ## System Summary
 
-Draino is an internal operational tool used to inspect cluster and infrastructure state and to perform limited maintenance actions against Kubernetes and OpenStack managed infrastructure. The application includes:
+VibeView is an internal operational tool used to inspect cluster and infrastructure state and to perform limited maintenance actions against Kubernetes and OpenStack managed infrastructure. The application includes:
 
 - a web interface for authenticated operators
 - a privileged node-local agent deployed as a DaemonSet on managed infrastructure nodes
@@ -82,7 +82,7 @@ Management determines that use of this application is necessary to support opera
 
 ## Residual Risk Statement
 
-After considering current controls and business need, management accepts the residual risk of operating Draino in the approved scope for a limited period. Residual risk remains material enough that the system should continue to be tracked as a high-sensitivity internal operational tool with ongoing hardening work.
+After considering current controls and business need, management accepts the residual risk of operating VibeView in the approved scope for a limited period. Residual risk remains material enough that the system should continue to be tracked as a high-sensitivity internal operational tool with ongoing hardening work.
 
 ## Expiration and Review Date
 

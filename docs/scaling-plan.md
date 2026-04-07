@@ -1,6 +1,6 @@
 # Scaling Plan
 
-This document outlines a concrete scaling plan for Draino as the environment grows from a handful of nodes to 100+ nodes.
+This document outlines a concrete scaling plan for VibeView as the environment grows from a handful of nodes to 100+ nodes.
 
 The focus is on functional scaling, not just CPU and memory sizing. The main concerns are:
 

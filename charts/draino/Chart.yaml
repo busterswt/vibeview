@@ -1,6 +1,6 @@
 apiVersion: v2
 name: draino
-description: Helm chart for the Draino web UI
+description: Helm chart for the VibeView web UI
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

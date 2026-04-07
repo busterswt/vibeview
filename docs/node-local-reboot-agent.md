@@ -3,9 +3,9 @@
 ## Purpose
 
 This document describes a safer replacement for direct SSH-based reboot support in
-Draino's web UI.
+VibeView's web UI.
 
-The current SSH model allows the Draino pod to hold a long-lived private key that may be
+The current SSH model allows the VibeView pod to hold a long-lived private key that may be
 trusted by many or all nodes. That is operationally simple, but it creates a large blast
 radius if the pod, Secret, or an authenticated session is compromised.
 
@@ -15,9 +15,9 @@ for reboot-related actions.
 
 ## Goals
 
-- remove the need for a shared SSH private key in the Draino pod
+- remove the need for a shared SSH private key in the VibeView pod
 - reduce credential blast radius from "all nodes" to "this node"
-- preserve Draino's existing drain, evacuation, and recovery workflow
+- preserve VibeView's existing drain, evacuation, and recovery workflow
 - keep the reboot interface narrow and auditable
 - fit naturally into Kubernetes and Genestack operational patterns
 
@@ -25,7 +25,7 @@ for reboot-related actions.
 
 - provide a general remote execution service
 - expose arbitrary shell or host command execution
-- replace Kubernetes drain or OpenStack evacuation logic already handled by Draino
+- replace Kubernetes drain or OpenStack evacuation logic already handled by VibeView
 - solve bare-metal power management or out-of-band BMC workflows
 
 ## High-Level Architecture
@@ -37,7 +37,7 @@ The design introduces a small reboot agent running as a DaemonSet:
 - each pod exposes a minimal authenticated API
 - each pod can reboot only its own host
 
-Draino continues to own the orchestration workflow:
+VibeView continues to own the orchestration workflow:
 
 1. authenticate the operator
 2. validate maintenance preconditions
@@ -48,7 +48,7 @@ Draino continues to own the orchestration workflow:
 
 ## Trust Model
 
-The main trust boundary is between the Draino web application and the node-local reboot
+The main trust boundary is between the VibeView web application and the node-local reboot
 agent.
 
 The agent must not trust a caller just because it is inside the cluster. It should
@@ -65,7 +65,7 @@ The node-local agent must also enforce node locality:
 
 Preferred options, in order:
 
-1. mTLS between Draino and the reboot agent
+1. mTLS between VibeView and the reboot agent
 2. a tightly scoped Kubernetes ServiceAccount token model with server-side validation
 3. a temporary bootstrap token model only for lab use
 
@@ -130,13 +130,13 @@ Minimum controls:
 - no endpoint that proxies arbitrary host operations
 - authenticated and authorized callers only
 - request logging with user, timestamp, node, and result
-- restrictive `NetworkPolicy` allowing access only from Draino
+- restrictive `NetworkPolicy` allowing access only from VibeView
 - restrictive RBAC for any Kubernetes API access
 - read-only root filesystem where practical
 - seccomp, capability, and privilege minimization where practical
 
 If the implementation needs elevated Linux privileges to trigger a reboot, keep them
-limited to the agent pod, not the Draino web pod.
+limited to the agent pod, not the VibeView web pod.
 
 ## Current Implementation Risks
 
@@ -149,9 +149,9 @@ Current concerns:
 - the web pod can discover and contact every agent in the namespace
 - the web pod and all agents currently share one generated bearer token Secret
 - the same Secret also carries the internal CA and server TLS material
-- a compromise of the Draino web pod gives an attacker a direct path to request reboots
+- a compromise of the VibeView web pod gives an attacker a direct path to request reboots
   across all nodes that run the agent
-- there is no documented `NetworkPolicy` requirement enforcing that only the Draino web
+- there is no documented `NetworkPolicy` requirement enforcing that only the VibeView web
   pod may connect to the agent
 - there is no second independent authorization layer at the agent beyond possession of the
   shared token
@@ -159,7 +159,7 @@ Current concerns:
   strong per-peer identity
 
 That means the blast radius is no longer "all nodes via SSH key reuse", but it is still
-"all agent-managed nodes from the Draino trust domain" if the web pod or mounted Secret is
+"all agent-managed nodes from the VibeView trust domain" if the web pod or mounted Secret is
 compromised.
 
 ## What Would Be Safer
@@ -173,14 +173,14 @@ Recommended improvements, in priority order:
    participants.
 3. Issue per-agent credentials or per-node credentials instead of one cluster-wide shared
    token.
-4. Add `NetworkPolicy` so only the Draino web pod can reach the agent port.
+4. Add `NetworkPolicy` so only the VibeView web pod can reach the agent port.
 5. Put the agent in a dedicated namespace with tighter RBAC and stricter policy controls.
 6. Reduce privilege where possible:
    - seccomp profile
    - drop all capabilities not strictly required
    - read-only root filesystem where practical
    - avoid any host access not needed for reboot
-7. Add a second coarse authorization check in the agent, even if Draino remains the
+7. Add a second coarse authorization check in the agent, even if VibeView remains the
    primary policy engine.
 8. Separate trust material:
    - do not bundle every credential into one shared Secret if avoidable
@@ -196,7 +196,7 @@ privileged always-on DaemonSet:
 
 ### 1. External Maintenance Service
 
-Draino performs orchestration and policy checks, but the actual reboot request is handed
+VibeView performs orchestration and policy checks, but the actual reboot request is handed
 to an external maintenance service outside the application pod trust boundary.
 
 Advantages:
@@ -236,31 +236,31 @@ Tradeoff:
 If you are deploying the current implementation in a sensitive environment, treat these as
 minimum hardening steps:
 
-- keep Draino in a dedicated namespace
+- keep VibeView in a dedicated namespace
 - add `NetworkPolicy` before exposing the UI broadly
 - restrict who can read Secrets in the namespace
 - restrict who can modify the Helm release or DaemonSet
 - keep the web pod replica count low and operational access narrow
-- monitor and retain node-agent and Draino logs centrally
+- monitor and retain node-agent and VibeView logs centrally
 - treat the node-agent Secret as highly sensitive control-plane material
 
 ## Bottom Line
 
 The node-agent design is safer than the old SSH model, but the current implementation is
 still a high-trust, privileged in-band reboot system. It is suitable only if you accept
-that compromise of the Draino trust boundary may still allow broad reboot control across
+that compromise of the VibeView trust boundary may still allow broad reboot control across
 managed nodes.
 
 ## Authorization Model
 
-Draino should remain the user-facing policy enforcement point. The reboot agent should
-trust only requests made by Draino's service identity, not by end users directly.
+VibeView should remain the user-facing policy enforcement point. The reboot agent should
+trust only requests made by VibeView's service identity, not by end users directly.
 
 Recommended flow:
 
-1. Draino authenticates the operator and authorizes the reboot action.
-2. Draino performs prechecks and workflow gating.
-3. Draino sends a signed or mutually authenticated reboot request to the target agent.
+1. VibeView authenticates the operator and authorizes the reboot action.
+2. VibeView performs prechecks and workflow gating.
+3. VibeView sends a signed or mutually authenticated reboot request to the target agent.
 4. The agent validates the caller identity and logs the request.
 5. The agent reboots its own node.
 
@@ -279,7 +279,7 @@ The simplest first implementation is usually:
 
 - a headless Service
 - one DaemonSet pod per node
-- Draino resolves the correct pod for the target node
+- VibeView resolves the correct pod for the target node
 
 The mapping from Kubernetes node name to agent pod should be explicit and observable.
 
@@ -289,14 +289,14 @@ The design must expect partial failures.
 
 Important cases:
 
-- Draino cannot reach the target agent
+- VibeView cannot reach the target agent
 - the agent receives the request but the node reboots before a success response returns
 - the node never comes back
 - the node comes back but the agent is not yet healthy
 - duplicate reboot requests for the same node
 
 The reboot API should therefore be treated as an idempotent maintenance action from
-Draino's perspective. Draino should continue to own retry policy, backoff, and post-boot
+VibeView's perspective. VibeView should continue to own retry policy, backoff, and post-boot
 verification.
 
 ## Auditing
@@ -304,13 +304,13 @@ verification.
 Every reboot request should produce an auditable record that includes:
 
 - timestamp
-- authenticated Draino caller identity
-- authenticated end-user identity as forwarded by Draino
+- authenticated VibeView caller identity
+- authenticated end-user identity as forwarded by VibeView
 - node name
 - request ID
 - action result
 
-Draino should also continue writing its own higher-level workflow audit events so the two
+VibeView should also continue writing its own higher-level workflow audit events so the two
 records can be correlated.
 
 ## Rollout Plan
@@ -319,7 +319,7 @@ Recommended phased approach:
 
 1. design the agent API and trust model
 2. prototype the DaemonSet in a lab cluster
-3. add a pluggable reboot backend in Draino:
+3. add a pluggable reboot backend in VibeView:
    - `ssh`
    - `node-agent`
 4. validate failure handling and recovery behavior
@@ -335,7 +335,7 @@ it temporarily.
   Genestack environment?
 - should the agent listen on HTTPS directly, or should it rely on a sidecar or service
   mesh for mTLS?
-- should reboot authorization remain entirely in Draino, or should the agent apply its
+- should reboot authorization remain entirely in VibeView, or should the agent apply its
   own coarse policy checks as a second layer?
 - how should the system surface "request accepted but node rebooted before response" to
   the operator?
@@ -346,10 +346,10 @@ it temporarily.
 
 The preferred long-term design is:
 
-- Draino remains the orchestration and authorization layer
+- VibeView remains the orchestration and authorization layer
 - a DaemonSet-based node-local reboot agent performs only local reboot actions
 - service-to-service authentication uses mTLS
 - shared SSH keys in Kubernetes Secrets are treated as temporary legacy support only
 
 This gives a materially better security model than placing a long-lived SSH private key
-with broad node access inside the Draino web application pod.
+with broad node access inside the VibeView web application pod.

@@ -702,7 +702,7 @@ done
     return {"interfaces": results, "error": None}
 
 
-node_agent_app = FastAPI(title="Draino Node Agent")
+node_agent_app = FastAPI(title="VibeView Node Agent")
 
 
 @node_agent_app.get("/healthz")
