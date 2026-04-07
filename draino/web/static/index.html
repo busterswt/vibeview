@@ -663,6 +663,120 @@ body.no-hints .vmware-ref-card { display: none !important; }
 @keyframes shake  { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
 
+.session-expired-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(rgba(26, 35, 50, 0.78), rgba(26, 35, 50, 0.78)),
+    radial-gradient(circle at top right, rgba(30,136,229,0.16), transparent 32%);
+  backdrop-filter: blur(4px);
+}
+.session-expired-overlay.open { display: flex; }
+.session-shell {
+  width: min(760px, calc(100vw - 44px));
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.22);
+}
+.session-head {
+  padding: 16px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+}
+.session-head-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.session-brand-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--blue);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 900;
+  color: white;
+}
+.session-brand {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+}
+.session-kicker {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dim);
+  margin-top: 2px;
+}
+.session-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.session-sub {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+.session-body { padding: 18px 22px; }
+.session-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--white);
+  overflow: hidden;
+}
+.session-panel-head {
+  padding: 8px 14px;
+  background: var(--gray-bg);
+  border-bottom: 1px solid var(--border);
+}
+.session-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.session-panel-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.session-panel-body { padding: 14px; display: grid; gap: 12px; }
+.session-detail-box {
+  padding: 10px 12px;
+  border-left: 4px solid var(--blue);
+  background: #f7fafc;
+  color: #37474f;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.session-detail-box strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.session-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.session-help {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .top-action { display: none; }
 .top-action.visible { display: inline-flex; }
 
@@ -940,6 +1054,43 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </div>
 </div>
 
+<div class="session-expired-overlay" id="session-expired-overlay">
+  <div class="session-shell" role="dialog" aria-modal="true" aria-labelledby="session-expired-title">
+    <div class="session-head">
+      <div class="session-head-brand">
+        <div class="session-brand-icon">D</div>
+        <div>
+          <div class="session-brand" id="session-expired-title">Reconnect Required</div>
+          <div class="session-kicker">The current Draino session cannot be resumed.</div>
+        </div>
+      </div>
+      <div class="session-title">Session Lost</div>
+      <div class="session-sub">Your live connection to the Draino web pod was interrupted. A new login is required before the UI can continue.</div>
+    </div>
+    <div class="session-body">
+      <div class="session-panel">
+        <div class="session-panel-head">
+          <div class="session-panel-title">What Happened</div>
+          <div class="session-panel-sub">Common after a Helm upgrade, rollout, or web pod restart</div>
+        </div>
+        <div class="session-panel-body">
+          <div class="session-detail-box">
+            <strong>Session state is no longer valid</strong>
+            The web UI cannot safely resume after the connection is lost. Sign in again so Draino can create a fresh server-side session.
+          </div>
+          <div class="session-actions">
+            <button class="btn primary" onclick="returnToLogin()">Return to Login</button>
+            <button class="btn" onclick="reloadForReconnect()">Reload Page</button>
+          </div>
+          <div class="session-help">
+            If a deployment was just updated, return to the login page and create a new session. The background remains obscured until that happens.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -963,6 +1114,8 @@ let appRuntimeTimer = null;
 let nodeMonitorTimer = null;
 let nodeNetStatsTimer = null;
 let wsStatusMode = 'offline';
+let sessionExpired = false;
+let logoutInProgress = false;
 let monitorEntriesHtml = '';
 let sidebarDragging = false;
 
@@ -1035,9 +1188,29 @@ function toggleHints() {
   btn.classList.toggle('on', showHints);
 }
 
+function showSessionExpiredOverlay() {
+  sessionExpired = true;
+  document.getElementById('session-expired-overlay')?.classList.add('open');
+}
+
+function hideSessionExpiredOverlay() {
+  sessionExpired = false;
+  document.getElementById('session-expired-overlay')?.classList.remove('open');
+}
+
+function returnToLogin() {
+  window.location = '/';
+}
+
+function reloadForReconnect() {
+  window.location.reload();
+}
+
 function setAuthenticatedUI(info) {
   authReady = true;
+  logoutInProgress = false;
   authInfo = info;
+  hideSessionExpiredOverlay();
   document.getElementById('logout-btn').classList.add('visible');
   const label = info?.username && info?.project_name
     ? `${info.username} @ ${info.project_name}`
@@ -1228,6 +1401,7 @@ async function bootstrapSession() {
 }
 
 async function logout() {
+  logoutInProgress = true;
   try {
     await fetch('/api/session', { method: 'DELETE' });
   } catch (_) {}
@@ -1239,14 +1413,18 @@ async function logout() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function wsConnect() {
-  if (!authReady) return;
+  if (!authReady || sessionExpired) return;
   wsSetStatus('connecting');
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen  = () => { wsSetStatus('loading'); };
   ws.onclose = () => {
-    wsSetStatus('reconnecting');
-    if (authReady) setTimeout(wsConnect, 3000);
+    if (logoutInProgress) {
+      wsSetStatus('offline');
+      return;
+    }
+    wsSetStatus('offline');
+    if (authReady) showSessionExpiredOverlay();
   };
   ws.onerror = () => ws.close();
   ws.onmessage = (e) => {
