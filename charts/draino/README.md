@@ -88,6 +88,17 @@ By default the DaemonSet is scheduled only on nodes labeled with one of:
 
 This intentionally excludes generic worker nodes unless you override `nodeAgent.affinity`.
 
+The DaemonSet rollout strategy is configurable through `nodeAgent.updateStrategy`. The
+default allows up to `2` node-agent pods to be unavailable during a rolling update:
+
+```yaml
+nodeAgent:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2
+```
+
 This is still a privileged design because the agent can reboot its host.
 
 Security concerns to understand before deployment:

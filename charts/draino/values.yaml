@@ -28,6 +28,10 @@ service:
 nodeAgent:
   port: 8443
   labelSelector: ""
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2
   podAnnotations: {}
   hostPID: true
   resources: {}

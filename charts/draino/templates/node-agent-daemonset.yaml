@@ -6,6 +6,8 @@ metadata:
     {{- include "draino.labels" . | nindent 4 }}
     app.kubernetes.io/component: node-agent
 spec:
+  updateStrategy:
+    {{- toYaml .Values.nodeAgent.updateStrategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "draino.selectorLabels" . | nindent 6 }}
