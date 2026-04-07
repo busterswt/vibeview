@@ -166,8 +166,8 @@ body {
    SIDEBAR (Infrastructure view only)
 ═══════════════════════════════════════════════════════ */
 #sidebar {
-  width: 270px;
-  min-width: 200px;
+  width: 360px;
+  min-width: 300px;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -214,7 +214,7 @@ body {
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
-.tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.reboot { background: #fff8e1; color: #e65100; font-weight: 700; }
 .tree-badge.kernel { background: #e3f2fd; color: #1565c0; font-weight: 700; }
@@ -1430,6 +1430,7 @@ function renderObjHeader(nd) {
 }
 
 function updateBreadcrumb(nd) {
+  if (activeView !== 'infrastructure') return;
   document.getElementById('bc-sep').style.display = nd ? '' : 'none';
   document.getElementById('bc-node').textContent  = nd ? nd.k8s_name : '';
 }
