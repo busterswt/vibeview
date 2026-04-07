@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
-import re
 import subprocess
 import tempfile
 import time
@@ -649,20 +649,25 @@ def get_ovn_logical_switch(
     return {"ls_name": ls_name, "ls_uuid": ls_uuid, "ports": ports}
 
 
-def _parse_ovn_map(value: str) -> dict[str, str]:
-    value = value.strip().strip("{}")
+def _ovsdb_map_to_dict(value) -> dict[str, str]:
+    """Convert OVSDB JSON map encoding like ["map", [[k, v], ...]] to a dict."""
+    if not isinstance(value, list) or len(value) != 2 or value[0] != "map":
+        return {}
+    entries = value[1]
+    if not isinstance(entries, list):
+        return {}
     out: dict[str, str] = {}
-    for match in re.finditer(r'([\w:.\-]+)\s*=\s*"([^"]*)"', value):
-        out[match.group(1)] = match.group(2)
-    for match in re.finditer(r'([\w:.\-]+)\s*=\s*([^",}\s]+)', value):
-        if match.group(1) not in out:
-            out[match.group(1)] = match.group(2)
+    for entry in entries:
+        if not isinstance(entry, list) or len(entry) != 2:
+            continue
+        key, val = entry
+        out[str(key)] = str(val)
     return out
 
 
 def get_ovn_edge_nodes(auth: K8sAuth | None = None) -> set[str]:
     """Return chassis hostnames marked with enable-chassis-as-gw via kubectl ko."""
-    cmd = ["kubectl", "ko", "sbctl", "--format=list", "list", "Chassis"]
+    cmd = ["kubectl", "ko", "sbctl", "--format=json", "list", "Chassis"]
 
     try:
         result = subprocess.run(
@@ -681,26 +686,36 @@ def get_ovn_edge_nodes(auth: K8sAuth | None = None) -> set[str]:
         stderr = result.stderr.strip()
         raise RuntimeError(stderr or f"kubectl ko sbctl exited with code {result.returncode}")
 
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid JSON from kubectl ko sbctl: {exc}") from exc
+
+    headings = payload.get("headings")
+    rows = payload.get("data")
+    if not isinstance(headings, list) or not isinstance(rows, list):
+        raise RuntimeError("unexpected kubectl ko sbctl JSON shape")
+
+    try:
+        hostname_idx = headings.index("hostname")
+        other_config_idx = headings.index("other_config")
+    except ValueError as exc:
+        raise RuntimeError("required Chassis columns not present in kubectl ko sbctl output") from exc
+
     edge_nodes: set[str] = set()
-    current_host: str | None = None
-
-    for raw_line in result.stdout.splitlines():
-        line = raw_line.strip()
-        if not line or ":" not in line:
+    for row in rows:
+        if not isinstance(row, list):
             continue
-        key, _, val = line.partition(":")
-        key = key.strip()
-        val = val.strip()
-
-        if key == "hostname":
-            current_host = val.strip('"')
-        elif key == "external_ids" and current_host:
-            external_ids = _parse_ovn_map(val)
-            cms_options = external_ids.get("ovn-cms-options", "")
-            options = {item.strip() for item in cms_options.split(",") if item.strip()}
-            if "enable-chassis-as-gw" in options:
-                edge_nodes.add(current_host)
-            current_host = None
+        if hostname_idx >= len(row) or other_config_idx >= len(row):
+            continue
+        hostname = row[hostname_idx]
+        if not isinstance(hostname, str):
+            continue
+        other_config = _ovsdb_map_to_dict(row[other_config_idx])
+        cms_options = other_config.get("ovn-cms-options", "")
+        options = {item.strip() for item in cms_options.split(",") if item.strip()}
+        if "enable-chassis-as-gw" in options:
+            edge_nodes.add(hostname)
 
     return edge_nodes
 

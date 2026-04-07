@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import urllib.error
 
 from draino import node_agent, node_agent_client
@@ -87,6 +88,61 @@ def test_get_node_host_signals_uses_node_agent(monkeypatch):
     assert result["kernel_version"] == "6.8.0"
     assert result["latest_kernel_version"] == "6.8.12"
     assert result["reboot_required"] is True
+
+
+def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
+    payload = {
+        "headings": [
+            "_uuid",
+            "encaps",
+            "external_ids",
+            "hostname",
+            "name",
+            "nb_cfg",
+            "other_config",
+            "transport_zones",
+            "vtep_logical_switches",
+        ],
+        "data": [
+            [
+                ["uuid", "a"],
+                ["uuid", "b"],
+                ["map", [["vendor", "kube-ovn"]]],
+                "node-1.example.com",
+                "chassis-a",
+                0,
+                ["map", [["ovn-cms-options", "enable-chassis-as-gw,availability-zones=az1"]]],
+                ["set", []],
+                ["set", []],
+            ],
+            [
+                ["uuid", "c"],
+                ["uuid", "d"],
+                ["map", [["vendor", "kube-ovn"]]],
+                "node-2.example.com",
+                "chassis-b",
+                0,
+                ["map", [["ovn-cms-options", ""]]],
+                ["set", []],
+                ["set", []],
+            ],
+        ],
+    }
+
+    monkeypatch.setattr(
+        k8s_ops.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        ),
+    )
+
+    result = k8s_ops.get_ovn_edge_nodes()
+
+    assert result == {"node-1.example.com"}
 
 
 def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, tmp_path):
