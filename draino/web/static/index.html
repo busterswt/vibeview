@@ -197,6 +197,37 @@ body {
   text-transform: uppercase; letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border);
 }
+.sidebar-head.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-head .title { min-width: 0; }
+.sidebar-sort {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.sidebar-sort button {
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--dim);
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sidebar-sort button.active {
+  background: var(--blue-bg);
+  color: var(--blue);
+  border-color: #90caf9;
+  font-weight: 700;
+}
 #tree { overflow-y: auto; flex: 1; padding: 4px 0; }
 .tree-group {
   padding: 6px 10px 4px;
@@ -688,7 +719,13 @@ body.no-hints .vmware-ref-card { display: none !important; }
   <!-- ── Infrastructure view ── -->
   <div class="view active" id="view-infrastructure">
     <div id="sidebar">
-      <div class="sidebar-head">Navigator — Infrastructure</div>
+      <div class="sidebar-head row">
+        <span class="title">Navigator — Infrastructure</span>
+        <span class="sidebar-sort">
+          <button id="sort-asc-btn" class="active" onclick="setNodeSort('asc')">A→Z</button>
+          <button id="sort-desc-btn" onclick="setNodeSort('desc')">Z→A</button>
+        </span>
+      </div>
       <div id="tree">
         <div class="tree-group"><span class="tree-expand">▼</span> Loading nodes…</div>
       </div>
@@ -902,6 +939,7 @@ const instanceMigrateTasks  = {};
 
 // Sidebar collapse state
 const collapsedGroups = new Set();
+let nodeSortDirection = 'asc';
 
 // Node detail cache (summary tab)
 const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
@@ -1293,6 +1331,19 @@ function treeItemHtml(name, nd) {
   </div>`;
 }
 
+function compareNodeNames(a, b) {
+  const dir = nodeSortDirection === 'desc' ? -1 : 1;
+  return dir * a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function setNodeSort(direction) {
+  if (direction !== 'asc' && direction !== 'desc') return;
+  nodeSortDirection = direction;
+  document.getElementById('sort-asc-btn')?.classList.toggle('active', direction === 'asc');
+  document.getElementById('sort-desc-btn')?.classList.toggle('active', direction === 'desc');
+  rebuildSidebar();
+}
+
 function rebuildSidebar() {
   const compute = Object.entries(nodes).filter(([,nd]) => nd.is_compute);
   const other   = Object.entries(nodes).filter(([,nd]) => !nd.is_compute);
@@ -1303,12 +1354,12 @@ function rebuildSidebar() {
     const az = nd.availability_zone || 'nova';
     (byAZ[az] = byAZ[az] || []).push([name, nd]);
   }
-  const azKeys = Object.keys(byAZ).sort();
+  const azKeys = Object.keys(byAZ).sort((a, b) => compareNodeNames(a, b));
 
   let html = '';
 
   for (const az of azKeys) {
-    const entries = byAZ[az];
+    const entries = [...byAZ[az]].sort(([nameA], [nameB]) => compareNodeNames(nameA, nameB));
     const gid = `az:${az}`;
     const col = collapsedGroups.has(gid);
     html += `<div class="tree-group" onclick="toggleGroup('${escAttr(gid)}')">
@@ -1320,12 +1371,13 @@ function rebuildSidebar() {
   }
 
   if (other.length) {
+    const sortedOther = [...other].sort(([nameA], [nameB]) => compareNodeNames(nameA, nameB));
     const col = collapsedGroups.has('other');
     html += `<div class="tree-group" onclick="toggleGroup('other')">
       <span class="tree-expand">${col ? '▶' : '▼'}</span> ⚙️ Other Nodes
-      <span class="tree-count">${other.length}</span>
+      <span class="tree-count">${sortedOther.length}</span>
     </div>`;
-    if (!col) for (const [name, nd] of other) html += treeItemHtml(name, nd);
+    if (!col) for (const [name, nd] of sortedOther) html += treeItemHtml(name, nd);
   }
 
   if (!compute.length && !other.length)
