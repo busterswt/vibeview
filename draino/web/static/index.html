@@ -2120,6 +2120,11 @@ function renderNodeMonitorTab(nd) {
   const enabledStats = enabledNetStatsSet(nd.k8s_name);
   const netStats = nodeNetStatsCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
   const netStatsByName = Object.fromEntries((netStats.interfaces || []).map(item => [item.name, item]));
+  const bondByMember = {};
+  for (const iface of ifaces) {
+    if (iface.type !== 'bond') continue;
+    for (const member of (iface.members || [])) bondByMember[member] = iface.name;
+  }
 
   const fsRows = filesystems.length
     ? filesystems.map((fs) => `
@@ -2215,16 +2220,21 @@ function renderNodeMonitorTab(nd) {
       ${ifaces.length ? `
         <table class="data-table">
           <thead>
-            <tr><th>Interface</th><th>Type</th><th>IPs</th><th>Live Stats</th><th>RX</th><th>TX</th></tr>
+            <tr><th>Interface</th><th>Type</th><th>Status</th><th>Speed</th><th>Duplex</th><th>Bond</th><th>IPs</th><th>Live Stats</th><th>RX</th><th>TX</th></tr>
           </thead>
           <tbody>
             ${ifaces.map((iface) => {
               const checked = enabledStats.has(iface.name);
               const live = netStatsByName[iface.name] || {};
               const ipSummary = [...(iface.ipv4 || []), ...(iface.ipv6 || [])].join(', ');
+              const bondName = iface.type === 'physical' ? (bondByMember[iface.name] || '—') : '—';
               return `<tr>
                 <td><strong>${esc(iface.name)}</strong></td>
                 <td><span class="nic-type ${escAttr(iface.type || 'physical')}">${esc(iface.type || 'physical')}</span></td>
+                <td>${esc(iface.status || 'unknown')}</td>
+                <td>${esc(iface.speed || '—')}</td>
+                <td>${esc(iface.duplex || '—')}</td>
+                <td>${esc(bondName)}</td>
                 <td style="font-size:11px;color:var(--dim)">${esc(ipSummary || '—')}</td>
                 <td>
                   <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
