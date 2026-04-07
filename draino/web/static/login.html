@@ -535,7 +535,7 @@ body {
         </div>
       </div>
 
-      <div class="auth-msg" id="auth-msg">This page loads no infrastructure shell or inventory before authentication.</div>
+      <div class="auth-msg" id="auth-msg"></div>
 
       <div class="auth-actions">
         <div>
@@ -551,7 +551,7 @@ const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
 
 function setAuthMessage(msg = '', kind = '') {
   const el = document.getElementById('auth-msg');
-  el.textContent = msg || 'This page loads no infrastructure shell or inventory before authentication.';
+  el.textContent = msg || '';
   const status = document.getElementById('auth-status');
   if (!msg) status.textContent = 'Waiting for credentials.';
   else if (kind === 'busy') status.textContent = 'Validating credentials...';
