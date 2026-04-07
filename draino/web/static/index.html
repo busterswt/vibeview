@@ -190,6 +190,16 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+.sidebar-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: linear-gradient(to right, transparent 0, #d9e1e7 50%, transparent 100%);
+  flex-shrink: 0;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging {
+  background: linear-gradient(to right, transparent 0, #90caf9 50%, transparent 100%);
+}
 .sidebar-head {
   background: var(--white);
   padding: 7px 12px;
@@ -734,6 +744,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
         <div class="tree-group"><span class="tree-expand">▼</span> Loading nodes…</div>
       </div>
     </div>
+    <div id="sidebar-resizer" class="sidebar-resizer" title="Drag to resize node list"></div>
 
     <div id="content">
       <div id="obj-header">
@@ -929,6 +940,7 @@ let appMetaTimer = null;
 let appRuntimeTimer = null;
 let wsStatusMode = 'offline';
 let monitorEntriesHtml = '';
+let sidebarDragging = false;
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -3771,10 +3783,52 @@ function esc(s) {
 }
 function escAttr(s) { return String(s ?? '').replace(/'/g, "\\'"); }
 
+function applySidebarWidth(width) {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const px = Math.max(300, Math.min(720, Math.round(width)));
+  sidebar.style.width = `${px}px`;
+  localStorage.setItem('drainoSidebarWidth', String(px));
+}
+
+function initSidebarResizer() {
+  const sidebar = document.getElementById('sidebar');
+  const resizer = document.getElementById('sidebar-resizer');
+  if (!sidebar || !resizer) return;
+
+  const saved = Number(localStorage.getItem('drainoSidebarWidth'));
+  if (Number.isFinite(saved) && saved >= 300) applySidebarWidth(saved);
+
+  resizer.addEventListener('mousedown', (event) => {
+    sidebarDragging = true;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (!sidebarDragging) return;
+    const rect = document.getElementById('view-infrastructure')?.getBoundingClientRect();
+    const maxWidth = rect ? Math.min(720, rect.width - 420) : 720;
+    const px = Math.max(300, Math.min(maxWidth, event.clientX));
+    applySidebarWidth(px);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!sidebarDragging) return;
+    sidebarDragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INIT
 // ════════════════════════════════════════════════════════════════════════════
 
+initSidebarResizer();
 bootstrapSession();
 </script>
 </body>
