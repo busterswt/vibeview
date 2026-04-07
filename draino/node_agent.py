@@ -539,6 +539,7 @@ def _get_host_metrics() -> dict:
     }
     section = None
     filesystems: list[dict] = []
+    filesystems_by_mount: dict[str, dict] = {}
 
     for raw_line in proc.stdout.splitlines():
         line = raw_line.strip()
@@ -593,15 +594,17 @@ def _get_host_metrics() -> dict:
                 continue
             mount, total, used, available, used_pct = parts
             try:
-                filesystems.append({
+                filesystems_by_mount[mount] = {
                     "mount": mount,
                     "total_kb": int(total),
                     "used_kb": int(used),
                     "available_kb": int(available),
                     "used_percent": int(used_pct.rstrip("%")),
-                })
+                }
             except ValueError:
                 continue
+
+    filesystems = sorted(filesystems_by_mount.values(), key=lambda item: item["mount"])
 
     mem_total = current.get("memory_total_kb")
     mem_available = current.get("memory_available_kb")

@@ -149,6 +149,40 @@ def test_node_agent_host_metrics_parses_load_memory_and_disk(monkeypatch):
     assert result["history"][0]["root_used_percent"] == 70
 
 
+def test_node_agent_host_metrics_dedupes_duplicate_mounts(monkeypatch):
+    stdout = "\n".join([
+        "__LOAD__",
+        "1.00 0.50 0.25 1/100 12345",
+        "__MEM__",
+        "MemTotal:       16000000 kB",
+        "MemAvailable:    8000000 kB",
+        "__CPU__",
+        "16",
+        "__UPTIME__",
+        "7200.00",
+        "__DF__",
+        "/|1000000|700000|300000|70%",
+        "/|1000000|700000|300000|70%",
+        "/|1000000|700000|300000|70%",
+        "__END__",
+    ])
+
+    monkeypatch.setattr(
+        node_agent,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=stdout, stderr=""),
+    )
+    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
+    node_agent._host_metrics_cache = None
+    node_agent._host_metrics_history.clear()
+
+    result = node_agent._get_host_metrics()
+
+    assert result["error"] is None
+    assert len(result["current"]["filesystems"]) == 1
+    assert result["current"]["filesystems"][0]["mount"] == "/"
+
+
 def test_get_node_network_stats_uses_node_agent(monkeypatch):
     monkeypatch.setattr(
         k8s_ops.node_agent_client,
