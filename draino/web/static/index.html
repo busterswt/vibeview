@@ -2382,27 +2382,6 @@ function renderNodeMonitorTab(nd) {
     </div>
   </div>`;
 
-  h += `<div class="app-runtime-grid">
-    <div class="card">
-      <div class="card-title">Load History</div>
-      <div class="card-body">
-        ${data.loading
-          ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading node metrics…</div>`
-          : buildRuntimeChart(data.history, 'load1', '#ef6c00', value => value != null ? value.toFixed(2) : '0.00', value => value != null ? value.toFixed(1) : '0.0')
-        }
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Memory Pressure History</div>
-      <div class="card-body">
-        ${data.loading
-          ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading node metrics…</div>`
-          : buildRuntimeChart(data.history, 'memory_used_percent', '#6a1b9a', value => value != null ? `${value.toFixed(1)}%` : '0.0%', value => value != null ? `${Math.ceil(value)}%` : '0%')
-        }
-      </div>
-    </div>
-  </div>`;
-
   h += `<div class="card">
     <div class="card-title">Filesystem Free Space</div>
     <div class="card-body">
