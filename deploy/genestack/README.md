@@ -52,7 +52,46 @@ model explicitly: listener fragments are stored in that directory and then appli
 `kubectl patch` against the shared `Gateway`. Source:
 https://docs.rackspacecloud.com/infrastructure-envoy-gateway-api/
 
-Example listener fragment for a dedicated Draino hostname:
+Create the listener fragment directory if it does not already exist:
+
+```bash
+mkdir -p /etc/genestack/gateway-api/listeners
+```
+
+Then create the listener fragment for a dedicated Draino hostname:
+
+```bash
+cat >/etc/genestack/gateway-api/listeners/draino-https.json <<'EOF'
+[
+  {
+    "op": "add",
+    "path": "/spec/listeners/-",
+    "value": {
+      "name": "draino-https",
+      "protocol": "HTTPS",
+      "port": 443,
+      "hostname": "draino.example.com",
+      "tls": {
+        "mode": "Terminate",
+        "certificateRefs": [
+          {
+            "kind": "Secret",
+            "name": "draino-tls"
+          }
+        ]
+      },
+      "allowedRoutes": {
+        "namespaces": {
+          "from": "All"
+        }
+      }
+    }
+  }
+]
+EOF
+```
+
+The contents should look like this:
 
 ```json
 [
@@ -81,12 +120,6 @@ Example listener fragment for a dedicated Draino hostname:
     }
   }
 ]
-```
-
-Save that as:
-
-```bash
-/etc/genestack/gateway-api/listeners/draino-https.json
 ```
 
 Then patch the shared gateway, for example:
