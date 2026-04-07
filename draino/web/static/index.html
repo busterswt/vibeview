@@ -1435,6 +1435,26 @@ function updateBreadcrumb(nd) {
   document.getElementById('bc-node').textContent  = nd ? nd.k8s_name : '';
 }
 
+function captureFocusedInput(container, selector) {
+  const active = document.activeElement;
+  if (!container || !active || !container.contains(active) || !active.matches(selector)) return null;
+  return {
+    selector,
+    start: active.selectionStart,
+    end: active.selectionEnd,
+  };
+}
+
+function restoreFocusedInput(container, state) {
+  if (!container || !state) return;
+  const input = container.querySelector(state.selector);
+  if (!input) return;
+  input.focus();
+  if (typeof state.start === 'number' && typeof state.end === 'number') {
+    try { input.setSelectionRange(state.start, state.end); } catch (_) {}
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § TABS (within Infrastructure view)
 // ════════════════════════════════════════════════════════════════════════════
@@ -2526,6 +2546,7 @@ async function loadNetworks(force = false) {
 
 function renderNetworksView() {
   const wrap = document.getElementById('net-wrap');
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
   if (netState.loading) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>Neutron Networks <span class="hint">Port Groups / vDS</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading networks…</div>`;
     return;
@@ -2577,6 +2598,7 @@ function renderNetworksView() {
       <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:20px">No networks match the filter.</td></tr>'}</tbody>
     </table>
     ${buildPager(netState, filtered.length, 'netState', 'renderNetworksView')}`;
+  restoreFocusedInput(wrap, focusedInput);
 }
 
 function appendNetError(msg) {
@@ -2985,6 +3007,7 @@ function updateK8sCountBadges() {
 
 function renderK8sContent() {
   const wrap = document.getElementById('k8s-content-inner');
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
   if (!k8sActiveResource) {
     wrap.innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 16px">Select a resource type from the navigator.</div>`;
     return;
@@ -3025,6 +3048,7 @@ function renderK8sContent() {
     `getK8sPage('${type}')`, 'renderK8sContent');
 
   wrap.innerHTML = h;
+  restoreFocusedInput(wrap, focusedInput);
 }
 
 function renderK8sTable(type, rows) {
@@ -3161,6 +3185,7 @@ async function loadVolumes(force = false) {
 
 function renderStorageView() {
   const wrap = document.getElementById('vol-wrap');
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
   if (volState.loading) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>Cinder Volumes <span class="hint">Datastores</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading volumes…</div>`;
     return;
@@ -3216,6 +3241,7 @@ function renderStorageView() {
       <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:20px">No volumes match the filter.</td></tr>'}</tbody>
     </table>
     ${buildPager(volState, filtered.length, 'volState', 'renderStorageView')}`;
+  restoreFocusedInput(wrap, focusedInput);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
