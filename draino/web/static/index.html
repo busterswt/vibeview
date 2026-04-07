@@ -2109,6 +2109,8 @@ function renderSummaryTab(nd) {
 
 function renderNodeMonitorTab(nd) {
   const wrap = document.getElementById('node-monitor-content');
+  const tabBody = document.getElementById('tab-body');
+  const priorScrollTop = tabBody ? tabBody.scrollTop : 0;
   const data = nodeMetricsCache[nd.k8s_name] || { loading: true, current: null, history: [], error: null };
   const current = data.current || {};
   const filesystems = current.filesystems || [];
@@ -2242,6 +2244,7 @@ function renderNodeMonitorTab(nd) {
   </div>`;
 
   wrap.innerHTML = h;
+  if (tabBody) tabBody.scrollTop = priorScrollTop;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
