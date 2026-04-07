@@ -768,7 +768,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
       <div id="tabs-bar">
         <div class="tab active" id="tab-btn-summary"   onclick="showTab('summary')">Summary</div>
         <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances &amp; Pods <span class="hint">VMs</span></div>
-        <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Monitor</div>
+        <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Metrics</div>
         <div class="tab"        id="tab-btn-configure" onclick="showTab('configure')">Configure</div>
       </div>
 
@@ -2060,7 +2060,7 @@ function renderNodeMonitorTab(nd) {
     `).join('')
     : `<tr><td colspan="4" style="color:var(--dim)">No filesystem data reported.</td></tr>`;
 
-  let h = `<div class="tab-section-title" style="margin-bottom:10px"><span>Node Monitor</span></div>`;
+  let h = `<div class="tab-section-title" style="margin-bottom:10px"><span>Node Metrics</span></div>`;
   if (data.error) {
     h += `<div class="etcd-alert danger">Host metrics error: ${esc(data.error)}</div>`;
   }
