@@ -677,6 +677,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   </div>
   <nav class="top-nav">
     <a data-view="infrastructure" class="active" onclick="switchView('infrastructure')">Infrastructure</a>
+    <a data-view="monitor"                       onclick="switchView('monitor')">Monitor</a>
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
     <a data-view="networking"                    onclick="switchView('networking')">Networking</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
@@ -759,7 +760,6 @@ body.no-hints .vmware-ref-card { display: none !important; }
       <div id="tabs-bar">
         <div class="tab active" id="tab-btn-summary"   onclick="showTab('summary')">Summary</div>
         <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances &amp; Pods <span class="hint">VMs</span></div>
-        <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Monitor</div>
         <div class="tab"        id="tab-btn-configure" onclick="showTab('configure')">Configure</div>
       </div>
 
@@ -774,10 +774,6 @@ body.no-hints .vmware-ref-card { display: none !important; }
             <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its instances and pods.</div>
           </div>
         </div>
-        <div id="tab-monitor" style="display:none">
-          <div class="tab-section-title" style="margin-bottom:10px"><span>Events &amp; Alarms</span></div>
-          <div class="event-list" id="monitor-log"></div>
-        </div>
         <div id="tab-configure" style="display:none">
           <div id="configure-content">
             <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its configuration.</div>
@@ -785,6 +781,11 @@ body.no-hints .vmware-ref-card { display: none !important; }
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ── Monitor view ── -->
+  <div class="view" id="view-monitor">
+    <div class="data-view-wrap" id="monitor-wrap"></div>
   </div>
 
   <!-- ── Kubernetes view ── -->
@@ -1071,28 +1072,41 @@ function metricValue(metrics, key) {
   return metrics && metrics[key] ? metrics[key] : '—';
 }
 
-function buildRuntimeChart(history, key, color, formatter) {
+function buildRuntimeChart(history, key, color, formatter, maxLabel) {
   if (!history?.length) return `<div class="runtime-note">No samples yet.</div>`;
   const width = 320;
-  const height = 84;
+  const height = 120;
+  const leftPad = 42;
+  const rightPad = 8;
+  const topPad = 8;
+  const bottomPad = 22;
+  const plotWidth = width - leftPad - rightPad;
+  const plotHeight = height - topPad - bottomPad;
   const values = history.map(p => Number(p[key] || 0));
   const max = Math.max(...values, 1);
   const points = values.map((value, idx) => {
-    const x = values.length === 1 ? 0 : (idx / (values.length - 1)) * width;
-    const y = height - ((value / max) * (height - 8)) - 4;
+    const x = leftPad + (values.length === 1 ? 0 : (idx / (values.length - 1)) * plotWidth);
+    const y = topPad + (plotHeight - ((value / max) * plotHeight));
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const latest = values[values.length - 1];
+  const baselineY = topPad + plotHeight;
   return `
     <svg class="runtime-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
+      <line x1="${leftPad}" y1="${baselineY}" x2="${width - rightPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
+      <text x="4" y="${topPad + 10}" fill="#78909c" font-size="10">${esc(maxLabel(max))}</text>
+      <text x="18" y="${baselineY - 2}" fill="#78909c" font-size="10">0</text>
+      <text x="${leftPad}" y="${height - 6}" fill="#78909c" font-size="10">oldest</text>
+      <text x="${width - rightPad - 28}" y="${height - 6}" fill="#78909c" font-size="10">now</text>
       <polyline fill="none" stroke="${color}" stroke-width="2.5" points="${points}"></polyline>
     </svg>
     <div class="runtime-note">Current: ${formatter(latest)} · Peak: ${formatter(max)}</div>
   `;
 }
 
-function renderMonitorTab() {
-  const tab = document.getElementById('tab-monitor');
+function renderMonitorView() {
+  const tab = document.getElementById('monitor-wrap');
   const state = appRuntimeState || {};
   const current = state.current || {};
   const requests = state.requests || {};
@@ -1120,13 +1134,13 @@ function renderMonitorTab() {
       <div class="card">
         <div class="card-title">CPU Usage History</div>
         <div class="card-body">
-          ${buildRuntimeChart(state.history, 'cpu_percent', '#1565c0', value => `${value.toFixed(1)}%`)}
+          ${buildRuntimeChart(state.history, 'cpu_percent', '#1565c0', value => `${value.toFixed(1)}%`, value => `${value.toFixed(0)}%`)}
         </div>
       </div>
       <div class="card">
         <div class="card-title">Memory Usage History</div>
         <div class="card-body">
-          ${buildRuntimeChart(state.history, 'rss_bytes', '#2e7d32', fmtBytes)}
+          ${buildRuntimeChart(state.history, 'rss_bytes', '#2e7d32', fmtBytes, fmtBytes)}
         </div>
       </div>
     </div>
@@ -1142,7 +1156,7 @@ async function refreshAppRuntime() {
     const resp = await fetch('/api/app-runtime');
     if (!resp.ok) return;
     appRuntimeState = await resp.json();
-    if (activeTab === 'monitor') renderMonitorTab();
+    if (activeView === 'monitor') renderMonitorView();
   } catch (_) {}
 }
 
@@ -1279,7 +1293,7 @@ function onLog(msg) {
     while (ml.children.length > 300) ml.removeChild(ml.firstChild);
     monitorEntriesHtml = ml.innerHTML;
   }
-  if (activeTab === 'monitor') ml.scrollTop = ml.scrollHeight;
+  if (activeView === 'monitor') ml.scrollTop = ml.scrollHeight;
 }
 
 function onRebootConfirmNeeded(msg) {
@@ -1360,7 +1374,15 @@ function switchView(name) {
     }
     renderInfraDetail();  // re-render content panel when returning from other views
   } else {
-    const label = name === 'networking' ? 'Networking' : name === 'storage' ? 'Volumes' : name === 'kubernetes' ? 'Kubernetes' : name;
+    const label = name === 'monitor'
+      ? 'Monitor'
+      : name === 'networking'
+        ? 'Networking'
+        : name === 'storage'
+          ? 'Volumes'
+          : name === 'kubernetes'
+            ? 'Kubernetes'
+            : name;
     bcRoot.textContent  = 'Draino';
     bcSep.style.display = '';
     bcNode.textContent  = label;
@@ -1370,6 +1392,7 @@ function switchView(name) {
       bcSep.style.display = '';
       bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
     }
+    if (name === 'monitor') renderMonitorView();
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     // Restore network detail panel visibility when returning
@@ -1678,15 +1701,10 @@ function restoreFocusedInput(container, state) {
 
 function showTab(name) {
   activeTab = name;
-  ['summary','instances','monitor','configure'].forEach(t => {
+  ['summary','instances','configure'].forEach(t => {
     document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
-  if (name === 'monitor') {
-    renderMonitorTab();
-    const ml = document.getElementById('monitor-log');
-    setTimeout(() => ml.scrollTop = ml.scrollHeight, 0);
-  }
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
   if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
