@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 ARG KUBECTL_VERSION=v1.30.10
+ARG CRANE_VERSION=v0.20.7
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -15,6 +16,12 @@ RUN curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VE
 
 RUN curl -fsSL -o /usr/local/bin/kubectl-ko "https://raw.githubusercontent.com/kubeovn/kube-ovn/release-1.15/dist/images/kubectl-ko" \
     && chmod +x /usr/local/bin/kubectl-ko
+
+RUN curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+      -o /tmp/go-containerregistry.tar.gz \
+    && tar -xzf /tmp/go-containerregistry.tar.gz -C /usr/local/bin crane \
+    && chmod +x /usr/local/bin/crane \
+    && rm -f /tmp/go-containerregistry.tar.gz
 
 WORKDIR /app
 
