@@ -277,6 +277,55 @@ def test_app_meta_endpoint_returns_update_status(monkeypatch):
     assert meta.json()["track"] == "main"
 
 
+def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server,
+        "_get_app_runtime",
+        lambda: {
+            "current": {"cpu_percent": 12.5, "rss_bytes": 104857600, "timestamp": 1000.0},
+            "history": [{"cpu_percent": 5.0, "rss_bytes": 52428800, "timestamp": 900.0}],
+            "requests": {"cpu": "250m", "memory": "512Mi"},
+            "limits": {"cpu": "1", "memory": "1Gi"},
+            "restart_count": 1,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        runtime = client.get("/api/app-runtime")
+
+    assert runtime.status_code == 200
+    assert runtime.json()["current"]["cpu_percent"] == 12.5
+    assert runtime.json()["limits"]["memory"] == "1Gi"
+
+
 def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
     captured: dict[str, int] = {"k8s": 0, "hw": 0, "nova": 0}
 

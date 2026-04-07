@@ -443,6 +443,9 @@ body.no-hints .vmware-ref-card { display: none !important; }
 /* ═══════════════════════════════════════════════════════
    MONITOR TAB — event-list cards
 ═══════════════════════════════════════════════════════ */
+.app-runtime-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.runtime-chart { width: 100%; height: 84px; display: block; background: #fafbfc; border: 1px solid var(--border); border-radius: 4px; }
+.runtime-note { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .event-list { background: var(--white); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 .event-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f0f2f5; font-size: 12px; }
 .event-item:last-child { border-bottom: none; }
@@ -922,7 +925,9 @@ let ws           = null;
 let authReady    = false;
 let authInfo     = null;
 let appMetaTimer = null;
+let appRuntimeTimer = null;
 let wsStatusMode = 'offline';
+let monitorEntriesHtml = '';
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -947,6 +952,7 @@ const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
 // Node network config cache (configure tab)
 // node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
 const nodeNetworkCache = {};
+let appRuntimeState = { loading: false, current: null, history: [], requests: {}, limits: {}, restart_count: null };
 
 // Working edit state for the currently-open Configure tab
 const netEdit = {
@@ -1003,6 +1009,8 @@ function setAuthenticatedUI(info) {
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
   refreshAppMeta();
   if (!appMetaTimer) appMetaTimer = setInterval(refreshAppMeta, 300000);
+  refreshAppRuntime();
+  if (!appRuntimeTimer) appRuntimeTimer = setInterval(refreshAppRuntime, 15000);
 }
 
 function renderAppMeta(meta) {
@@ -1027,6 +1035,98 @@ async function refreshAppMeta() {
     if (!resp.ok) return;
     const meta = await resp.json();
     renderAppMeta(meta);
+  } catch (_) {}
+}
+
+function fmtBytes(bytes) {
+  if (bytes == null) return '—';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let unit = units[0];
+  for (const next of units) {
+    unit = next;
+    if (Math.abs(value) < 1024 || next === units[units.length - 1]) break;
+    value /= 1024;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+}
+
+function metricValue(metrics, key) {
+  return metrics && metrics[key] ? metrics[key] : '—';
+}
+
+function buildRuntimeChart(history, key, color, formatter) {
+  if (!history?.length) return `<div class="runtime-note">No samples yet.</div>`;
+  const width = 320;
+  const height = 84;
+  const values = history.map(p => Number(p[key] || 0));
+  const max = Math.max(...values, 1);
+  const points = values.map((value, idx) => {
+    const x = values.length === 1 ? 0 : (idx / (values.length - 1)) * width;
+    const y = height - ((value / max) * (height - 8)) - 4;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const latest = values[values.length - 1];
+  return `
+    <svg class="runtime-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <polyline fill="none" stroke="${color}" stroke-width="2.5" points="${points}"></polyline>
+    </svg>
+    <div class="runtime-note">Current: ${formatter(latest)} · Peak: ${formatter(max)}</div>
+  `;
+}
+
+function renderMonitorTab() {
+  const tab = document.getElementById('tab-monitor');
+  const state = appRuntimeState || {};
+  const current = state.current || {};
+  const requests = state.requests || {};
+  const limits = state.limits || {};
+  tab.innerHTML = `
+    <div class="tab-section-title" style="margin-bottom:10px"><span>Draino Runtime</span></div>
+    <div class="app-runtime-grid">
+      <div class="card">
+        <div class="card-title">Process Usage</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">CPU</span><span class="mv">${current.cpu_percent != null ? `${current.cpu_percent.toFixed(1)}%` : '—'}</span></div>
+          <div class="mrow"><span class="ml">Memory RSS</span><span class="mv">${fmtBytes(current.rss_bytes)}</span></div>
+          <div class="mrow"><span class="ml">Restarts</span><span class="mv">${state.restart_count ?? '—'}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pod Limits / Requests</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">CPU request</span><span class="mv">${metricValue(requests, 'cpu')}</span></div>
+          <div class="mrow"><span class="ml">CPU limit</span><span class="mv">${metricValue(limits, 'cpu')}</span></div>
+          <div class="mrow"><span class="ml">Memory request</span><span class="mv">${metricValue(requests, 'memory')}</span></div>
+          <div class="mrow"><span class="ml">Memory limit</span><span class="mv">${metricValue(limits, 'memory')}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">CPU Usage History</div>
+        <div class="card-body">
+          ${buildRuntimeChart(state.history, 'cpu_percent', '#1565c0', value => `${value.toFixed(1)}%`)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Memory Usage History</div>
+        <div class="card-body">
+          ${buildRuntimeChart(state.history, 'rss_bytes', '#2e7d32', fmtBytes)}
+        </div>
+      </div>
+    </div>
+    <div class="tab-section-title" style="margin-bottom:10px"><span>Events &amp; Alarms</span></div>
+    <div class="event-list" id="monitor-log"></div>
+  `;
+  const ml = document.getElementById('monitor-log');
+  if (ml && monitorEntriesHtml) ml.innerHTML = monitorEntriesHtml;
+}
+
+async function refreshAppRuntime() {
+  try {
+    const resp = await fetch('/api/app-runtime');
+    if (!resp.ok) return;
+    appRuntimeState = await resp.json();
+    if (activeTab === 'monitor') renderMonitorTab();
   } catch (_) {}
 }
 
@@ -1150,18 +1250,19 @@ function onLog(msg) {
   const ico      = iconMap[msg.color] || 'ℹ️';
   const tag      = tagMap[msg.color]  || '';
   const nodeTag  = (msg.node && msg.node !== '-') ? `<strong>${esc(msg.node)}</strong> — ` : '';
-
-  const item = document.createElement('div');
-  item.className = 'event-item';
-  item.innerHTML = `<div class="event-ico">${ico}</div>
+  const itemHtml = `<div class="event-item"><div class="event-ico">${ico}</div>
     <div class="event-body">
       <div class="event-ts">${ts}</div>
       <div class="event-msg">${nodeTag}${esc(msg.message)}${tag}</div>
-    </div>`;
+    </div></div>`;
+  monitorEntriesHtml += itemHtml;
 
   const ml = document.getElementById('monitor-log');
-  ml.appendChild(item);
-  while (ml.children.length > 300) ml.removeChild(ml.firstChild);
+  if (ml) {
+    ml.insertAdjacentHTML('beforeend', itemHtml);
+    while (ml.children.length > 300) ml.removeChild(ml.firstChild);
+    monitorEntriesHtml = ml.innerHTML;
+  }
   if (activeTab === 'monitor') ml.scrollTop = ml.scrollHeight;
 }
 
@@ -1563,6 +1664,7 @@ function showTab(name) {
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
   if (name === 'monitor') {
+    renderMonitorTab();
     const ml = document.getElementById('monitor-log');
     setTimeout(() => ml.scrollTop = ml.scrollHeight, 0);
   }

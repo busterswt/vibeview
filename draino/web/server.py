@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import resource
 import secrets
 import threading
 import time
@@ -85,6 +86,10 @@ _audit_log_path: Optional[str] = None
 _LOGGER = logging.getLogger("draino.web")
 _update_cache_lock = threading.Lock()
 _app_update_cache: tuple[float, dict] | None = None
+_runtime_lock = threading.Lock()
+_runtime_history: list[dict] = []
+_runtime_pod_cache: tuple[float, dict] | None = None
+_runtime_prev_sample: tuple[float, float] | None = None
 
 
 @dataclass(slots=True)
@@ -282,6 +287,116 @@ def _get_app_update_status(force: bool = False) -> dict:
     with _update_cache_lock:
         _app_update_cache = (now + _APP_UPDATE_TTL, dict(status))
     return status
+
+
+def _read_process_rss_bytes() -> int | None:
+    status_path = Path("/proc/self/status")
+    if status_path.exists():
+        try:
+            for line in status_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("VmRSS:"):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        return int(parts[1]) * 1024
+        except OSError:
+            pass
+
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if rss <= 0:
+        return None
+    if os.uname().sysname.lower() == "darwin":
+        return int(rss)
+    return int(rss) * 1024
+
+
+def _sample_process_runtime() -> dict:
+    global _runtime_prev_sample
+    now = time.time()
+    monotonic_now = time.monotonic()
+    process_now = time.process_time()
+    cpu_percent = 0.0
+
+    with _runtime_lock:
+        previous = _runtime_prev_sample
+        _runtime_prev_sample = (monotonic_now, process_now)
+
+    if previous is not None:
+        prev_mono, prev_proc = previous
+        wall_delta = monotonic_now - prev_mono
+        proc_delta = process_now - prev_proc
+        if wall_delta > 0:
+            cpu_percent = max(0.0, (proc_delta / wall_delta) * 100.0)
+
+    return {
+        "timestamp": now,
+        "cpu_percent": round(cpu_percent, 2),
+        "rss_bytes": _read_process_rss_bytes(),
+    }
+
+
+def _get_runtime_pod_info(force: bool = False) -> dict:
+    now = time.time()
+    global _runtime_pod_cache
+    with _runtime_lock:
+        if not force and _runtime_pod_cache and now < _runtime_pod_cache[0]:
+            return dict(_runtime_pod_cache[1])
+
+    if not _POD_NAME:
+        return {"requests": {}, "limits": {}, "restart_count": None}
+
+    try:
+        config.load_incluster_config()
+        core = client.CoreV1Api()
+        pod = core.read_namespaced_pod(name=_POD_NAME, namespace=_POD_NAMESPACE)
+    except Exception as exc:  # pragma: no cover - cluster access failure path
+        _LOGGER.warning("failed to read pod runtime metadata: %s", exc)
+        return {"requests": {}, "limits": {}, "restart_count": None}
+
+    requests: dict[str, str] = {}
+    limits: dict[str, str] = {}
+    restart_count = None
+
+    for container in pod.spec.containers or []:
+        if container.name != "draino":
+            continue
+        resources = container.resources
+        requests = dict(resources.requests or {})
+        limits = dict(resources.limits or {})
+        break
+
+    for container_status in pod.status.container_statuses or []:
+        if container_status.name == "draino":
+            restart_count = container_status.restart_count
+            break
+
+    result = {
+        "requests": requests,
+        "limits": limits,
+        "restart_count": restart_count,
+    }
+    with _runtime_lock:
+        _runtime_pod_cache = (now + 60.0, dict(result))
+    return result
+
+
+def _get_app_runtime() -> dict:
+    sample = _sample_process_runtime()
+    pod_info = _get_runtime_pod_info()
+
+    with _runtime_lock:
+        _runtime_history.append(sample)
+        cutoff = sample["timestamp"] - (15 * 60)
+        while _runtime_history and (_runtime_history[0]["timestamp"] < cutoff or len(_runtime_history) > 180):
+            _runtime_history.pop(0)
+        history = [dict(item) for item in _runtime_history]
+
+    return {
+        "current": sample,
+        "history": history,
+        "requests": pod_info.get("requests", {}),
+        "limits": pod_info.get("limits", {}),
+        "restart_count": pod_info.get("restart_count"),
+    }
 
 
 # ── State serialisation ───────────────────────────────────────────────────────
@@ -1234,6 +1349,13 @@ async def api_app_meta(request: Request):
     _get_session_record(request)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _get_app_update_status)
+
+
+@fastapi_app.get("/api/app-runtime")
+async def api_app_runtime(request: Request):
+    _get_session_record(request)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _get_app_runtime)
 
 
 @fastapi_app.post("/api/session")
