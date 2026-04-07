@@ -16,8 +16,8 @@ POLL_INTERVAL  = 15    # seconds between migration / drain status polls
 MIGRATE_TIMEOUT = 1800  # hard limit for all live migrations (seconds)
 EMPTY_TIMEOUT   = 900   # hard limit for hypervisor-empty wait (seconds)
 
-REBOOT_OFFLINE_TIMEOUT = 300   # seconds to wait for node to go NotReady
-REBOOT_ONLINE_TIMEOUT  = 600   # seconds to wait for node to return Ready
+REBOOT_OFFLINE_TIMEOUT = 300    # seconds to wait for node to go NotReady
+REBOOT_ONLINE_TIMEOUT  = 1200   # seconds to wait for node to return Ready
 
 
 def run_workflow(
@@ -341,10 +341,10 @@ def run_reboot(
 
     # ── Step 2: Wait for node to go offline (best-effort) ─────────────────
     # Fast reboots may never register NotReady in K8s (kubelet reconnects
-    # before the node-monitor grace period fires).  We try for 120 s and
+    # before the node-monitor grace period fires).  We try for a short window and
     # skip gracefully rather than aborting, then proceed to await_online.
     step_set("await_offline", StepStatus.RUNNING)
-    offline_deadline = time.time() + 120
+    offline_deadline = time.time() + REBOOT_OFFLINE_TIMEOUT
     went_offline     = False
 
     while time.time() < offline_deadline:
