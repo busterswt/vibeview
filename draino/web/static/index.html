@@ -274,6 +274,13 @@ body {
 .tree-badge.edge { background: #e8f5e9; color: #1b5e20; font-weight: 700; }
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
+.tree-badge.noagent {
+  background: #b71c1c;
+  color: #fff;
+  font-weight: 800;
+  border: 1px solid #7f0000;
+  box-shadow: 0 0 0 1px rgba(183, 28, 28, 0.18);
+}
 .tree-badge.reboot { background: #fff8e1; color: #e65100; font-weight: 700; }
 .tree-badge.kernel { background: #e3f2fd; color: #1565c0; font-weight: 700; }
 
@@ -1265,12 +1272,24 @@ function wsSetStatus(mode) {
   wsStatusMode = mode;
   const dot = document.getElementById('ws-dot');
   const label = document.getElementById('ws-label');
+  const pill = document.getElementById('ws-pill');
   dot.classList.toggle('live', mode === 'live');
-  if (mode === 'live') label.textContent = 'Live';
-  else if (mode === 'loading') label.textContent = 'Loading inventory…';
-  else if (mode === 'connecting') label.textContent = 'Connecting…';
-  else if (mode === 'reconnecting') label.textContent = 'Reconnecting…';
-  else label.textContent = 'Offline';
+  if (mode === 'live') {
+    label.textContent = 'Live';
+    pill.title = 'Live WebSocket connection to the Draino web pod.';
+  } else if (mode === 'loading') {
+    label.textContent = 'Loading inventory…';
+    pill.title = 'Connected. Inventory is still loading.';
+  } else if (mode === 'connecting') {
+    label.textContent = 'Connecting…';
+    pill.title = 'Connecting to the Draino web pod.';
+  } else if (mode === 'reconnecting') {
+    label.textContent = 'Reconnecting…';
+    pill.title = 'Connection to the Draino web pod was lost. If a Helm upgrade or rollout just ran, the pod may have been replaced and you may need to sign in again to recreate the session.';
+  } else {
+    label.textContent = 'Offline';
+    pill.title = 'WebSocket connection is offline.';
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1490,7 +1509,7 @@ function treeItemHtml(name, nd) {
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
   const agentBdg = nd.node_agent_ready === false
-    ? `<span class="tree-badge red" title="No ready node-agent pod on this node">agent</span>`
+    ? `<span class="tree-badge noagent" title="No ready node-agent pod on this node">NoAgent</span>`
     : '';
   const edgeBdg = nd.is_edge ? `<span class="tree-badge edge">edge</span>` : '';
   const noSched = noScheduleTaints(nd);
