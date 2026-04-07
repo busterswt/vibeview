@@ -413,6 +413,57 @@ def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
     assert captured == {"k8s": 2, "hw": 2, "nova": 2}
 
 
+def test_node_metrics_endpoint_caches_and_refreshes(monkeypatch):
+    captured = {"metrics": 0}
+
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_monitor_metrics",
+        lambda node_name, hostname=None: captured.__setitem__("metrics", captured["metrics"] + 1) or {
+            "current": {"load1": 1.5, "filesystems": [{"mount": "/", "available_kb": 1000, "used_percent": 70}]},
+            "history": [{"timestamp": 1, "load1": 1.5, "memory_used_percent": 60.0, "root_used_percent": 70}],
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        first = client.get("/api/nodes/node-a/metrics")
+        second = client.get("/api/nodes/node-a/metrics")
+        refreshed = client.get("/api/nodes/node-a/metrics?refresh=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert captured == {"metrics": 2}
+
+
 def test_websocket_requires_session_and_uses_session_server(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])

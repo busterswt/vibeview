@@ -305,6 +305,18 @@ def get_node_host_signals(node_name: str, hostname: str | None = None) -> dict:
         }
 
 
+def get_node_monitor_metrics(node_name: str, hostname: str | None = None) -> dict:
+    """Return lightweight host load, memory, and disk metrics via the node agent."""
+    try:
+        return node_agent_client.get_host_metrics(node_name)
+    except Exception as exc:
+        return {
+            "current": None,
+            "history": [],
+            "error": str(exc),
+        }
+
+
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role.
 

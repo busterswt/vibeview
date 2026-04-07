@@ -77,6 +77,10 @@ def get_host_signals(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/signals")
 
 
+def get_host_metrics(node_name: str) -> dict:
+    return _request_json(node_name, "GET", "/host/metrics")
+
+
 def _request_json(
     node_name: str,
     method: str,

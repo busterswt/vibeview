@@ -71,6 +71,7 @@ _SESSION_TTL = 60 * 60 * 12
 _OPENSTACK_SUMMARY_TTL = float(os.getenv("DRAINO_OPENSTACK_SUMMARY_TTL", "60"))
 _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
+_NODE_METRICS_TTL = float(os.getenv("DRAINO_NODE_METRICS_TTL", "30"))
 _OVN_EDGE_TTL = float(os.getenv("DRAINO_OVN_EDGE_TTL", "60"))
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
 _IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
@@ -454,6 +455,7 @@ class DrainoServer:
         self._ovn_edge_cache: tuple[float, set[str]] | None = None
         self._host_signal_refresh_at: dict[str, float] = {}
         self._node_detail_cache: dict[str, tuple[float, dict]] = {}
+        self._node_metrics_cache: dict[str, tuple[float, dict]] = {}
 
         self._clients: Set[WebSocket]                        = set()
         self._loop:    Optional[asyncio.AbstractEventLoop]   = None
@@ -539,6 +541,7 @@ class DrainoServer:
             self.node_states.pop(removed_name, None)
             self._host_signal_refresh_at.pop(removed_name, None)
             self._node_detail_cache.pop(removed_name, None)
+            self._node_metrics_cache.pop(removed_name, None)
 
         for nd in nodes:
             name     = nd["name"]
@@ -692,6 +695,24 @@ class DrainoServer:
 
     def invalidate_node_detail(self, node_name: str) -> None:
         self._node_detail_cache.pop(node_name, None)
+
+    def get_cached_node_metrics(self, node_name: str, now: float | None = None) -> dict | None:
+        entry = self._node_metrics_cache.get(node_name)
+        if entry is None:
+            return None
+        check_time = time.time() if now is None else now
+        expires_at, payload = entry
+        if check_time >= expires_at:
+            self._node_metrics_cache.pop(node_name, None)
+            return None
+        return payload
+
+    def set_cached_node_metrics(self, node_name: str, payload: dict, now: float | None = None) -> None:
+        cache_time = time.time() if now is None else now
+        self._node_metrics_cache[node_name] = (cache_time + _NODE_METRICS_TTL, payload)
+
+    def invalidate_node_metrics(self, node_name: str) -> None:
+        self._node_metrics_cache.pop(node_name, None)
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
@@ -1494,6 +1515,29 @@ async def api_node_detail(node_name: str, request: Request):
     hw  = await hw_future
     payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
     server.set_cached_node_detail(node_name, payload)
+    return payload
+
+
+@fastapi_app.get("/api/nodes/{node_name}/metrics")
+async def api_node_metrics(node_name: str, request: Request):
+    """Return lightweight node monitor metrics from the node agent."""
+    session = _get_session_record(request)
+    server = session.server
+    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+    if force_refresh:
+        server.invalidate_node_metrics(node_name)
+    cached = server.get_cached_node_metrics(node_name)
+    if cached is not None:
+        return cached
+    loop = asyncio.get_running_loop()
+    state = server.node_states.get(node_name)
+    payload = await loop.run_in_executor(
+        None,
+        k8s_ops.get_node_monitor_metrics,
+        node_name,
+        state.hypervisor if state else None,
+    )
+    server.set_cached_node_metrics(node_name, payload)
     return payload
 
 

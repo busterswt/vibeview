@@ -90,6 +90,65 @@ def test_get_node_host_signals_uses_node_agent(monkeypatch):
     assert result["reboot_required"] is True
 
 
+def test_get_node_monitor_metrics_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_metrics",
+        lambda node_name: {
+            "current": {
+                "load1": 1.2,
+                "memory_used_percent": 67.5,
+                "filesystems": [{"mount": "/", "available_kb": 1000, "used_percent": 82}],
+            },
+            "history": [{"timestamp": 1, "load1": 1.2, "memory_used_percent": 67.5, "root_used_percent": 82}],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_monitor_metrics("node-1", "hv-1")
+
+    assert result["current"]["load1"] == 1.2
+    assert result["current"]["filesystems"][0]["mount"] == "/"
+    assert result["history"][0]["root_used_percent"] == 82
+
+
+def test_node_agent_host_metrics_parses_load_memory_and_disk(monkeypatch):
+    stdout = "\n".join([
+        "__LOAD__",
+        "1.23 0.98 0.75 2/100 12345",
+        "__MEM__",
+        "MemTotal:       16000000 kB",
+        "MemAvailable:    6000000 kB",
+        "__CPU__",
+        "16",
+        "__UPTIME__",
+        "7200.00",
+        "__DF__",
+        "/|1000000|700000|300000|70%",
+        "/var|500000|200000|300000|40%",
+        "__END__",
+    ])
+
+    monkeypatch.setattr(
+        node_agent,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=stdout, stderr=""),
+    )
+    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
+    node_agent._host_metrics_cache = None
+    node_agent._host_metrics_history.clear()
+
+    result = node_agent._get_host_metrics()
+
+    assert result["error"] is None
+    assert result["current"]["load1"] == 1.23
+    assert result["current"]["cpu_count"] == 16
+    assert result["current"]["memory_used_kb"] == 10000000
+    assert result["current"]["memory_used_percent"] == 62.5
+    assert result["current"]["filesystems"][0]["mount"] == "/"
+    assert result["history"][0]["root_used_percent"] == 70
+
+
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
     payload = {
         "headings": [
