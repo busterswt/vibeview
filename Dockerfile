@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl util-linux \
+    && apt-get install -y --no-install-recommends ca-certificates curl jq util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
@@ -22,7 +22,7 @@ COPY pyproject.toml README.md /app/
 COPY draino /app/draino
 
 RUN pip install --upgrade pip \
-    && pip install ".[web]"
+    && pip install .
 
 RUN useradd --create-home --uid 10001 draino
 
