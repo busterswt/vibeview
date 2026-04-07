@@ -954,6 +954,7 @@ let authInfo     = null;
 let appMetaTimer = null;
 let appRuntimeTimer = null;
 let nodeMonitorTimer = null;
+let nodeNetStatsTimer = null;
 let wsStatusMode = 'offline';
 let monitorEntriesHtml = '';
 let sidebarDragging = false;
@@ -978,6 +979,8 @@ let nodeSortDirection = 'asc';
 // Node detail cache (summary tab)
 const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
 const nodeMetricsCache = {};  // node_name → { loading, current, history, error }
+const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
+const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
 
 // Node network config cache (configure tab)
 // node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
@@ -1042,6 +1045,7 @@ function setAuthenticatedUI(info) {
   refreshAppRuntime();
   if (!appRuntimeTimer) appRuntimeTimer = setInterval(refreshAppRuntime, 15000);
   if (!nodeMonitorTimer) nodeMonitorTimer = setInterval(refreshSelectedNodeMetrics, 30000);
+  if (!nodeNetStatsTimer) nodeNetStatsTimer = setInterval(refreshSelectedNodeNetworkStats, 3000);
 }
 
 function renderAppMeta(meta) {
@@ -1101,6 +1105,16 @@ function fmtSeconds(seconds) {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+function fmtNetRate(bytesPerSecond) {
+  if (bytesPerSecond == null) return 'warming up';
+  const bitsPerSecond = Number(bytesPerSecond) * 8;
+  if (!Number.isFinite(bitsPerSecond)) return '—';
+  if (bitsPerSecond >= 1_000_000_000) return `${(bitsPerSecond / 1_000_000_000).toFixed(2)} Gb/s`;
+  if (bitsPerSecond >= 1_000_000) return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mb/s`;
+  if (bitsPerSecond >= 1_000) return `${(bitsPerSecond / 1_000).toFixed(1)} Kb/s`;
+  return `${bitsPerSecond.toFixed(0)} b/s`;
 }
 
 function metricValue(metrics, key) {
@@ -1665,6 +1679,56 @@ function refreshSelectedNodeMetrics(force = false) {
   loadNodeMetrics(selectedNode, force);
 }
 
+function enabledNetStatsSet(nodeName) {
+  if (!nodeNetStatsEnabled[nodeName]) nodeNetStatsEnabled[nodeName] = new Set();
+  return nodeNetStatsEnabled[nodeName];
+}
+
+async function loadNodeNetworkStats(name) {
+  nodeNetStatsCache[name] = {
+    ...(nodeNetStatsCache[name] || {}),
+    loading: true,
+    error: null,
+  };
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/network-stats`);
+    const json = await resp.json();
+    nodeNetStatsCache[name] = {
+      loading: false,
+      interfaces: json.interfaces || [],
+      error: json.error || null,
+      fetchedAt: new Date(),
+    };
+  } catch (e) {
+    nodeNetStatsCache[name] = {
+      loading: false,
+      interfaces: [],
+      error: String(e),
+      fetchedAt: new Date(),
+    };
+  }
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+}
+
+function refreshSelectedNodeNetworkStats() {
+  if (activeView !== 'infrastructure' || activeTab !== 'monitor' || !selectedNode || !nodes[selectedNode]) return;
+  const enabled = enabledNetStatsSet(selectedNode);
+  if (!enabled.size) return;
+  loadNodeNetworkStats(selectedNode);
+}
+
+function toggleNodeInterfaceStats(nodeName, ifaceName, enabled) {
+  const set = enabledNetStatsSet(nodeName);
+  if (enabled) {
+    set.add(ifaceName);
+    loadNodeNetworkStats(nodeName);
+  } else {
+    set.delete(ifaceName);
+  }
+  if (selectedNode === nodeName && activeTab === 'monitor') renderNodeMonitorTab(nodes[nodeName]);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INFRASTRUCTURE DETAIL PANEL
 // ════════════════════════════════════════════════════════════════════════════
@@ -1771,6 +1835,7 @@ function showTab(name) {
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
   if (name === 'monitor' && selectedNode && shouldLoadNodeMetrics(selectedNode)) loadNodeMetrics(selectedNode);
+  if (name === 'monitor' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
   if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
@@ -2048,6 +2113,11 @@ function renderNodeMonitorTab(nd) {
   const current = data.current || {};
   const filesystems = current.filesystems || [];
   const rootFs = filesystems.find(fs => fs.mount === '/') || null;
+  const ifaceCache = nodeNetworkCache[nd.k8s_name] || {};
+  const ifaces = (ifaceCache.ifaces || []).filter(i => i.type === 'physical' || i.type === 'bond');
+  const enabledStats = enabledNetStatsSet(nd.k8s_name);
+  const netStats = nodeNetStatsCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
+  const netStatsByName = Object.fromEntries((netStats.interfaces || []).map(item => [item.name, item]));
 
   const fsRows = filesystems.length
     ? filesystems.map((fs) => `
@@ -2128,6 +2198,46 @@ function renderNodeMonitorTab(nd) {
         </thead>
         <tbody>${fsRows}</tbody>
       </table>
+    </div>
+  </div>`;
+
+  h += `<div class="card" style="margin-top:12px">
+    <div class="card-title">Network Interfaces</div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
+        Toggle live throughput per interface. Rates are sampled from kernel byte counters and shown only for enabled interfaces.
+      </div>
+      ${ifaceCache.ifacesLoading ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading interface inventory…</div>` : ''}
+      ${ifaceCache.ifacesError ? `<div class="etcd-alert danger">Interface inventory error: ${esc(ifaceCache.ifacesError)}</div>` : ''}
+      ${netStats.error ? `<div class="etcd-alert danger">Live stats error: ${esc(netStats.error)}</div>` : ''}
+      ${ifaces.length ? `
+        <table class="data-table">
+          <thead>
+            <tr><th>Interface</th><th>Type</th><th>IPs</th><th>Live Stats</th><th>RX</th><th>TX</th></tr>
+          </thead>
+          <tbody>
+            ${ifaces.map((iface) => {
+              const checked = enabledStats.has(iface.name);
+              const live = netStatsByName[iface.name] || {};
+              const ipSummary = [...(iface.ipv4 || []), ...(iface.ipv6 || [])].join(', ');
+              return `<tr>
+                <td><strong>${esc(iface.name)}</strong></td>
+                <td><span class="nic-type ${escAttr(iface.type || 'physical')}">${esc(iface.type || 'physical')}</span></td>
+                <td style="font-size:11px;color:var(--dim)">${esc(ipSummary || '—')}</td>
+                <td>
+                  <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleNodeInterfaceStats('${escAttr(nd.k8s_name)}','${escAttr(iface.name)}', this.checked)">
+                    <span>${checked ? 'on' : 'off'}</span>
+                  </label>
+                </td>
+                <td>${checked ? esc(fmtNetRate(live.rx_bytes_per_second)) : '<span style="color:var(--dim)">off</span>'}</td>
+                <td>${checked ? esc(fmtNetRate(live.tx_bytes_per_second)) : '<span style="color:var(--dim)">off</span>'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      ` : (!ifaceCache.ifacesLoading ? `<div style="color:var(--dim)">No physical or bond interfaces found.</div>` : '')}
+      ${netStats.fetchedAt && enabledStats.size ? `<div class="runtime-note">Updated ${_fmtTime(netStats.fetchedAt)}</div>` : ''}
     </div>
   </div>`;
 

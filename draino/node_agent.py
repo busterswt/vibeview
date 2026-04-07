@@ -25,6 +25,8 @@ _host_static_detail_lock = threading.Lock()
 _host_metrics_cache: tuple[float, dict] | None = None
 _host_metrics_history: list[dict] = []
 _host_metrics_lock = threading.Lock()
+_host_network_prev_samples: dict[str, tuple[float, int, int]] = {}
+_host_network_prev_lock = threading.Lock()
 
 
 class RebootRequest(BaseModel):
@@ -632,6 +634,71 @@ def _get_host_metrics() -> dict:
     return payload
 
 
+def _get_host_network_stats() -> dict:
+    try:
+        proc = _run_host_shell(
+            r"""
+for d in /sys/class/net/*/; do
+  name=$(basename "$d")
+  is_phys=0; is_bond=0
+  [ -e "${d}device" ] && is_phys=1
+  [ -d "${d}bonding" ] && is_bond=1
+  [ "$is_phys" = "0" ] && [ "$is_bond" = "0" ] && continue
+  rx=$(cat "${d}statistics/rx_bytes" 2>/dev/null)
+  tx=$(cat "${d}statistics/tx_bytes" 2>/dev/null)
+  printf '%s|%s|%s\n' "$name" "${rx:-0}" "${tx:-0}"
+done
+""",
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"interfaces": [], "error": str(exc)}
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {
+            "interfaces": [],
+            "error": stderr or f"network stats command exited {proc.returncode}",
+        }
+
+    now = time.time()
+    results: list[dict] = []
+    with _host_network_prev_lock:
+        for raw_line in proc.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split("|")
+            if len(parts) != 3:
+                continue
+            name, rx_raw, tx_raw = parts
+            try:
+                rx_bytes = int(rx_raw)
+                tx_bytes = int(tx_raw)
+            except ValueError:
+                continue
+            rx_rate_bps = None
+            tx_rate_bps = None
+            previous = _host_network_prev_samples.get(name)
+            if previous is not None:
+                prev_time, prev_rx, prev_tx = previous
+                elapsed = now - prev_time
+                if elapsed > 0:
+                    rx_rate_bps = max(0.0, (rx_bytes - prev_rx) / elapsed)
+                    tx_rate_bps = max(0.0, (tx_bytes - prev_tx) / elapsed)
+            _host_network_prev_samples[name] = (now, rx_bytes, tx_bytes)
+            results.append({
+                "name": name,
+                "rx_bytes": rx_bytes,
+                "tx_bytes": tx_bytes,
+                "rx_bytes_per_second": rx_rate_bps,
+                "tx_bytes_per_second": tx_rate_bps,
+            })
+
+    results.sort(key=lambda item: item["name"])
+    return {"interfaces": results, "error": None}
+
+
 node_agent_app = FastAPI(title="Draino Node Agent")
 
 
@@ -688,6 +755,13 @@ def host_metrics(authorization: str | None = Header(default=None)) -> dict:
     _authorise(authorization)
     _LOGGER.info("host metrics requested node=%s", _node_name())
     return _get_host_metrics()
+
+
+@node_agent_app.get("/host/network-stats")
+def host_network_stats(authorization: str | None = Header(default=None)) -> dict:
+    _authorise(authorization)
+    _LOGGER.info("host network stats requested node=%s", _node_name())
+    return _get_host_network_stats()
 
 
 @node_agent_app.post("/reboot", status_code=status.HTTP_202_ACCEPTED)

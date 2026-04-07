@@ -81,6 +81,10 @@ def get_host_metrics(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/metrics")
 
 
+def get_host_network_stats(node_name: str) -> dict:
+    return _request_json(node_name, "GET", "/host/network-stats")
+
+
 def _request_json(
     node_name: str,
     method: str,

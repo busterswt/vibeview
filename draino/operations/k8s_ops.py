@@ -317,6 +317,17 @@ def get_node_monitor_metrics(node_name: str, hostname: str | None = None) -> dic
         }
 
 
+def get_node_network_stats(node_name: str, hostname: str | None = None) -> dict:
+    """Return lightweight per-interface rx/tx counters and rates via the node agent."""
+    try:
+        return node_agent_client.get_host_network_stats(node_name)
+    except Exception as exc:
+        return {
+            "interfaces": [],
+            "error": str(exc),
+        }
+
+
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role.
 

@@ -1541,6 +1541,20 @@ async def api_node_metrics(node_name: str, request: Request):
     return payload
 
 
+@fastapi_app.get("/api/nodes/{node_name}/network-stats")
+async def api_node_network_stats(node_name: str, request: Request):
+    """Return lightweight per-interface throughput counters and rates."""
+    session = _get_session_record(request)
+    loop = asyncio.get_running_loop()
+    state = session.server.node_states.get(node_name)
+    return await loop.run_in_executor(
+        None,
+        k8s_ops.get_node_network_stats,
+        node_name,
+        state.hypervisor if state else None,
+    )
+
+
 @fastapi_app.get("/api/nodes/{node_name}/ovn-annotations")
 async def api_node_ovn_annotations(node_name: str, request: Request):
     """Return OVN-related annotations from the K8s node."""

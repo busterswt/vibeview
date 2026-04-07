@@ -149,6 +149,47 @@ def test_node_agent_host_metrics_parses_load_memory_and_disk(monkeypatch):
     assert result["history"][0]["root_used_percent"] == 70
 
 
+def test_get_node_network_stats_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_network_stats",
+        lambda node_name: {
+            "interfaces": [{"name": "bond0", "rx_bytes_per_second": 125000000.0, "tx_bytes_per_second": 62500000.0}],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_network_stats("node-1", "hv-1")
+
+    assert result["interfaces"][0]["name"] == "bond0"
+    assert result["interfaces"][0]["rx_bytes_per_second"] == 125000000.0
+
+
+def test_node_agent_host_network_stats_computes_rates(monkeypatch):
+    outputs = iter([
+        "eth0|1000|2000\nbond0|5000|7000\n",
+        "eth0|3000|5000\nbond0|9000|11000\n",
+    ])
+    times = iter([1000.0, 1002.0])
+
+    monkeypatch.setattr(
+        node_agent,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=next(outputs), stderr=""),
+    )
+    monkeypatch.setattr(node_agent.time, "time", lambda: next(times))
+    node_agent._host_network_prev_samples.clear()
+
+    first = node_agent._get_host_network_stats()
+    second = node_agent._get_host_network_stats()
+
+    assert first["error"] is None
+    assert first["interfaces"][0]["rx_bytes_per_second"] is None
+    eth0 = next(item for item in second["interfaces"] if item["name"] == "eth0")
+    assert eth0["rx_bytes_per_second"] == 1000.0
+    assert eth0["tx_bytes_per_second"] == 1500.0
+
+
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
     payload = {
         "headings": [
