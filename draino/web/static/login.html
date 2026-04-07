@@ -48,7 +48,17 @@ body {
   gap: 10px;
   color: white;
   font-weight: 700;
-  font-size: 14px;
+}
+
+.logo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.logo-main {
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .brand-icon {
@@ -64,9 +74,11 @@ body {
 }
 
 .logo-sub {
+  display: block;
   color: #90a4ae;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 400;
+  margin-top: 2px;
 }
 
 .top-right {
@@ -328,7 +340,10 @@ body {
   <div id="top-bar">
     <div class="logo">
       <div class="brand-icon">D</div>
-      <div>VibeView <span class="logo-sub">Operator Authentication</span></div>
+      <div class="logo-text">
+        <span class="logo-main">VibeView</span>
+        <span class="logo-sub">Operator Authentication</span>
+      </div>
     </div>
   </div>
 
@@ -341,7 +356,6 @@ body {
           <div class="auth-brand-icon">D</div>
           <div>
             <div class="auth-brand">VibeView</div>
-            <div class="auth-kicker">Flushing Cloud Infrastructure Since 2026</div>
           </div>
         </div>
         <div class="auth-title">Authenticate Access</div>
@@ -535,11 +549,11 @@ body {
         </div>
       </div>
 
-      <div class="auth-msg" id="auth-msg"></div>
+      <div class="auth-msg" id="auth-msg">Waiting for credentials.</div>
 
       <div class="auth-actions">
         <div>
-          <div class="status" id="auth-status">Waiting for credentials.</div>
+          <div class="status" id="auth-status"></div>
         </div>
         <button class="primary" id="auth-submit" onclick="submitAuth()">Log In</button>
       </div>
@@ -551,9 +565,9 @@ const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
 
 function setAuthMessage(msg = '', kind = '') {
   const el = document.getElementById('auth-msg');
-  el.textContent = msg || '';
+  el.textContent = msg || 'Waiting for credentials.';
   const status = document.getElementById('auth-status');
-  if (!msg) status.textContent = 'Waiting for credentials.';
+  if (!msg) status.textContent = '';
   else if (kind === 'busy') status.textContent = 'Validating credentials...';
   else if (kind === 'error') status.textContent = 'Review the error above.';
   else status.textContent = 'Status updated.';
