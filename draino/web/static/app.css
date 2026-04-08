@@ -88,6 +88,23 @@ body {
 #ws-dot.live { background: var(--green-lt); }
 .user-badge { color: #b0bec5; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .user-dot   { width: 22px; height: 22px; border-radius: 50%; background: var(--blue); color: white; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.polling-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #b0bec5;
+}
+.polling-control select {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+}
+.polling-control select option { color: #263238; }
 
 /* ═══════════════════════════════════════════════════════
    BREADCRUMB BAR

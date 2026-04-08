@@ -1,5 +1,71 @@
 'use strict';
 
+const POLLING_COOKIE = 'draino_polling_interval';
+const DEFAULT_POLLING_INTERVAL_SECONDS = 15;
+let inventoryRefreshTimer = null;
+let preflightRefreshTimer = null;
+let pollingIntervalSeconds = DEFAULT_POLLING_INTERVAL_SECONDS;
+
+function setCookie(name, value, maxAgeSeconds) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; samesite=lax`;
+}
+
+function getCookie(name) {
+  const prefix = `${name}=`;
+  const parts = document.cookie ? document.cookie.split('; ') : [];
+  for (const part of parts) {
+    if (part.startsWith(prefix)) return decodeURIComponent(part.slice(prefix.length));
+  }
+  return '';
+}
+
+function normalisePollingInterval(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_POLLING_INTERVAL_SECONDS;
+  if ([0, 15, 30, 60].includes(numeric)) return numeric;
+  return DEFAULT_POLLING_INTERVAL_SECONDS;
+}
+
+function inventoryRefreshTick() {
+  if (pollingIntervalSeconds <= 0) return;
+  wsSend({ action: 'refresh_silent' });
+}
+
+function preflightRefreshTick() {
+  if (pollingIntervalSeconds <= 0) return;
+  if (activeTab !== 'instances') return;
+  if (!selectedNode) return;
+  const nd = nodes[selectedNode];
+  if (!nd || !nd.is_compute || nd.phase !== 'idle') return;
+  wsSend({ action: 'refresh_preflight', node: selectedNode });
+}
+
+function restartPollingTimers() {
+  if (inventoryRefreshTimer) clearInterval(inventoryRefreshTimer);
+  if (preflightRefreshTimer) clearInterval(preflightRefreshTimer);
+  inventoryRefreshTimer = null;
+  preflightRefreshTimer = null;
+  if (pollingIntervalSeconds <= 0) return;
+  const intervalMs = pollingIntervalSeconds * 1000;
+  inventoryRefreshTimer = setInterval(inventoryRefreshTick, intervalMs);
+  preflightRefreshTimer = setInterval(preflightRefreshTick, intervalMs);
+}
+
+function setPollingInterval(value) {
+  pollingIntervalSeconds = normalisePollingInterval(value);
+  const select = document.getElementById('polling-select');
+  if (select) select.value = String(pollingIntervalSeconds);
+  setCookie(POLLING_COOKIE, String(pollingIntervalSeconds), 60 * 60 * 24 * 365);
+  restartPollingTimers();
+}
+
+function initPollingInterval() {
+  pollingIntervalSeconds = normalisePollingInterval(getCookie(POLLING_COOKIE) || DEFAULT_POLLING_INTERVAL_SECONDS);
+  const select = document.getElementById('polling-select');
+  if (select) select.value = String(pollingIntervalSeconds);
+  restartPollingTimers();
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 // § CLOCK & LIVE TIMERS
@@ -16,21 +82,6 @@ setInterval(() => {
     }
   }
 }, 1000);
-
-// Periodic silent refresh of instance list every 10 s while Instances tab is open
-setInterval(() => {
-  if (activeTab !== 'instances') return;
-  if (!selectedNode) return;
-  const nd = nodes[selectedNode];
-  if (!nd || !nd.is_compute || nd.phase !== 'idle') return;
-  wsSend({ action: 'refresh_preflight', node: selectedNode });
-}, 10000);
-
-// Periodic silent inventory refresh so external node changes like taints
-// show up without manual intervention.
-setInterval(() => {
-  wsSend({ action: 'refresh_silent' });
-}, 15000);
 
 // ════════════════════════════════════════════════════════════════════════════
 // § UTILS
@@ -128,4 +179,5 @@ function initTasksResizer() {
 
 initSidebarResizer();
 initTasksResizer();
+initPollingInterval();
 bootstrapSession();
