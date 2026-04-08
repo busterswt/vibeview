@@ -47,19 +47,18 @@ from fastapi import (
     HTTPException,
     Request,
     Response,
-    WebSocket,
-    WebSocketDisconnect,
     status,
 )
 from fastapi.responses import FileResponse, RedirectResponse
 from kubernetes import client, config
 from kubernetes.config.config_exception import ConfigException
-from pydantic import BaseModel
 
 from .. import node_agent_client
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
 from .api import auth as auth_api
+from .api import k8s as k8s_api
+from .api import nodes as nodes_api
 from .api import runtime as runtime_api
 from .auth_builders import (
     K8sLoginPayload,
@@ -75,6 +74,7 @@ from .auth_builders import (
 from . import inventory as inventory_module
 from .inventory import DrainoServer, _serialise
 from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session
+from . import ws as ws_api
 
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
@@ -520,8 +520,21 @@ runtime_api.configure(
     get_public_version_status=lambda: _get_public_version_status,
     get_app_runtime=lambda: _get_app_runtime,
 )
+nodes_api.configure(
+    get_session_record=lambda: _get_session_record,
+    get_network_detail=lambda: _get_network_detail,
+)
+k8s_api.configure(
+    get_session_record=lambda: _get_session_record,
+)
+ws_api.configure(
+    get_ws_session=lambda: _get_ws_session,
+)
 fastapi_app.include_router(auth_api.router)
 fastapi_app.include_router(runtime_api.router)
+fastapi_app.include_router(nodes_api.router)
+fastapi_app.include_router(k8s_api.router)
+fastapi_app.include_router(ws_api.router)
 
 
 @fastapi_app.get("/api/networks")
@@ -536,238 +549,6 @@ async def api_networks(request: Request):
         return {"networks": [], "error": str(exc)}
 
 
-@fastapi_app.get("/api/ovn/lsp/{port_id}")
-async def api_ovn_port_detail(port_id: str, request: Request):
-    """Return OVN logical switch port detail for a given port UUID."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_port_detail, port_id, session.server.k8s_auth)
-        return {"port": data, "error": None}
-    except Exception as exc:
-        return {"port": None, "error": str(exc)}
-
-
-@fastapi_app.get("/api/networks/{network_id}/ovn")
-async def api_network_ovn(network_id: str, request: Request):
-    """Return OVN logical switch and ports for a Neutron network."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id, session.server.k8s_auth)
-        return {"ovn": data, "error": None}
-    except Exception as exc:
-        return {"ovn": None, "error": str(exc)}
-
-
-@fastapi_app.get("/api/nodes/{node_name}/detail")
-async def api_node_detail(node_name: str, request: Request):
-    """Return detailed K8s + Nova + hardware stats for the summary tab."""
-    session = _get_session_record(request)
-    server = session.server
-    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-    if force_refresh:
-        server.invalidate_node_detail(node_name)
-    cached = server.get_cached_node_detail(node_name)
-    if cached is not None:
-        return cached
-    loop = asyncio.get_running_loop()
-    state = server.node_states.get(node_name)
-    k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
-    hw_future  = loop.run_in_executor(
-        None,
-        k8s_ops.get_node_hardware_info,
-        node_name,
-        state.hypervisor if state else None,
-    )
-
-    nova: dict = {}
-    if state and state.is_compute:
-        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
-
-    k8s = await k8s_future
-    hw  = await hw_future
-    payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
-    server.set_cached_node_detail(node_name, payload)
-    return payload
-
-
-@fastapi_app.get("/api/nodes/{node_name}/metrics")
-async def api_node_metrics(node_name: str, request: Request):
-    """Return lightweight node monitor metrics from the node agent."""
-    session = _get_session_record(request)
-    server = session.server
-    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-    if force_refresh:
-        server.invalidate_node_metrics(node_name)
-    cached = server.get_cached_node_metrics(node_name)
-    if cached is not None:
-        return cached
-    loop = asyncio.get_running_loop()
-    state = server.node_states.get(node_name)
-    payload = await loop.run_in_executor(
-        None,
-        k8s_ops.get_node_monitor_metrics,
-        node_name,
-        state.hypervisor if state else None,
-    )
-    server.set_cached_node_metrics(node_name, payload)
-    return payload
-
-
-@fastapi_app.get("/api/nodes/{node_name}/network-stats")
-async def api_node_network_stats(node_name: str, request: Request):
-    """Return lightweight per-interface throughput counters and rates."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    state = session.server.node_states.get(node_name)
-    return await loop.run_in_executor(
-        None,
-        k8s_ops.get_node_network_stats,
-        node_name,
-        state.hypervisor if state else None,
-    )
-
-
-@fastapi_app.get("/api/nodes/{node_name}/ovn-annotations")
-async def api_node_ovn_annotations(node_name: str, request: Request):
-    """Return OVN-related annotations from the K8s node."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, k8s_ops.get_node_ovn_annotations, node_name, session.server.k8s_auth)
-    return result
-
-
-class AnnotationPatch(BaseModel):
-    key: str
-    value: Optional[str] = None
-
-
-@fastapi_app.post("/api/nodes/{node_name}/ovn-annotations")
-async def api_patch_ovn_annotation(node_name: str, payload: AnnotationPatch, request: Request):
-    """Set or remove a single OVN annotation on a K8s node."""
-    session = _get_session_record(request)
-    if payload.key not in k8s_ops.OVN_ANNOTATION_KEYS:
-        return {"ok": False, "error": f"Key {payload.key!r} not in allowed OVN annotation keys"}
-    loop = asyncio.get_running_loop()
-    try:
-        await loop.run_in_executor(
-            None, k8s_ops.patch_node_annotation, node_name, payload.key, payload.value, session.server.k8s_auth
-        )
-        return {"ok": True, "error": None}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-class ManagedNoSchedulePatch(BaseModel):
-    enabled: bool
-
-
-@fastapi_app.post("/api/nodes/{node_name}/taints/noschedule")
-async def api_patch_managed_noschedule_taint(
-    node_name: str,
-    payload: ManagedNoSchedulePatch,
-    request: Request,
-):
-    """Add or remove Draino's managed NoSchedule taint on a K8s node."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        await loop.run_in_executor(
-            None,
-            k8s_ops.set_managed_noschedule_taint,
-            node_name,
-            payload.enabled,
-            session.server.k8s_auth,
-        )
-        session.server.start_refresh(silent=True)
-        return {"ok": True, "error": None}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-@fastapi_app.get("/api/nodes/{node_name}/network-interfaces")
-async def api_node_network_interfaces(node_name: str, request: Request):
-    """Return physical and bond network interfaces discovered from the host."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    state = session.server.node_states.get(node_name)
-    result = await loop.run_in_executor(
-        None, k8s_ops.get_node_network_interfaces, node_name, state.hypervisor if state else None
-    )
-    return result
-
-
-@fastapi_app.get("/api/k8s/namespaces")
-async def api_k8s_namespaces(request: Request):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_namespaces, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/k8s/pods")
-async def api_k8s_pods(request: Request, namespace: Optional[str] = None):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pods, namespace, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/k8s/services")
-async def api_k8s_services(request: Request, namespace: Optional[str] = None):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_services, namespace, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/k8s/pvs")
-async def api_k8s_pvs(request: Request):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvs, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/k8s/pvcs")
-async def api_k8s_pvcs(request: Request, namespace: Optional[str] = None):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvcs, namespace, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/k8s/crds")
-async def api_k8s_crds(request: Request):
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_crds, session.server.k8s_auth), "error": None}
-    except Exception as exc:
-        return {"items": [], "error": str(exc)}
-
-
-@fastapi_app.get("/api/networks/{network_id}")
-async def api_network_detail(network_id: str, request: Request):
-    """Return subnets and segments for a single network."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        data = await loop.run_in_executor(None, _get_network_detail, network_id, session.server.openstack_auth)
-        return {"network": data, "error": None}
-    except Exception as exc:
-        return {"network": None, "error": str(exc)}
 
 
 @fastapi_app.get("/api/volumes")
@@ -780,60 +561,6 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc)}
-
-
-@fastapi_app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket) -> None:
-    session = _get_ws_session(ws)
-    if session is None:
-        await ws.close(code=4401)
-        return
-    server = session.server
-    await server.connect(ws)
-    try:
-        while True:
-            raw    = await ws.receive_text()
-            msg    = json.loads(raw)
-            action = msg.get("action")
-            node   = msg.get("node")
-
-            if   action == "refresh":                              server.start_refresh()
-            elif action == "refresh_silent":                       server.start_refresh(silent=True)
-            elif action == "evacuate"       and node:             server.action_evacuate(node)
-            elif action == "drain_quick"    and node:             server.action_drain_quick(node)
-            elif action == "undrain"        and node:             server.action_undrain(node)
-            elif action == "reboot_request" and node:             server.action_reboot_request(node)
-            elif action == "reboot_confirm" and node:             server.action_reboot_confirm(node)
-            elif action == "reboot_cancel"  and node:             server.action_reboot_cancel(node)
-            elif action == "check_etcd":                          server.start_etcd_check()
-            elif action == "get_preflight"     and node:            server.start_preflight(node)
-            elif action == "refresh_preflight"  and node:            server.start_preflight(node, silent=True)
-            elif action == "migrate_instance" and node:
-                iid = msg.get("instance_id")
-                if iid: server.action_migrate_instance(node, iid)
-            elif action == "get_pods"       and node:
-                threading.Thread(
-                    target=_serve_pods, args=(server, ws, node), daemon=True
-                ).start()
-
-    except WebSocketDisconnect:
-        server.disconnect(ws)
-
-
-def _serve_pods(server: DrainoServer, ws: WebSocket, node_name: str) -> None:
-    """Fetch pods in a thread and push back as a 'pods' message."""
-    try:
-        raw_pods = k8s_ops.get_pods_on_node(node_name, auth=server.k8s_auth)
-        pods = []
-        for p in raw_pods:
-            p2 = dict(p)
-            ca = p2.get("created_at")
-            if ca is not None and hasattr(ca, "isoformat"):
-                p2["created_at"] = ca.isoformat()
-            pods.append(p2)
-    except Exception as exc:
-        pods = [{"error": str(exc)}]
-    server._push({"type": "pods", "node": node_name, "pods": pods})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
