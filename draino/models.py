@@ -66,6 +66,7 @@ class NodeState:
     node_agent_ready: bool = False
     is_edge:        bool = False           # True if OVN chassis is marked as gateway/edge
     is_etcd:        bool = False            # True if node carries the etcd role label
+    hosts_mariadb:  bool = False            # True if a MariaDB/Galera pod is scheduled here
     etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
     etcd_checking:  bool = False           # True while etcd health check is in flight
 

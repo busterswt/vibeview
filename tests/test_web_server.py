@@ -827,6 +827,7 @@ def test_load_nodes_bg_uses_state_updates_when_membership_is_unchanged(monkeypat
 
     monkeypatch.setattr(web_server.openstack_ops, "get_all_host_summaries", lambda log_cb=None, auth=None: {})
     monkeypatch.setattr(web_server.k8s_ops, "get_etcd_node_names", lambda auth=None: set())
+    monkeypatch.setattr(web_server.k8s_ops, "get_mariadb_node_names", lambda auth=None: {"node-1"})
     monkeypatch.setattr(web_server.k8s_ops, "get_ovn_edge_nodes", lambda auth=None: {"node-1"})
     monkeypatch.setattr(
         web_server.k8s_ops,
@@ -844,6 +845,7 @@ def test_load_nodes_bg_uses_state_updates_when_membership_is_unchanged(monkeypat
     assert [msg["type"] for msg in pushed] == ["state_update", "state_update"]
     assert all(msg["node"] == "node-1" for msg in pushed)
     assert server.node_states["node-1"].is_edge is True
+    assert server.node_states["node-1"].hosts_mariadb is True
 
 
 def test_load_nodes_bg_uses_full_state_when_membership_changes(monkeypatch, tmp_path):

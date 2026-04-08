@@ -349,6 +349,43 @@ def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     return result
 
 
+def get_mariadb_node_names(auth: K8sAuth | None = None) -> set[str]:
+    """Return node names currently hosting MariaDB/Galera pods.
+
+    This uses a pragmatic heuristic based on common labels, pod names, and
+    container images so it works across typical OpenStack-Helm and similar
+    deployments without hard-coding one namespace.
+    """
+    v1 = client.CoreV1Api(_api_client(auth))
+    result: set[str] = set()
+    raw = v1.list_pod_for_all_namespaces()
+
+    def _looks_like_mariadb(pod) -> bool:
+        labels = pod.metadata.labels or {}
+        label_values = " ".join(str(v).lower() for v in labels.values())
+        if "mariadb" in label_values or "galera" in label_values:
+            return True
+
+        pod_name = (pod.metadata.name or "").lower()
+        if "mariadb" in pod_name or "galera" in pod_name:
+            return True
+
+        for container in (pod.spec.containers or []):
+            image = (container.image or "").lower()
+            if "mariadb" in image or "galera" in image:
+                return True
+        return False
+
+    for pod in raw.items:
+        if pod.status.phase in ("Succeeded", "Failed"):
+            continue
+        if not pod.spec or not pod.spec.node_name:
+            continue
+        if _looks_like_mariadb(pod):
+            result.add(pod.spec.node_name)
+    return result
+
+
 def cordon_node(
     name: str,
     log: LogFn,

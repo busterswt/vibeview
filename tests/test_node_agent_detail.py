@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import urllib.error
+from types import SimpleNamespace
 
 from draino import node_agent, node_agent_client
 from draino.operations import k8s_ops
@@ -88,6 +89,45 @@ def test_get_node_host_signals_uses_node_agent(monkeypatch):
     assert result["kernel_version"] == "6.8.0"
     assert result["latest_kernel_version"] == "6.8.12"
     assert result["reboot_required"] is True
+
+
+def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
+    pods = [
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="mariadb-server-0", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-a", containers=[]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="db-0", labels={"app.kubernetes.io/name": "mariadb"}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-b", containers=[]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="galera-helper", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-c", containers=[SimpleNamespace(image="quay.io/example/galera:latest")]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="rabbitmq-0", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-d", containers=[SimpleNamespace(image="rabbitmq:3")]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+    ]
+
+    class FakeCoreV1Api:
+        def __init__(self, api_client):
+            pass
+
+        def list_pod_for_all_namespaces(self):
+            return SimpleNamespace(items=pods)
+
+    monkeypatch.setattr(k8s_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_ops.client, "CoreV1Api", FakeCoreV1Api)
+
+    result = k8s_ops.get_mariadb_node_names()
+
+    assert result == {"node-a", "node-b", "node-c"}
 
 
 def test_get_node_monitor_metrics_uses_node_agent(monkeypatch):

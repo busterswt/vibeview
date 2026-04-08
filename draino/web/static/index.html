@@ -272,6 +272,7 @@ body {
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
 .tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.edge { background: #e8f5e9; color: #1b5e20; font-weight: 700; }
+.tree-badge.mariadb { background: #fce4ec; color: #ad1457; font-weight: 700; }
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.noagent {
@@ -1699,6 +1700,7 @@ function treeItemHtml(name, nd) {
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
+  const mariadbBdg = nd.hosts_mariadb ? `<span class="tree-badge mariadb">mariadb</span>` : '';
   const agentBdg = nd.node_agent_ready === false
     ? `<span class="tree-badge noagent" title="No ready node-agent pod on this node">NoAgent</span>`
     : '';
@@ -1730,7 +1732,7 @@ function treeItemHtml(name, nd) {
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${agentBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${mariadbBdg}${agentBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
@@ -2016,6 +2018,7 @@ function renderObjHeader(nd) {
     badges.push(`<span class="badge blue">Compute Node</span>`);
   }
   if (nd.is_etcd) badges.push(`<span class="badge red">etcd</span>`);
+  if (nd.hosts_mariadb) badges.push(`<span class="badge magenta">MariaDB</span>`);
   document.getElementById('oh-badges').innerHTML = badges.join('');
 }
 

@@ -73,6 +73,7 @@ _HOST_SIGNALS_TTL = int(os.getenv("DRAINO_HOST_SIGNALS_TTL", "300"))
 _NODE_DETAIL_TTL = float(os.getenv("DRAINO_NODE_DETAIL_TTL", "30"))
 _NODE_METRICS_TTL = float(os.getenv("DRAINO_NODE_METRICS_TTL", "30"))
 _OVN_EDGE_TTL = float(os.getenv("DRAINO_OVN_EDGE_TTL", "60"))
+_MARIADB_NODE_TTL = float(os.getenv("DRAINO_MARIADB_NODE_TTL", "60"))
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
 _IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
 _IMAGE_TAG = os.getenv("DRAINO_IMAGE_TAG", "main")
@@ -417,6 +418,7 @@ def _serialise(state: NodeState) -> dict:
         "node_agent_ready":    state.node_agent_ready,
         "is_edge":             state.is_edge,
         "is_etcd":             state.is_etcd,
+        "hosts_mariadb":       state.hosts_mariadb,
         "etcd_healthy":        state.etcd_healthy,
         "etcd_checking":       state.etcd_checking,
         "is_compute":          state.is_compute,
@@ -477,6 +479,7 @@ class DrainoServer:
         self._etcd_node_names: set[str]             = set()
         self._openstack_summary_cache: tuple[float, dict[str, dict]] | None = None
         self._ovn_edge_cache: tuple[float, set[str]] | None = None
+        self._mariadb_node_cache: tuple[float, set[str]] | None = None
         self._host_signal_refresh_at: dict[str, float] = {}
         self._node_detail_cache: dict[str, tuple[float, dict]] = {}
         self._node_metrics_cache: dict[str, tuple[float, dict]] = {}
@@ -618,6 +621,18 @@ class DrainoServer:
     def _set_cached_ovn_edge_nodes(self, edge_nodes: set[str], now: float) -> None:
         self._ovn_edge_cache = (now + _OVN_EDGE_TTL, set(edge_nodes))
 
+    def _get_cached_mariadb_nodes(self, now: float, force: bool = False) -> set[str] | None:
+        if force or self._mariadb_node_cache is None:
+            return None
+        expires_at, payload = self._mariadb_node_cache
+        if now >= expires_at:
+            self._mariadb_node_cache = None
+            return None
+        return payload
+
+    def _set_cached_mariadb_nodes(self, mariadb_nodes: set[str], now: float) -> None:
+        self._mariadb_node_cache = (now + _MARIADB_NODE_TTL, set(mariadb_nodes))
+
     def _load_nodes_bg(self, cached_nodes: Optional[list[dict]] = None, silent: bool = False) -> None:
         now = time.time()
         nodes = cached_nodes
@@ -659,6 +674,16 @@ class DrainoServer:
         edge_aliases = {name.lower() for name in edge_nodes}
         edge_aliases |= {name.split(".", 1)[0].lower() for name in edge_nodes}
 
+        mariadb_nodes = self._get_cached_mariadb_nodes(now=now, force=not silent)
+        if mariadb_nodes is None:
+            try:
+                mariadb_nodes = k8s_ops.get_mariadb_node_names(auth=self.k8s_auth)
+                self._set_cached_mariadb_nodes(mariadb_nodes, now=now)
+            except Exception as exc:
+                mariadb_nodes = set()
+                if not silent:
+                    self._push({"type": "log", "node": "-", "message": f"MariaDB pod placement probe failed: {exc}", "color": "warn"})
+
         summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
         if summaries is None:
             try:
@@ -686,6 +711,7 @@ class DrainoServer:
             }
             state.is_edge          = any(candidate in edge_aliases for candidate in candidates if candidate)
             state.is_etcd          = name in self._etcd_node_names
+            state.hosts_mariadb    = any(candidate in mariadb_nodes for candidate in candidates if candidate)
             state.availability_zone = summary.get("availability_zone")
             state.aggregates        = summary.get("aggregates", [])
             if state.phase == NodePhase.IDLE:
