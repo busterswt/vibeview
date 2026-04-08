@@ -193,6 +193,22 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
     ports: list[dict] = []
     current: dict | None = None
 
+    def _parse_gateway_chassis_values(raw: str) -> list[str]:
+        raw = raw.strip()
+        if not raw:
+            return []
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+        stripped = raw.strip("[]")
+        if not stripped:
+            return []
+        parts = re.split(r'[\s,]+', stripped.replace('"', '').replace("'", ""))
+        return [part.strip() for part in parts if part.strip()]
+
     for line in result.stdout.splitlines():
         content = line.rstrip()
         stripped = content.lstrip()
@@ -224,8 +240,7 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
             elif key == "peer":
                 current["peer"] = value.strip('"')
             elif key == "gateway chassis":
-                chassis_name = value.strip('"')
-                if chassis_name:
+                for chassis_name in _parse_gateway_chassis_values(value):
                     current["gateway_chassis"].append(chassis_name)
                     if chassis_name not in chassis_host_cache:
                         chassis_host_cache[chassis_name] = _get_ovn_chassis_hostname(chassis_name, auth=auth)

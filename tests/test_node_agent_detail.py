@@ -376,6 +376,48 @@ def test_get_ovn_logical_router_parses_router_ports(monkeypatch):
     assert result["ports"][1]["gateway_hosts"] == ["gw-1.example.com", "gw-2.example.com"]
 
 
+def test_get_ovn_logical_router_splits_bracketed_gateway_chassis(monkeypatch):
+    chassis_payloads = {
+        "name=03107ead-6d1f-40f1-8416-d7146235c018": {"headings": ["hostname"], "data": [["gw-1.example.com"]]},
+        "name=da1e681a-010a-4216-8afb-05a16d1c6bce": {"headings": ["hostname"], "data": [["gw-2.example.com"]]},
+        "name=02ba4d2a-3669-45d1-a33b-fa52965db977": {"headings": ["hostname"], "data": [["gw-3.example.com"]]},
+    }
+    output = """router 7e4dc0d9-1234-5678-9abc-def012345678 (neutron-router-1)
+    port lrp-ext-1
+        mac: \"fa:16:3e:00:00:fe\"
+        networks: [\"203.0.113.2/24\"]
+        gateway chassis: [03107ead-6d1f-40f1-8416-d7146235c018 da1e681a-010a-4216-8afb-05a16d1c6bce 02ba4d2a-3669-45d1-a33b-fa52965db977]
+"""
+
+    monkeypatch.setattr(
+        ovn_ops.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=(
+                json.dumps(chassis_payloads[args[0][-1]])
+                if "sbctl" in args[0]
+                else output
+            ),
+            stderr="",
+        ),
+    )
+
+    result = k8s_ops.get_ovn_logical_router("router-1")
+
+    assert result["ports"][0]["gateway_chassis"] == [
+        "03107ead-6d1f-40f1-8416-d7146235c018",
+        "da1e681a-010a-4216-8afb-05a16d1c6bce",
+        "02ba4d2a-3669-45d1-a33b-fa52965db977",
+    ]
+    assert result["ports"][0]["gateway_hosts"] == [
+        "gw-1.example.com",
+        "gw-2.example.com",
+        "gw-3.example.com",
+    ]
+
+
 def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, tmp_path):
     token_file = tmp_path / "token"
     ca_file = tmp_path / "ca.crt"
