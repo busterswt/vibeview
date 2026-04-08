@@ -275,6 +275,20 @@ def _get_app_update_status(force: bool = False) -> dict:
     return status
 
 
+def _get_public_version_status() -> dict:
+    meta = _get_app_update_status()
+    digest = meta.get("current_digest")
+    short_sha = ""
+    if isinstance(digest, str) and digest.startswith("sha256:"):
+        short_sha = digest[len("sha256:"):][:12]
+    return {
+        "current_digest": digest,
+        "short_sha": short_sha,
+        "current_tag": meta.get("current_tag"),
+        "current_digest_source": meta.get("current_digest_source"),
+    }
+
+
 def _read_process_rss_bytes() -> int | None:
     status_path = Path("/proc/self/status")
     if status_path.exists():
@@ -1401,6 +1415,12 @@ async def api_app_meta(request: Request):
     _get_session_record(request)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _get_app_update_status)
+
+
+@fastapi_app.get("/api/version")
+async def api_version():
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _get_public_version_status)
 
 
 @fastapi_app.get("/api/app-runtime")

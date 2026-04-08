@@ -129,6 +129,11 @@ body {
   gap: 12px;
   margin-bottom: 14px;
 }
+.auth-head-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
 
 .auth-brand-icon {
   width: 36px;
@@ -155,6 +160,22 @@ body {
   font-weight: 400;
   color: var(--vc-dim);
   margin-top: 2px;
+}
+.version-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eef5fb;
+  color: #35546c;
+  border: 1px solid #bfdbf8;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.version-pill.visible {
+  display: inline-flex;
 }
 
 .auth-title {
@@ -271,6 +292,9 @@ body {
   font-size: 11px;
   line-height: 1.55;
 }
+.auth-msg:empty {
+  display: none;
+}
 
 .auth-actions {
   padding: 0 22px 18px;
@@ -356,6 +380,9 @@ body {
           <div class="auth-brand-icon">D</div>
           <div>
             <div class="auth-brand">VibeView</div>
+          </div>
+          <div class="auth-head-meta">
+            <div class="version-pill" id="version-pill">Version unknown</div>
           </div>
         </div>
         <div class="auth-title">Authenticate Access</div>
@@ -549,11 +576,11 @@ body {
         </div>
       </div>
 
-      <div class="auth-msg" id="auth-msg">Waiting for credentials.</div>
+      <div class="auth-msg" id="auth-msg"></div>
 
       <div class="auth-actions">
         <div>
-          <div class="status" id="auth-status"></div>
+          <div class="status" id="auth-status">Waiting for credentials.</div>
         </div>
         <button class="primary" id="auth-submit" onclick="submitAuth()">Log In</button>
       </div>
@@ -565,12 +592,37 @@ const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
 
 function setAuthMessage(msg = '', kind = '') {
   const el = document.getElementById('auth-msg');
-  el.textContent = msg || 'Waiting for credentials.';
+  el.textContent = msg || '';
   const status = document.getElementById('auth-status');
-  if (!msg) status.textContent = '';
+  if (!msg) status.textContent = 'Waiting for credentials.';
   else if (kind === 'busy') status.textContent = 'Validating credentials...';
   else if (kind === 'error') status.textContent = 'Review the error above.';
   else status.textContent = 'Status updated.';
+}
+
+function renderVersion(meta) {
+  const pill = document.getElementById('version-pill');
+  if (!pill) return;
+  const sha = meta?.short_sha || '';
+  if (!sha) {
+    pill.classList.remove('visible');
+    return;
+  }
+  pill.textContent = `Running ${sha}`;
+  const digest = meta?.current_digest || '';
+  pill.title = digest || '';
+  pill.classList.add('visible');
+}
+
+async function refreshVersion() {
+  try {
+    const resp = await fetch('/api/version');
+    if (!resp.ok) return;
+    const meta = await resp.json();
+    renderVersion(meta);
+  } catch (_) {
+    renderVersion(null);
+  }
 }
 
 function loadAuthPrefs() {
@@ -762,6 +814,7 @@ async function submitAuth() {
 
 applyAuthPrefs();
 clearSecretAuthInputs();
+refreshVersion();
 bootstrapSession();
 </script>
 </body>

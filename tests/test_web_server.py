@@ -327,6 +327,25 @@ def test_app_meta_endpoint_returns_update_status(monkeypatch):
     assert meta.json()["track"] == "main"
 
 
+def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_get_public_version_status",
+        lambda: {
+            "current_digest": "sha256:1234567890abcdef",
+            "short_sha": "1234567890ab",
+            "current_tag": "main",
+            "current_digest_source": "running_pod",
+        },
+    )
+
+    with TestClient(web_server.fastapi_app) as client:
+        version = client.get("/api/version")
+
+    assert version.status_code == 200
+    assert version.json()["short_sha"] == "1234567890ab"
+
+
 def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
