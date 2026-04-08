@@ -501,6 +501,57 @@ def get_instance_network_detail(
 
     network_names: dict[str, str] = {}
     subnet_dhcp: dict[str, bool | None] = {}
+    subnet_gateway_ip: dict[str, str | None] = {}
+    gateway_target_by_subnet: dict[str, str | None] = {}
+    router_name_cache: dict[str, str | None] = {}
+
+    def _get_router_name(router_id: str) -> str | None:
+        if not router_id:
+            return None
+        if router_id in router_name_cache:
+            return router_name_cache[router_id]
+        try:
+            router = conn.network.get_router(router_id)
+            name = getattr(router, "name", None) or (router.to_dict().get("name") if hasattr(router, "to_dict") else None) or router_id
+        except Exception:
+            name = router_id
+        router_name_cache[router_id] = name
+        return name
+
+    def _gateway_target_for_subnet(subnet_id: str, network_id: str) -> str | None:
+        if not subnet_id or not network_id:
+            return None
+        if subnet_id in gateway_target_by_subnet:
+            return gateway_target_by_subnet[subnet_id]
+        gateway_ip = subnet_gateway_ip.get(subnet_id)
+        if not gateway_ip:
+            gateway_target_by_subnet[subnet_id] = None
+            return None
+        try:
+            candidate_ports = list(conn.network.ports(network_id=network_id))
+        except Exception:
+            gateway_target_by_subnet[subnet_id] = None
+            return None
+        for candidate in candidate_ports:
+            candidate_data = candidate.to_dict() if hasattr(candidate, "to_dict") else {}
+            candidate_fixed_ips = list(getattr(candidate, "fixed_ips", None) or candidate_data.get("fixed_ips") or [])
+            if not any(
+                item.get("subnet_id") == subnet_id and item.get("ip_address") == gateway_ip
+                for item in candidate_fixed_ips
+            ):
+                continue
+            device_owner = getattr(candidate, "device_owner", None) or candidate_data.get("device_owner") or ""
+            device_id = getattr(candidate, "device_id", None) or candidate_data.get("device_id") or ""
+            if "router" in device_owner:
+                gateway_target_by_subnet[subnet_id] = _get_router_name(device_id) or device_id or gateway_ip
+            elif device_id:
+                gateway_target_by_subnet[subnet_id] = device_id
+            else:
+                gateway_target_by_subnet[subnet_id] = gateway_ip
+            return gateway_target_by_subnet[subnet_id]
+        gateway_target_by_subnet[subnet_id] = None
+        return None
+
     ports: list[dict] = []
     for port in conn.network.ports(device_id=instance_id):
         port_data = port.to_dict() if hasattr(port, "to_dict") else {}
@@ -524,11 +575,12 @@ def get_instance_network_detail(
         fixed_ip_items = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
         fixed_ips = [item.get("ip_address", "") for item in fixed_ip_items if item.get("ip_address")]
         dhcp_values: list[bool] = []
+        gateway_targets: list[str] = []
         for item in fixed_ip_items:
             subnet_id = item.get("subnet_id")
             if not subnet_id:
                 continue
-            if subnet_id not in subnet_dhcp:
+            if subnet_id not in subnet_dhcp or subnet_id not in subnet_gateway_ip:
                 try:
                     subnet = conn.network.get_subnet(subnet_id)
                     subnet_data = subnet.to_dict() if hasattr(subnet, "to_dict") else {}
@@ -537,10 +589,17 @@ def get_instance_network_detail(
                         if getattr(subnet, "is_dhcp_enabled", None) is not None
                         else subnet_data.get("enable_dhcp")
                     )
+                    subnet_gateway_ip[subnet_id] = getattr(subnet, "gateway_ip", None)
+                    if subnet_gateway_ip[subnet_id] in ("", None):
+                        subnet_gateway_ip[subnet_id] = subnet_data.get("gateway_ip")
                 except Exception:
                     subnet_dhcp[subnet_id] = None
+                    subnet_gateway_ip[subnet_id] = None
             if subnet_dhcp[subnet_id] is not None:
                 dhcp_values.append(bool(subnet_dhcp[subnet_id]))
+            gateway_target = _gateway_target_for_subnet(subnet_id, network_id)
+            if gateway_target:
+                gateway_targets.append(gateway_target)
 
         ports.append({
             "id": getattr(port, "id", None) or "",
@@ -552,6 +611,7 @@ def get_instance_network_detail(
             "network_name": network_names.get(network_id, ""),
             "fixed_ips": fixed_ips,
             "dhcp_enabled": (any(dhcp_values) if dhcp_values else None),
+            "gateway_target": gateway_targets[0] if gateway_targets else None,
             "allowed_address_pairs": [
                 {
                     "ip_address": item.get("ip_address", "") or "",

@@ -193,6 +193,7 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
                 "network_name": "tenant-net",
                 "fixed_ips": ["10.0.0.12"],
                 "dhcp_enabled": True,
+                "gateway_target": "router-a",
                 "allowed_address_pairs": [{"ip_address": "10.0.0.50", "mac_address": "fa:16:3e:00:00:50"}],
                 "security_groups": ["default"],
                 "floating_ips": ["203.0.113.10"],
@@ -236,6 +237,7 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["instance"]["flavor"]["name"] == "m1.large"
     assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
     assert body["instance"]["ports"][0]["dhcp_enabled"] is True
+    assert body["instance"]["ports"][0]["gateway_target"] == "router-a"
     assert body["instance"]["ports"][0]["allowed_address_pairs"][0]["ip_address"] == "10.0.0.50"
     assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
 
@@ -412,6 +414,205 @@ def test_instance_network_detail_includes_dhcp_flag_from_subnet(monkeypatch):
 
     assert detail["ports"][0]["dhcp_enabled"] is True
     assert detail["ports"][0]["floating_ips"] == ["203.0.113.10"]
+
+
+def test_instance_network_detail_resolves_gateway_router_name(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"id": "flavor-1", "name": "m1.large"}
+
+        def to_dict(self):
+            return {}
+
+    class FakeVmPort:
+        id = "port-1"
+        name = "port-1"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:01"
+        network_id = "net-1"
+        fixed_ips = [{"ip_address": "10.0.0.12", "subnet_id": "subnet-1"}]
+        allowed_address_pairs = []
+        security_group_ids = ["default"]
+        device_owner = "compute:nova"
+        device_id = "vm-1"
+
+        def to_dict(self):
+            return {"binding:vnic_type": "normal"}
+
+    class FakeGatewayPort:
+        id = "gw-port-1"
+        name = "gw-port-1"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:fe"
+        network_id = "net-1"
+        fixed_ips = [{"ip_address": "10.0.0.1", "subnet_id": "subnet-1"}]
+        allowed_address_pairs = []
+        security_group_ids = []
+        device_owner = "network:router_interface"
+        device_id = "router-1"
+
+        def to_dict(self):
+            return {}
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None, network_id=None):
+            if device_id == "vm-1":
+                return [FakeVmPort()]
+            if network_id == "net-1":
+                return [FakeVmPort(), FakeGatewayPort()]
+            raise AssertionError((device_id, network_id))
+
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return SimpleNamespace(name="tenant-net")
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return SimpleNamespace(is_dhcp_enabled=True, gateway_ip="10.0.0.1")
+
+        @staticmethod
+        def ips(port_id=None):
+            assert port_id == "port-1"
+            return []
+
+        @staticmethod
+        def get_router(router_id):
+            assert router_id == "router-1"
+            return SimpleNamespace(name="router-a")
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            assert flavor_id == "flavor-1"
+            return SimpleNamespace(
+                id="flavor-1",
+                name="m1.large",
+                vcpus=4,
+                ram=8192,
+                disk=40,
+                ephemeral=0,
+                swap=0,
+            )
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["ports"][0]["gateway_target"] == "router-a"
+
+
+def test_instance_network_detail_resolves_gateway_device_id(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"id": "flavor-1", "name": "m1.large"}
+
+        def to_dict(self):
+            return {}
+
+    class FakeVmPort:
+        id = "port-1"
+        name = "port-1"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:01"
+        network_id = "net-1"
+        fixed_ips = [{"ip_address": "10.0.0.12", "subnet_id": "subnet-1"}]
+        allowed_address_pairs = []
+        security_group_ids = ["default"]
+        device_owner = "compute:nova"
+        device_id = "vm-1"
+
+        def to_dict(self):
+            return {"binding:vnic_type": "normal"}
+
+    class FakeGatewayPort:
+        id = "gw-port-1"
+        name = "gw-port-1"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:fe"
+        network_id = "net-1"
+        fixed_ips = [{"ip_address": "10.0.0.1", "subnet_id": "subnet-1"}]
+        allowed_address_pairs = []
+        security_group_ids = []
+        device_owner = "compute:nova"
+        device_id = "vm-gateway"
+
+        def to_dict(self):
+            return {}
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None, network_id=None):
+            if device_id == "vm-1":
+                return [FakeVmPort()]
+            if network_id == "net-1":
+                return [FakeVmPort(), FakeGatewayPort()]
+            raise AssertionError((device_id, network_id))
+
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return SimpleNamespace(name="tenant-net")
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return SimpleNamespace(is_dhcp_enabled=True, gateway_ip="10.0.0.1")
+
+        @staticmethod
+        def ips(port_id=None):
+            assert port_id == "port-1"
+            return []
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            assert flavor_id == "flavor-1"
+            return SimpleNamespace(
+                id="flavor-1",
+                name="m1.large",
+                vcpus=4,
+                ram=8192,
+                disk=40,
+                ephemeral=0,
+                swap=0,
+            )
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["ports"][0]["gateway_target"] == "vm-gateway"
 
 
 def test_patch_managed_noschedule_taint_endpoint(monkeypatch):

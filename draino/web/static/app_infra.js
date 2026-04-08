@@ -1019,11 +1019,12 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
   } else {
     h += `<table class="data-table" style="margin-top:10px">
       <thead><tr>
-        <th>Port ID</th><th>MAC</th><th>Fixed IP</th><th>DHCP</th><th>Floating IP</th><th>Action</th>
+        <th>Port ID</th><th>MAC</th><th>Fixed IP</th><th>DHCP</th><th>Floating IP</th><th>Gateway</th><th>Action</th>
       </tr></thead><tbody>`;
     for (const port of ports) {
       const firstFixedIp = (port.fixed_ips || [])[0] || '—';
       const firstFloatingIp = (port.floating_ips || [])[0] || '—';
+      const gatewayTarget = port.gateway_target || '—';
       const dhcpEnabled = port.dhcp_enabled == null ? '—' : (port.dhcp_enabled ? 'true' : 'false');
       const detailsLabel = expandedPortId === port.id ? '▾ Details' : '▸ Details';
       h += `<tr>
@@ -1032,6 +1033,7 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
         <td>${esc(firstFixedIp)}</td>
         <td>${esc(dhcpEnabled)}</td>
         <td>${esc(firstFloatingIp)}</td>
+        <td>${esc(gatewayTarget)}</td>
         <td><button class="btn" style="font-size:11px" onclick="togglePortDetail('${escAttr(instanceId)}','${escAttr(port.id)}')">${detailsLabel}</button></td>
       </tr>`;
     }
