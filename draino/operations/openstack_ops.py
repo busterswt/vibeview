@@ -483,21 +483,27 @@ def get_instance_network_detail(
         "ephemeral_gb": None,
         "swap_mb": None,
     }
+    flavor = None
     if flavor_id:
         try:
             flavor = conn.compute.get_flavor(flavor_id)
-            if flavor is not None:
-                flavor_data.update({
-                    "id": getattr(flavor, "id", None) or flavor_id,
-                    "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
-                    "vcpus": getattr(flavor, "vcpus", None),
-                    "ram_mb": getattr(flavor, "ram", None),
-                    "disk_gb": getattr(flavor, "disk", None),
-                    "ephemeral_gb": getattr(flavor, "ephemeral", None),
-                    "swap_mb": getattr(flavor, "swap", None),
-                })
         except Exception:
-            pass
+            flavor = None
+    if flavor is None and flavor_name:
+        try:
+            flavor = conn.compute.find_flavor(flavor_name, ignore_missing=True)
+        except Exception:
+            flavor = None
+    if flavor is not None:
+        flavor_data.update({
+            "id": getattr(flavor, "id", None) or flavor_id,
+            "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
+            "vcpus": getattr(flavor, "vcpus", None),
+            "ram_mb": getattr(flavor, "ram", None),
+            "disk_gb": getattr(flavor, "disk", None),
+            "ephemeral_gb": getattr(flavor, "ephemeral", None),
+            "swap_mb": getattr(flavor, "swap", None),
+        })
 
     network_names: dict[str, str] = {}
     subnet_dhcp: dict[str, bool | None] = {}

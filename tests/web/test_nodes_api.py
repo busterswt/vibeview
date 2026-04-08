@@ -293,6 +293,62 @@ def test_instance_network_detail_reads_flavor_from_object_reference(monkeypatch)
     assert detail["flavor"]["ephemeral_gb"] == 20
 
 
+def test_instance_network_detail_falls_back_to_flavor_name_lookup(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"name": "m1.small"}
+
+        def to_dict(self):
+            return {"OS-EXT-AZ:availability_zone": "nova"}
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            raise AssertionError("get_flavor should not be used without a flavor id")
+
+        @staticmethod
+        def find_flavor(flavor_name, ignore_missing=True):
+            assert flavor_name == "m1.small"
+            assert ignore_missing is True
+            return SimpleNamespace(
+                id="d5e8faba-aa99-473d-8105-24707e37fa67",
+                name="m1.small",
+                vcpus=4,
+                ram=2048,
+                disk=18,
+                ephemeral=0,
+                swap=0,
+            )
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None, network_id=None):
+            assert device_id == "vm-1"
+            return []
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["flavor"]["id"] == "d5e8faba-aa99-473d-8105-24707e37fa67"
+    assert detail["flavor"]["name"] == "m1.small"
+    assert detail["flavor"]["vcpus"] == 4
+    assert detail["flavor"]["ram_mb"] == 2048
+    assert detail["flavor"]["disk_gb"] == 18
+
+
 def test_get_instances_preflight_includes_flavor_sizing(monkeypatch):
     class FakeServer:
         def __init__(self, instance_id, name, flavor_id):
