@@ -176,6 +176,7 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
 
     logical_router_name = f"neutron-{router_id}"
     cmd = ["kubectl", "ko", "nbctl", "show", logical_router_name]
+    chassis_name_map = _get_ovn_chassis_name_map(auth=auth)
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_kubectl_plugin_env(auth))
@@ -211,7 +212,8 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
                 "mac": "",
                 "networks": [],
                 "peer": "",
-                "gateway_chassis": "",
+                "gateway_chassis": [],
+                "gateway_hosts": [],
             }
         elif indent == 8 and current is not None and ":" in stripped:
             key, _, value = stripped.partition(":")
@@ -222,7 +224,10 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
             elif key == "peer":
                 current["peer"] = value.strip('"')
             elif key == "gateway chassis":
-                current["gateway_chassis"] = value.strip('"')
+                chassis_name = value.strip('"')
+                if chassis_name:
+                    current["gateway_chassis"].append(chassis_name)
+                    current["gateway_hosts"].append(chassis_name_map.get(chassis_name, chassis_name))
             elif key == "networks":
                 try:
                     current["networks"] = _json.loads(value)
@@ -247,6 +252,56 @@ def _ovsdb_map_to_dict(value) -> dict[str, str]:
             continue
         key, val = entry
         out[str(key)] = str(val)
+    return out
+
+
+def _get_ovn_chassis_name_map(auth: K8sAuth | None = None) -> dict[str, str]:
+    """Return OVN chassis name -> hostname mapping via kubectl ko sbctl."""
+    cmd = ["kubectl", "ko", "sbctl", "--format=json", "list", "Chassis"]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_kubectl_plugin_env(auth),
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko sbctl list timed out") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"kubectl ko sbctl exited with code {result.returncode}")
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid JSON from kubectl ko sbctl: {exc}") from exc
+
+    headings = payload.get("headings")
+    rows = payload.get("data")
+    if not isinstance(headings, list) or not isinstance(rows, list):
+        raise RuntimeError("unexpected kubectl ko sbctl JSON shape")
+
+    try:
+        name_idx = headings.index("name")
+        hostname_idx = headings.index("hostname")
+    except ValueError as exc:
+        raise RuntimeError("required Chassis columns not present in kubectl ko sbctl output") from exc
+
+    out: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        if name_idx >= len(row) or hostname_idx >= len(row):
+            continue
+        name = row[name_idx]
+        hostname = row[hostname_idx]
+        if isinstance(name, str) and isinstance(hostname, str):
+            out[name] = hostname
     return out
 
 
