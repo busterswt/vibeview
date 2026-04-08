@@ -1,0 +1,491 @@
+'use strict';
+
+// ════════════════════════════════════════════════════════════════════════════
+// § STATE
+// ════════════════════════════════════════════════════════════════════════════
+
+let nodes        = {};          // nodeName → NodeDict (from server)
+let selectedNode = null;
+let pendingReboot = null;
+let showPods     = false;
+let hideSucceeded = true;
+let lastPodsCache = null;       // { node, pods[] }
+let activeTab    = 'summary';
+let activeView   = 'infrastructure';
+let ws           = null;
+let authReady    = false;
+let authInfo     = null;
+let appMetaTimer = null;
+let appRuntimeTimer = null;
+let nodeMonitorTimer = null;
+let nodeNetStatsTimer = null;
+let wsStatusMode = 'offline';
+let sessionExpired = false;
+let logoutInProgress = false;
+let monitorEntriesHtml = '';
+let sidebarDragging = false;
+let tasksDragging = false;
+
+// Step timing: records when each step first entered a non-pending state.
+// Key format: `${nodeName}:${stepKey}:${status}` → Date
+const stepTimes = {};
+
+// Hints toggle
+let showHints = false;
+
+// Per-instance migration state (outside full evacuation): instance_id → 'migrating'|'error'
+const instanceMigrateStates = {};
+// Per-instance migration task records for the Recent Tasks panel
+// instance_id → { name, nodeName, status, startTime }
+const instanceMigrateTasks  = {};
+
+// Sidebar collapse state
+const collapsedGroups = new Set();
+let nodeSortDirection = 'asc';
+
+// Node detail cache (summary tab)
+const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
+const nodeMetricsCache = {};  // node_name → { loading, current, history, error }
+const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
+const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
+
+// Node network config cache (configure tab)
+// node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
+const nodeNetworkCache = {};
+let appRuntimeState = { loading: false, current: null, history: [], requests: {}, limits: {}, restart_count: null };
+
+// Working edit state for the currently-open Configure tab
+const netEdit = {
+  node:          null,
+  bridges:       [],
+  mappings:      [],   // [{physnet, bridge}]
+  ports:         [],   // [{bridge, iface}]
+  bridgesDirty:  false,
+  mappingsDirty: false,
+  portsDirty:    false,
+};
+
+// Pending annotation save (used by warning modal)
+let _annWarnPending = null;  // {key, value, successCb}
+
+// Networking view state
+const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+let   selectedNetwork  = null;
+const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null }, ovnSelectedPort: null, ovnPortCache: {} };
+
+// Storage view state
+const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
+
+const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
+const OP_COLOR  = {
+  queued:'op-queued', migrating:'op-migrating', 'cold-migrating':'op-migrating',
+  confirming:'op-migrating', failing_over:'op-migrating',
+  complete:'op-complete', failed:'op-failed', pending:'op-queued',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// § HINTS TOGGLE
+// ════════════════════════════════════════════════════════════════════════════
+
+function toggleHints() {
+  showHints = !showHints;
+  document.body.classList.toggle('no-hints', !showHints);
+  const btn = document.getElementById('hint-toggle');
+  btn.textContent = showHints ? '💡 VMware hints' : '💡 Hints off';
+  btn.classList.toggle('on', showHints);
+}
+
+function showSessionExpiredOverlay() {
+  sessionExpired = true;
+  document.getElementById('session-expired-overlay')?.classList.add('open');
+}
+
+function hideSessionExpiredOverlay() {
+  sessionExpired = false;
+  document.getElementById('session-expired-overlay')?.classList.remove('open');
+}
+
+function returnToLogin() {
+  window.location = '/';
+}
+
+function reloadForReconnect() {
+  window.location.reload();
+}
+
+function setAuthenticatedUI(info) {
+  authReady = true;
+  logoutInProgress = false;
+  authInfo = info;
+  hideSessionExpiredOverlay();
+  document.getElementById('logout-btn').classList.add('visible');
+  const label = info?.username && info?.project_name
+    ? `${info.username} @ ${info.project_name}`
+    : (info?.username || 'Authenticated');
+  document.getElementById('user-label').textContent = label;
+  document.getElementById('user-dot').textContent = label.slice(0, 1).toUpperCase();
+  document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
+  wsSetStatus('connecting');
+  if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
+  refreshAppMeta();
+  if (!appMetaTimer) appMetaTimer = setInterval(refreshAppMeta, 300000);
+  refreshAppRuntime();
+  if (!appRuntimeTimer) appRuntimeTimer = setInterval(refreshAppRuntime, 15000);
+  if (!nodeMonitorTimer) nodeMonitorTimer = setInterval(refreshSelectedNodeMetrics, 30000);
+  if (!nodeNetStatsTimer) nodeNetStatsTimer = setInterval(refreshSelectedNodeNetworkStats, 3000);
+}
+
+function renderAppMeta(meta) {
+  const pill = document.getElementById('update-pill');
+  if (!pill) return;
+  const currentTag = meta?.current_tag || 'unknown';
+  const currentDigest = meta?.current_digest ? meta.current_digest.slice(0, 12) : 'unknown';
+
+  if (!meta?.update_available) {
+    pill.classList.remove('visible');
+    pill.removeAttribute('title');
+    return;
+  }
+  pill.classList.add('visible');
+  pill.href = meta.update_url || '#';
+  pill.textContent = 'Update Available';
+  const availableTrack = meta.track || 'main';
+  const latestDigest  = meta.latest_digest ? meta.latest_digest.slice(0, 12) : 'unknown';
+  pill.title = `Running ${currentTag} @ ${currentDigest}; upstream ${availableTrack} @ ${latestDigest}`;
+}
+
+async function refreshAppMeta() {
+  try {
+    const resp = await fetch('/api/app-meta');
+    if (!resp.ok) return;
+    const meta = await resp.json();
+    renderAppMeta(meta);
+  } catch (_) {}
+}
+
+function fmtBytes(bytes) {
+  if (bytes == null) return '—';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let unit = units[0];
+  for (const next of units) {
+    unit = next;
+    if (Math.abs(value) < 1024 || next === units[units.length - 1]) break;
+    value /= 1024;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+}
+
+function fmtKiB(kib) {
+  if (kib == null) return '—';
+  return fmtBytes(Number(kib) * 1024);
+}
+
+function fmtSeconds(seconds) {
+  if (seconds == null) return '—';
+  let remaining = Math.max(0, Math.floor(Number(seconds)));
+  const days = Math.floor(remaining / 86400);
+  remaining %= 86400;
+  const hours = Math.floor(remaining / 3600);
+  remaining %= 3600;
+  const minutes = Math.floor(remaining / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function fmtNetRate(bytesPerSecond) {
+  if (bytesPerSecond == null) return 'warming up';
+  const bitsPerSecond = Number(bytesPerSecond) * 8;
+  if (!Number.isFinite(bitsPerSecond)) return '—';
+  if (bitsPerSecond >= 1_000_000_000) return `${(bitsPerSecond / 1_000_000_000).toFixed(2)} Gb/s`;
+  if (bitsPerSecond >= 1_000_000) return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mb/s`;
+  if (bitsPerSecond >= 1_000) return `${(bitsPerSecond / 1_000).toFixed(1)} Kb/s`;
+  return `${bitsPerSecond.toFixed(0)} b/s`;
+}
+
+function metricValue(metrics, key) {
+  return metrics && metrics[key] ? metrics[key] : '—';
+}
+
+function buildRuntimeChart(history, key, color, formatter, maxLabel) {
+  if (!history?.length) return `<div class="runtime-note">No samples yet.</div>`;
+  const width = 320;
+  const height = 120;
+  const leftPad = 42;
+  const rightPad = 8;
+  const topPad = 8;
+  const bottomPad = 22;
+  const plotWidth = width - leftPad - rightPad;
+  const plotHeight = height - topPad - bottomPad;
+  const values = history.map(p => Number(p[key] || 0));
+  const max = Math.max(...values, 1);
+  const points = values.map((value, idx) => {
+    const x = leftPad + (values.length === 1 ? 0 : (idx / (values.length - 1)) * plotWidth);
+    const y = topPad + (plotHeight - ((value / max) * plotHeight));
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const latest = values[values.length - 1];
+  const baselineY = topPad + plotHeight;
+  return `
+    <svg class="runtime-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+      <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
+      <line x1="${leftPad}" y1="${baselineY}" x2="${width - rightPad}" y2="${baselineY}" stroke="#cfd8dc" stroke-width="1"></line>
+      <text x="4" y="${topPad + 10}" fill="#78909c" font-size="10">${esc(maxLabel(max))}</text>
+      <text x="18" y="${baselineY - 2}" fill="#78909c" font-size="10">0</text>
+      <text x="${leftPad}" y="${height - 6}" fill="#78909c" font-size="10">oldest</text>
+      <text x="${width - rightPad - 28}" y="${height - 6}" fill="#78909c" font-size="10">now</text>
+      <polyline fill="none" stroke="${color}" stroke-width="2.5" points="${points}"></polyline>
+    </svg>
+    <div class="runtime-note">Current: ${formatter(latest)} · Peak: ${formatter(max)}</div>
+  `;
+}
+
+function renderMonitorView() {
+  const tab = document.getElementById('monitor-wrap');
+  const state = appRuntimeState || {};
+  const current = state.current || {};
+  const requests = state.requests || {};
+  const limits = state.limits || {};
+  tab.innerHTML = `
+    <div class="tab-section-title" style="margin-bottom:10px"><span>VibeView Runtime</span></div>
+    <div class="app-runtime-grid">
+      <div class="card">
+        <div class="card-title">Process Usage</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">CPU</span><span class="mv">${current.cpu_percent != null ? `${current.cpu_percent.toFixed(1)}%` : '—'}</span></div>
+          <div class="mrow"><span class="ml">Memory RSS</span><span class="mv">${fmtBytes(current.rss_bytes)}</span></div>
+          <div class="mrow"><span class="ml">Restarts</span><span class="mv">${state.restart_count ?? '—'}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pod Limits / Requests</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">CPU request</span><span class="mv">${metricValue(requests, 'cpu')}</span></div>
+          <div class="mrow"><span class="ml">CPU limit</span><span class="mv">${metricValue(limits, 'cpu')}</span></div>
+          <div class="mrow"><span class="ml">Memory request</span><span class="mv">${metricValue(requests, 'memory')}</span></div>
+          <div class="mrow"><span class="ml">Memory limit</span><span class="mv">${metricValue(limits, 'memory')}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">CPU Usage History</div>
+        <div class="card-body">
+          ${buildRuntimeChart(state.history, 'cpu_percent', '#1565c0', value => `${value.toFixed(1)}%`, value => `${value.toFixed(0)}%`)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Memory Usage History</div>
+        <div class="card-body">
+          ${buildRuntimeChart(state.history, 'rss_bytes', '#2e7d32', fmtBytes, fmtBytes)}
+        </div>
+      </div>
+    </div>
+    <div class="tab-section-title" style="margin-bottom:10px"><span>Events &amp; Alarms</span></div>
+    <div class="event-list" id="monitor-log"></div>
+  `;
+  const ml = document.getElementById('monitor-log');
+  if (ml && monitorEntriesHtml) ml.innerHTML = monitorEntriesHtml;
+}
+
+async function refreshAppRuntime() {
+  try {
+    const resp = await fetch('/api/app-runtime');
+    if (!resp.ok) return;
+    appRuntimeState = await resp.json();
+    if (activeView === 'monitor') renderMonitorView();
+  } catch (_) {}
+}
+
+async function bootstrapSession() {
+  try {
+    const resp = await fetch('/api/session');
+    const json = await resp.json();
+    if (json.authenticated) setAuthenticatedUI(json);
+    else window.location = '/';
+  } catch (e) {
+    window.location = '/';
+  }
+}
+
+async function logout() {
+  logoutInProgress = true;
+  try {
+    await fetch('/api/session', { method: 'DELETE' });
+  } catch (_) {}
+  window.location = '/';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// § WEBSOCKET
+// ════════════════════════════════════════════════════════════════════════════
+
+function wsConnect() {
+  if (!authReady || sessionExpired) return;
+  wsSetStatus('connecting');
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen  = () => { wsSetStatus('loading'); };
+  ws.onclose = () => {
+    if (logoutInProgress) {
+      wsSetStatus('offline');
+      return;
+    }
+    wsSetStatus('offline');
+    if (authReady) showSessionExpiredOverlay();
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    const dispatch = {
+      full_state:            () => onFullState(msg),
+      state_update:          () => onStateUpdate(msg),
+      log:                   () => onLog(msg),
+      reboot_confirm_needed:    () => onRebootConfirmNeeded(msg),
+      reboot_blocked:           () => onRebootBlocked(msg),
+      pods:                     () => onPods(msg),
+      instance_migrate_status:  () => onInstanceMigrateStatus(msg),
+    };
+    dispatch[msg.type]?.();
+  };
+}
+
+function wsSend(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function wsSetStatus(mode) {
+  wsStatusMode = mode;
+  const dot = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  const pill = document.getElementById('ws-pill');
+  dot.classList.toggle('live', mode === 'live');
+  if (mode === 'live') {
+    label.textContent = 'Live';
+    pill.title = 'Live WebSocket connection to the VibeView web pod.';
+  } else if (mode === 'loading') {
+    label.textContent = 'Loading inventory…';
+    pill.title = 'Connected. Inventory is still loading.';
+  } else if (mode === 'connecting') {
+    label.textContent = 'Connecting…';
+    pill.title = 'Connecting to the VibeView web pod.';
+  } else if (mode === 'reconnecting') {
+    label.textContent = 'Reconnecting…';
+    pill.title = 'Connection to the VibeView web pod was lost. If a Helm upgrade or rollout just ran, the pod may have been replaced and you may need to sign in again to recreate the session.';
+  } else {
+    label.textContent = 'Offline';
+    pill.title = 'WebSocket connection is offline.';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// § MESSAGE HANDLERS
+// ════════════════════════════════════════════════════════════════════════════
+
+function onFullState(msg) {
+  const shouldAutoSelect = !selectedNode || !msg.nodes[selectedNode];
+  nodes = msg.nodes;
+  if (wsStatusMode !== 'live') wsSetStatus('live');
+  rebuildSidebar();
+  if (shouldAutoSelect) {
+    const firstNode = document.querySelector('.tree-item');
+    if (firstNode?.dataset.node) {
+      selectNode(firstNode.dataset.node);
+    } else {
+      renderInfraDetail();
+    }
+  } else {
+    renderInfraDetail();
+  }
+  ensureSelectedEtcdHealthCheck();
+}
+
+function onStateUpdate(msg) {
+  const prevPhase = nodes[msg.node]?.phase;
+  const prevIsEtcd = nodes[msg.node]?.is_etcd;
+  nodes[msg.node] = msg.data;
+  // Clear individual migrate state when a full workflow kicks off
+  if (msg.data.phase === 'running' && prevPhase !== 'running') {
+    Object.keys(instanceMigrateStates).forEach(k => delete instanceMigrateStates[k]);
+    Object.keys(instanceMigrateTasks).forEach(k => delete instanceMigrateTasks[k]);
+  }
+  trackStepTimes(msg.node, msg.data.steps || []);
+  updateSidebarRow(msg.node);
+  if (msg.node === selectedNode) {
+    if (msg.data.is_etcd && !prevIsEtcd) ensureSelectedEtcdHealthCheck();
+    renderInfraDetail();
+  } else if (msg.data.is_etcd && selectedNode && nodes[selectedNode]?.is_etcd && activeTab === 'summary') {
+    // A peer etcd node's health changed — re-render so the etcd quorum block updates
+    renderSummaryTab(nodes[selectedNode]);
+  }
+  renderTasksPanel();
+}
+
+function onLog(msg) {
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const iconMap  = { success:'✅', error:'❌', warn:'⚠️', magenta:'🔄', important:'ℹ️', dim:'ℹ️', cyan:'ℹ️' };
+  const tagMap   = {
+    success:   `<span class="event-tag et-ok">ok</span>`,
+    error:     `<span class="event-tag et-error">error</span>`,
+    warn:      `<span class="event-tag et-warn">warning</span>`,
+    magenta:   `<span class="event-tag et-task">reboot</span>`,
+    important: `<span class="event-tag et-task">task</span>`,
+  };
+  const ico      = iconMap[msg.color] || 'ℹ️';
+  const tag      = tagMap[msg.color]  || '';
+  const nodeTag  = (msg.node && msg.node !== '-') ? `<strong>${esc(msg.node)}</strong> — ` : '';
+  const itemHtml = `<div class="event-item"><div class="event-ico">${ico}</div>
+    <div class="event-body">
+      <div class="event-ts">${ts}</div>
+      <div class="event-msg">${nodeTag}${esc(msg.message)}${tag}</div>
+    </div></div>`;
+  monitorEntriesHtml += itemHtml;
+
+  const ml = document.getElementById('monitor-log');
+  if (ml) {
+    ml.insertAdjacentHTML('beforeend', itemHtml);
+    while (ml.children.length > 300) ml.removeChild(ml.firstChild);
+    monitorEntriesHtml = ml.innerHTML;
+  }
+  if (activeView === 'monitor') ml.scrollTop = ml.scrollHeight;
+}
+
+function onRebootConfirmNeeded(msg) {
+  pendingReboot = msg.node;
+  document.getElementById('modal-node-name').textContent = msg.node;
+  document.getElementById('modal-input').value = '';
+  document.getElementById('modal-input').classList.remove('shake');
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('modal-input').focus(), 50);
+}
+
+function onRebootBlocked(msg) {
+  onLog({ node: msg.node, message: `Reboot blocked — ${msg.detail}`, color: 'error' });
+  document.getElementById('blocked-detail').textContent = msg.detail;
+  document.getElementById('blocked-overlay').classList.add('open');
+}
+
+function onPods(msg) {
+  if (selectedNode !== msg.node) return;
+  lastPodsCache = { node: msg.node, pods: msg.pods || [] };
+  syncPodsButton();
+  if (activeTab === 'instances') {
+    const sec = document.getElementById('pods-section');
+    if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
+  }
+}
+
+function onInstanceMigrateStatus(msg) {
+  // Update button/row state (complete means the instance has moved — remove from states)
+  if (msg.status === 'complete') {
+    delete instanceMigrateStates[msg.instance_id];
+  } else {
+    instanceMigrateStates[msg.instance_id] = msg.status;
+  }
+  // Update the task record for the Recent Tasks panel
+  if (instanceMigrateTasks[msg.instance_id])
+    instanceMigrateTasks[msg.instance_id].status = msg.status;
+  renderTasksPanel();
+  if (activeTab === 'instances' && selectedNode === msg.node && nodes[selectedNode])
+    renderInstancesTab(nodes[selectedNode]);
+}
+
