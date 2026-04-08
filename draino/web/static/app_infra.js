@@ -396,6 +396,8 @@ function clearObjHeader() {
 }
 
 function renderObjHeader(nd) {
+  const det = nodeDetailCache[nd.k8s_name] || null;
+  const detailsRefreshing = !det || det.loading;
   document.getElementById('oh-icon').textContent = nd.is_compute ? '🖥️' : nd.is_etcd ? '☣️' : '⚙️';
   document.getElementById('oh-name').textContent = nd.k8s_name;
 
@@ -436,6 +438,7 @@ function renderObjHeader(nd) {
   if (nd.is_etcd) badges.push(`<span class="tree-badge etcd">etcd</span>`);
   if (nd.hosts_mariadb) badges.push(`<span class="tree-badge mariadb">mariadb</span>`);
   if (nd.is_edge) badges.push(`<span class="tree-badge edge">edge</span>`);
+  if (detailsRefreshing) badges.push(`<span class="badge blue">⟳ Details Refreshing</span>`);
   document.getElementById('oh-badges').innerHTML = badges.join('');
 }
 
@@ -502,6 +505,8 @@ function _ensureNetworkDataLoaded(nodeName) {
 
 function renderSummaryTab(nd) {
   let h = '';
+  const det = nodeDetailCache[nd.k8s_name] || {};
+  const detLoading = det.loading;
 
   // Concept map banner
   h += `<div class="concept-map">
@@ -516,6 +521,10 @@ function renderSummaryTab(nd) {
       <a href="#" onclick="showTab('configure');return false" style="color:var(--blue)">Full VMware reference →</a>
     </div>
   </div>`;
+
+  if (detLoading) {
+    h += `<div class="runtime-note" style="margin-bottom:10px"><span class="spinner">⟳</span> Node details are still refreshing. Inventory status is loaded, but hardware, Nova, and Kubernetes detail may still be filling in.</div>`;
+  }
 
   // etcd quorum block
   if (nd.is_etcd) {
@@ -560,11 +569,9 @@ function renderSummaryTab(nd) {
   }
 
   // ── Status / resource cards ───────────────────────────────────────────────
-  const det  = nodeDetailCache[nd.k8s_name] || {};
   const k8sd = det.k8s  || {};
   const novd = det.nova || {};
   const hwd  = det.hw   || {};
-  const detLoading = det.loading;
 
   function pb(label, used, total, unit, warnPct = 70, critPct = 90) {
     if (used == null || total == null || total === 0) return '';
