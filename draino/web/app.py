@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket
+from fastapi.staticfiles import StaticFiles
 
 from .api import auth as auth_api
 from .api import k8s as k8s_api
@@ -73,4 +74,5 @@ def create_fastapi_app(
     app.include_router(k8s_api.router)
     app.include_router(resources_api.router)
     app.include_router(ws_api.router)
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
