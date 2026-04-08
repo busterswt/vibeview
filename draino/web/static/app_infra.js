@@ -425,8 +425,9 @@ function renderObjHeader(nd) {
       badges.push(`<span class="badge gray">Nova …</span>`);
     badges.push(`<span class="badge blue">Compute Node</span>`);
   }
-  if (nd.is_etcd) badges.push(`<span class="badge red">etcd</span>`);
-  if (nd.hosts_mariadb) badges.push(`<span class="badge magenta">MariaDB</span>`);
+  if (nd.is_etcd) badges.push(`<span class="tree-badge etcd">etcd</span>`);
+  if (nd.hosts_mariadb) badges.push(`<span class="tree-badge mariadb">mariadb</span>`);
+  if (nd.is_edge) badges.push(`<span class="tree-badge edge">edge</span>`);
   document.getElementById('oh-badges').innerHTML = badges.join('');
 }
 
