@@ -37,29 +37,21 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
 from fastapi import (
-    FastAPI,
     HTTPException,
     Request,
-    Response,
-    status,
 )
-from fastapi.responses import FileResponse, RedirectResponse
 from kubernetes import client, config
 from kubernetes.config.config_exception import ConfigException
 
 from .. import node_agent_client
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
-from .api import auth as auth_api
-from .api import k8s as k8s_api
-from .api import nodes as nodes_api
-from .api import runtime as runtime_api
+from .app import create_fastapi_app
 from .auth_builders import (
     K8sLoginPayload,
     LoginPayload,
@@ -73,8 +65,8 @@ from .auth_builders import (
 )
 from . import inventory as inventory_module
 from .inventory import DrainoServer, _serialise
+from .resource_helpers import coerce_bool as _coerce_bool, get_network_detail as _get_network_detail, get_networks as _get_networks, get_volumes as _get_volumes
 from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session
-from . import ws as ws_api
 
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
@@ -363,132 +355,6 @@ def _get_app_runtime() -> dict:
         "restart_count": pod_info.get("restart_count"),
     }
 
-# ── OpenStack resource helpers (called in thread pool) ───────────────────────
-
-def _coerce_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
-    """Return all Neutron networks visible to the configured credential."""
-    conn = openstack_ops._conn(auth=auth)
-    result = []
-    for n in conn.network.networks():
-        d = n.to_dict() if hasattr(n, "to_dict") else {}
-        raw_external = d.get("router:external")
-        if raw_external is None:
-            raw_external = getattr(n, "is_router_external", False)
-        result.append({
-            "id":           n.id,
-            "name":         n.name or "(unnamed)",
-            "status":       n.status or "UNKNOWN",
-            "admin_state":  "up" if n.is_admin_state_up else "down",
-            "shared":       bool(n.is_shared),
-            "external":     _coerce_bool(raw_external),
-            "network_type": d.get("provider:network_type") or "",
-            "project_id":   n.project_id or "",
-            "subnet_count": len(list(n.subnet_ids or [])),
-        })
-    return result
-
-
-def _get_network_detail(
-    network_id: str,
-    auth: openstack_ops.OpenStackAuth | None,
-) -> dict:
-    """Return subnets and segments for a single Neutron network."""
-    conn = openstack_ops._conn(auth=auth)
-    network = conn.network.get_network(network_id)
-    nd = network.to_dict() if hasattr(network, "to_dict") else {}
-
-    subnets = []
-    for subnet_id in (network.subnet_ids or []):
-        try:
-            s = conn.network.get_subnet(subnet_id)
-            subnets.append({
-                "id":               s.id,
-                "name":             s.name or "",
-                "cidr":             s.cidr or "",
-                "ip_version":       s.ip_version,
-                "gateway_ip":       s.gateway_ip or "",
-                "enable_dhcp":      bool(getattr(s, "is_dhcp_enabled", False)),
-                "allocation_pools": getattr(s, "allocation_pools", []) or [],
-                "dns_nameservers":  getattr(s, "dns_nameservers", []) or [],
-                "host_routes":      getattr(s, "host_routes", []) or [],
-            })
-        except Exception:
-            pass
-
-    # Try dedicated Segments API (admin-only in most deployments)
-    segments = []
-    try:
-        for seg in conn.network.segments(network_id=network_id):
-            seg_d = seg.to_dict() if hasattr(seg, "to_dict") else {}
-            segments.append({
-                "id":               seg.id or "",
-                "name":             seg.name or "",
-                "network_type":     seg_d.get("network_type")     or getattr(seg, "network_type",     "") or "",
-                "physical_network": seg_d.get("physical_network") or getattr(seg, "physical_network", "") or "",
-                "segmentation_id":  seg_d.get("segmentation_id", getattr(seg, "segmentation_id", None)),
-            })
-    except Exception:
-        pass
-
-    # Fall back to provider attributes on the network object itself
-    if not segments:
-        nt = nd.get("provider:network_type") or ""
-        pn = nd.get("provider:physical_network") or ""
-        si = nd.get("provider:segmentation_id")
-        if nt or pn or si is not None:
-            segments = [{"id": "", "name": "", "network_type": nt, "physical_network": pn, "segmentation_id": si}]
-
-    return {"subnets": subnets, "segments": segments}
-
-
-def _get_volumes(
-    auth: openstack_ops.OpenStackAuth | None,
-) -> tuple[list[dict], bool]:
-    """Return all Cinder volumes.  Falls back to project-scope on permission error.
-
-    Returns (volumes, all_projects_succeeded).
-    """
-    conn = openstack_ops._conn(auth=auth)
-    all_projects = False
-    try:
-        vols = list(conn.volume.volumes(all_projects=True))
-        all_projects = True
-    except Exception:
-        vols = list(conn.volume.volumes())
-
-    result = []
-    for v in vols:
-        att = getattr(v, "attachments", []) or []
-        project_id = (
-            getattr(v, "os-vol-tenant-attr:tenant_id", None)
-            or getattr(v, "project_id", None)
-            or ""
-        )
-        result.append({
-            "id":          v.id,
-            "name":        v.name or "(no name)",
-            "status":      v.status or "UNKNOWN",
-            "size_gb":     v.size or 0,
-            "volume_type": v.volume_type or "",
-            "project_id":  project_id,
-            "attached_to": [a.get("server_id", "") for a in att],
-            "bootable":    bool(getattr(v, "is_bootable", False)),
-            "encrypted":   bool(getattr(v, "encrypted", False)),
-        })
-    return result, all_projects
-
 # ── FastAPI application ───────────────────────────────────────────────────────
 
 
@@ -500,68 +366,23 @@ def _get_ws_session(ws: WebSocket) -> SessionRecord | None:
     return get_ws_session(ws, _sessions, _SESSION_COOKIE)
 
 
-@asynccontextmanager
-async def _lifespan(app: FastAPI):
+def _set_app_loop(loop: asyncio.AbstractEventLoop) -> None:
     global _app_loop
-    _app_loop = asyncio.get_running_loop()
-    yield
+    _app_loop = loop
 
 
-fastapi_app = FastAPI(title="VibeView", lifespan=_lifespan)
-auth_api.configure(
+fastapi_app = create_fastapi_app(
     static_dir=_STATIC,
     get_sessions=lambda: _sessions,
-    get_app_loop=lambda: _app_loop,
     get_audit_log_path=lambda: _audit_log_path,
-)
-runtime_api.configure(
+    set_app_loop=_set_app_loop,
     get_session_record=lambda: _get_session_record,
+    get_ws_session=lambda: _get_ws_session,
     get_app_update_status=lambda: _get_app_update_status,
     get_public_version_status=lambda: _get_public_version_status,
     get_app_runtime=lambda: _get_app_runtime,
-)
-nodes_api.configure(
-    get_session_record=lambda: _get_session_record,
     get_network_detail=lambda: _get_network_detail,
 )
-k8s_api.configure(
-    get_session_record=lambda: _get_session_record,
-)
-ws_api.configure(
-    get_ws_session=lambda: _get_ws_session,
-)
-fastapi_app.include_router(auth_api.router)
-fastapi_app.include_router(runtime_api.router)
-fastapi_app.include_router(nodes_api.router)
-fastapi_app.include_router(k8s_api.router)
-fastapi_app.include_router(ws_api.router)
-
-
-@fastapi_app.get("/api/networks")
-async def api_networks(request: Request):
-    """List Neutron networks (admin sees all; non-admin sees project scope)."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        data = await loop.run_in_executor(None, _get_networks, session.server.openstack_auth)
-        return {"networks": data, "error": None}
-    except Exception as exc:
-        return {"networks": [], "error": str(exc)}
-
-
-
-
-@fastapi_app.get("/api/volumes")
-async def api_volumes(request: Request):
-    """List Cinder volumes (admin sees all projects; non-admin sees own project)."""
-    session = _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    try:
-        data, all_projects = await loop.run_in_executor(None, _get_volumes, session.server.openstack_auth)
-        return {"volumes": data, "all_projects": all_projects, "error": None}
-    except Exception as exc:
-        return {"volumes": [], "all_projects": False, "error": str(exc)}
-
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
