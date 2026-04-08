@@ -113,20 +113,20 @@ server-side.
 Build the web UI image:
 
 ```bash
-docker build -t draino:0.1.0 .
+docker build -t draino:0.2.0 .
 ```
 
 Run it locally:
 
 ```bash
-docker run --rm -p 8000:8000 draino:0.1.0
+docker run --rm -p 8000:8000 draino:0.2.0
 ```
 
 Tag and push it to your registry:
 
 ```bash
-docker tag draino:0.1.0 registry.example.com/operations/draino:0.1.0
-docker push registry.example.com/operations/draino:0.1.0
+docker tag draino:0.2.0 registry.example.com/operations/draino:0.2.0
+docker push registry.example.com/operations/draino:0.2.0
 ```
 
 Notes:
@@ -194,12 +194,12 @@ The workflow:
 - builds the container image from `Dockerfile`
 - pushes to `ghcr.io/<owner>/<repo>`
 - tags branch builds as `:main`
-- tags release builds like `v0.1.0` as `:0.1.0` and `:latest`
+- tags release builds like `v0.2.0` as `:0.2.0` and `:latest`
 
 Typical flow:
 
 1. Push to `main` to publish `ghcr.io/<owner>/<repo>:main`
-2. Create a git tag like `v0.1.0` to publish `:0.1.0` and `:latest`
+2. Create a git tag like `v0.2.0` to publish `:0.2.0` and `:latest`
 
 To use GHCR from Kubernetes, set the Helm values:
 
