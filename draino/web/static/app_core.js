@@ -384,13 +384,32 @@ function setNodeListRefreshing(active) {
   indicator.classList.toggle('active', nodeListRefreshing);
 }
 
+function normaliseIncomingNode(nextNode, prevNode) {
+  const normalisedNode = { ...nextNode };
+  const prevPreflight = Array.isArray(prevNode?.preflight_instances) ? prevNode.preflight_instances : [];
+  const nextPreflight = Array.isArray(normalisedNode.preflight_instances) ? normalisedNode.preflight_instances : [];
+  const shouldKeepPreflightPreview =
+    prevPreflight.length > 0 &&
+    nextPreflight.length === 0 &&
+    normalisedNode.phase === 'idle' &&
+    (normalisedNode.preflight_loading === true || normalisedNode.vm_count == null || Number(normalisedNode.vm_count) > 0);
+  if (shouldKeepPreflightPreview) {
+    normalisedNode.preflight_instances = prevPreflight;
+  }
+  return normalisedNode;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § MESSAGE HANDLERS
 // ════════════════════════════════════════════════════════════════════════════
 
 function onFullState(msg) {
   const shouldAutoSelect = !selectedNode || !msg.nodes[selectedNode];
-  nodes = msg.nodes;
+  const nextNodes = {};
+  for (const [nodeName, nodeData] of Object.entries(msg.nodes || {})) {
+    nextNodes[nodeName] = normaliseIncomingNode(nodeData, nodes[nodeName]);
+  }
+  nodes = nextNodes;
   setNodeListRefreshing(false);
   if (wsStatusMode !== 'live') wsSetStatus('live');
   rebuildSidebar();
@@ -411,16 +430,7 @@ function onStateUpdate(msg) {
   const prevNode = nodes[msg.node] || null;
   const prevPhase = prevNode?.phase;
   const prevIsEtcd = prevNode?.is_etcd;
-  const nextNode = { ...msg.data };
-  const keepPreflightPreview =
-    nextNode.preflight_loading === true &&
-    Array.isArray(nextNode.preflight_instances) &&
-    nextNode.preflight_instances.length === 0 &&
-    Array.isArray(prevNode?.preflight_instances) &&
-    prevNode.preflight_instances.length > 0;
-  if (keepPreflightPreview) {
-    nextNode.preflight_instances = prevNode.preflight_instances;
-  }
+  const nextNode = normaliseIncomingNode(msg.data, prevNode);
   nodes[msg.node] = nextNode;
   // Clear individual migrate state when a full workflow kicks off
   if (nextNode.phase === 'running' && prevPhase !== 'running') {
