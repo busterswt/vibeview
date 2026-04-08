@@ -979,6 +979,8 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
   const inst = cached.data;
   const flavor = inst.flavor || {};
   const ports = inst.ports || [];
+  const expandedPortId = expandedPortIdByInstance[instanceId] || '';
+  const expandedPort = ports.find((port) => port.id === expandedPortId) || null;
   let h = `<div class="card" style="margin-top:10px">
     <div class="card-title">Instance Detail</div>
     <div class="card-body">
@@ -1014,53 +1016,79 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
   if (!ports.length) {
     h += `<div style="color:var(--dim);font-size:12px">No Neutron ports found for this instance.</div>`;
   } else {
+    h += `<table class="data-table" style="margin-top:10px">
+      <thead><tr>
+        <th>Port ID</th><th>MAC</th><th>Fixed IP</th><th>DHCP</th><th>Floating IP</th><th>Action</th>
+      </tr></thead><tbody>`;
     for (const port of ports) {
-      const ovn = port.ovn || {};
-      const ovnPort = ovn.port || {};
-      h += `<div class="card" style="margin-top:10px">
-        <div class="card-title">${esc(port.name || port.id || 'Port')}</div>
-        <div class="card-body">
-          <div class="summary-grid">
-            <div class="card">
-              <div class="card-title">Neutron Port</div>
-              <div class="card-body">
-                <div class="mrow"><span class="ml">Port ID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(port.id || '—')}</span></div>
-                <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
-                <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(port.mac_address || '—')}</span></div>
-                <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv">${esc((port.fixed_ips || []).join(', ') || '—')}</span></div>
-                <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
-                <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
-                <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
-                <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-title">OVN Attachment</div>
-              <div class="card-body">
-                ${port.ovn_error ? `<div class="err-block">${esc(port.ovn_error)}</div>` : `
-                  <div class="mrow"><span class="ml">Logical switch</span><span class="mv">${esc(ovn.ls_name || '—')}</span></div>
-                  <div class="mrow"><span class="ml">Switch UUID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(ovn.ls_uuid || '—')}</span></div>
-                  <div class="mrow"><span class="ml">Port type</span><span class="mv">${esc(ovnPort.type || 'normal')}</span></div>
-                  <div class="mrow"><span class="ml">Router port</span><span class="mv dim">${esc(ovnPort.router_port || '—')}</span></div>
-                  <div class="mrow"><span class="ml">Up</span><span class="mv">${ovnPort.up == null ? '—' : (ovnPort.up ? 'true' : 'false')}</span></div>
-                  <div class="mrow"><span class="ml">Enabled</span><span class="mv">${ovnPort.enabled == null ? '—' : (ovnPort.enabled ? 'true' : 'false')}</span></div>
-                  <div class="mrow"><span class="ml">Addresses</span><span class="mv" style="font-family:monospace;font-size:11px">${esc((ovnPort.addresses || []).join(', ') || '—')}</span></div>
-                `}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`;
+      const firstFixedIp = (port.fixed_ips || [])[0] || '—';
+      const firstFloatingIp = (port.floating_ips || [])[0] || '—';
+      const dhcpEnabled = port.dhcp_enabled == null ? '—' : (port.dhcp_enabled ? 'true' : 'false');
+      const detailsLabel = expandedPortId === port.id ? '▾ Details' : '▸ Details';
+      h += `<tr>
+        <td style="font-family:monospace;font-size:11px">${esc(port.id || '—')}</td>
+        <td style="font-family:monospace">${esc(port.mac_address || '—')}</td>
+        <td>${esc(firstFixedIp)}</td>
+        <td>${esc(dhcpEnabled)}</td>
+        <td>${esc(firstFloatingIp)}</td>
+        <td><button class="btn" style="font-size:11px" onclick="togglePortDetail('${escAttr(instanceId)}','${escAttr(port.id)}')">${detailsLabel}</button></td>
+      </tr>`;
     }
+    h += `</tbody></table>`;
+    if (expandedPort) h += renderPortDetailPanel(expandedPort);
   }
   h += `</div></div>`;
   return h;
+}
+
+function renderPortDetailPanel(port) {
+  const ovn = port.ovn || {};
+  const ovnPort = ovn.port || {};
+  const allowedAddressPairs = (port.allowed_address_pairs || [])
+    .map((pair) => [pair.ip_address, pair.mac_address].filter(Boolean).join(' '))
+    .filter(Boolean);
+  return `<div class="card" style="margin-top:10px">
+    <div class="card-title">${esc(port.name || port.id || 'Port')}</div>
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="card">
+          <div class="card-title">Neutron Port</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Port ID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(port.id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
+            <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(port.mac_address || '—')}</span></div>
+            <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv">${esc((port.fixed_ips || []).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Allowed address pairs</span><span class="mv">${esc(allowedAddressPairs.join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
+            <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">OVN Attachment</div>
+          <div class="card-body">
+            ${port.ovn_error ? `<div class="err-block">${esc(port.ovn_error)}</div>` : `
+              <div class="mrow"><span class="ml">Logical switch</span><span class="mv">${esc(ovn.ls_name || '—')}</span></div>
+              <div class="mrow"><span class="ml">Switch UUID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(ovn.ls_uuid || '—')}</span></div>
+              <div class="mrow"><span class="ml">Port type</span><span class="mv">${esc(ovnPort.type || 'normal')}</span></div>
+              <div class="mrow"><span class="ml">Router port</span><span class="mv dim">${esc(ovnPort.router_port || '—')}</span></div>
+              <div class="mrow"><span class="ml">Up</span><span class="mv">${ovnPort.up == null ? '—' : (ovnPort.up ? 'true' : 'false')}</span></div>
+              <div class="mrow"><span class="ml">Enabled</span><span class="mv">${ovnPort.enabled == null ? '—' : (ovnPort.enabled ? 'true' : 'false')}</span></div>
+              <div class="mrow"><span class="ml">Addresses</span><span class="mv" style="font-family:monospace;font-size:11px">${esc((ovnPort.addresses || []).join(', ') || '—')}</span></div>
+            `}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function toggleInstanceDetail(instanceId) {
   if (!selectedNode) return;
   const nodeName = selectedNode;
   if (expandedInstanceIdByNode[nodeName] === instanceId) {
+    delete expandedPortIdByInstance[instanceId];
     delete expandedInstanceIdByNode[nodeName];
     renderInstancesTab(nodes[nodeName]);
     return;
@@ -1068,6 +1096,13 @@ function toggleInstanceDetail(instanceId) {
   expandedInstanceIdByNode[nodeName] = instanceId;
   renderInstancesTab(nodes[nodeName]);
   loadInstanceDetail(nodeName, instanceId);
+}
+
+function togglePortDetail(instanceId, portId) {
+  if (!selectedNode || expandedInstanceIdByNode[selectedNode] !== instanceId) return;
+  if (expandedPortIdByInstance[instanceId] === portId) delete expandedPortIdByInstance[instanceId];
+  else expandedPortIdByInstance[instanceId] = portId;
+  if (nodes[selectedNode] && activeTab === 'instances') renderInstancesTab(nodes[selectedNode]);
 }
 
 async function loadInstanceDetail(nodeName, instanceId, force = false) {

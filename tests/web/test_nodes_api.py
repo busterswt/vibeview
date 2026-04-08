@@ -188,9 +188,12 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
             "flavor": {"name": "m1.large", "vcpus": 4, "ram_mb": 8192, "disk_gb": 40, "ephemeral_gb": 0, "swap_mb": 0},
             "ports": [{
                 "id": "port-1",
+                "mac_address": "fa:16:3e:00:00:01",
                 "network_id": "net-1",
                 "network_name": "tenant-net",
                 "fixed_ips": ["10.0.0.12"],
+                "dhcp_enabled": True,
+                "allowed_address_pairs": [{"ip_address": "10.0.0.50", "mac_address": "fa:16:3e:00:00:50"}],
                 "security_groups": ["default"],
                 "floating_ips": ["203.0.113.10"],
             }],
@@ -232,6 +235,8 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["error"] is None
     assert body["instance"]["flavor"]["name"] == "m1.large"
     assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
+    assert body["instance"]["ports"][0]["dhcp_enabled"] is True
+    assert body["instance"]["ports"][0]["allowed_address_pairs"][0]["ip_address"] == "10.0.0.50"
     assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
 
 
@@ -329,6 +334,84 @@ def test_get_instances_preflight_includes_flavor_sizing(monkeypatch):
     assert items[2]["vcpus"] == 8
     assert items[2]["ram_mb"] == 16384
     assert FakeCompute.calls == ["flavor-1", "flavor-2"]
+
+
+def test_instance_network_detail_includes_dhcp_flag_from_subnet(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"id": "flavor-1", "name": "m1.large"}
+
+        def to_dict(self):
+            return {}
+
+    class FakePort:
+        id = "port-1"
+        name = "port-1"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:01"
+        network_id = "net-1"
+        fixed_ips = [{"ip_address": "10.0.0.12", "subnet_id": "subnet-1"}]
+        allowed_address_pairs = []
+        security_group_ids = ["default"]
+        device_owner = "compute:nova"
+
+        def to_dict(self):
+            return {"binding:vnic_type": "normal"}
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None):
+            assert device_id == "vm-1"
+            return [FakePort()]
+
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return SimpleNamespace(name="tenant-net")
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return SimpleNamespace(is_dhcp_enabled=True)
+
+        @staticmethod
+        def ips(port_id=None):
+            assert port_id == "port-1"
+            return [SimpleNamespace(floating_ip_address="203.0.113.10")]
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            assert flavor_id == "flavor-1"
+            return SimpleNamespace(
+                id="flavor-1",
+                name="m1.large",
+                vcpus=4,
+                ram=8192,
+                disk=40,
+                ephemeral=0,
+                swap=0,
+            )
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["ports"][0]["dhcp_enabled"] is True
+    assert detail["ports"][0]["floating_ips"] == ["203.0.113.10"]
 
 
 def test_patch_managed_noschedule_taint_endpoint(monkeypatch):

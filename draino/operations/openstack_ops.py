@@ -500,6 +500,7 @@ def get_instance_network_detail(
             pass
 
     network_names: dict[str, str] = {}
+    subnet_dhcp: dict[str, bool | None] = {}
     ports: list[dict] = []
     for port in conn.network.ports(device_id=instance_id):
         port_data = port.to_dict() if hasattr(port, "to_dict") else {}
@@ -520,6 +521,27 @@ def get_instance_network_detail(
         except Exception:
             pass
 
+        fixed_ip_items = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+        fixed_ips = [item.get("ip_address", "") for item in fixed_ip_items if item.get("ip_address")]
+        dhcp_values: list[bool] = []
+        for item in fixed_ip_items:
+            subnet_id = item.get("subnet_id")
+            if not subnet_id:
+                continue
+            if subnet_id not in subnet_dhcp:
+                try:
+                    subnet = conn.network.get_subnet(subnet_id)
+                    subnet_data = subnet.to_dict() if hasattr(subnet, "to_dict") else {}
+                    subnet_dhcp[subnet_id] = bool(
+                        getattr(subnet, "is_dhcp_enabled", None)
+                        if getattr(subnet, "is_dhcp_enabled", None) is not None
+                        else subnet_data.get("enable_dhcp")
+                    )
+                except Exception:
+                    subnet_dhcp[subnet_id] = None
+            if subnet_dhcp[subnet_id] is not None:
+                dhcp_values.append(bool(subnet_dhcp[subnet_id]))
+
         ports.append({
             "id": getattr(port, "id", None) or "",
             "name": getattr(port, "name", None) or "",
@@ -528,7 +550,16 @@ def get_instance_network_detail(
             "mac_address": getattr(port, "mac_address", None) or "",
             "network_id": network_id,
             "network_name": network_names.get(network_id, ""),
-            "fixed_ips": [item.get("ip_address", "") for item in (getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or []) if item.get("ip_address")],
+            "fixed_ips": fixed_ips,
+            "dhcp_enabled": (any(dhcp_values) if dhcp_values else None),
+            "allowed_address_pairs": [
+                {
+                    "ip_address": item.get("ip_address", "") or "",
+                    "mac_address": item.get("mac_address", "") or "",
+                }
+                for item in (getattr(port, "allowed_address_pairs", None) or port_data.get("allowed_address_pairs") or [])
+                if item.get("ip_address") or item.get("mac_address")
+            ],
             "security_groups": list(getattr(port, "security_group_ids", None) or port_data.get("security_group_ids") or []),
             "device_owner": getattr(port, "device_owner", None) or port_data.get("device_owner") or "",
             "binding_vnic_type": port_data.get("binding:vnic_type") or getattr(port, "binding_vnic_type", None) or "",

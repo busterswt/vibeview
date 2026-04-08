@@ -51,6 +51,7 @@ const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fet
 const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
 const instanceDetailCache = {}; // instance_id -> { loading, data, error }
 const expandedInstanceIdByNode = {}; // node_name -> instance_id
+const expandedPortIdByInstance = {}; // instance_id -> port_id
 
 // Node network config cache (configure tab)
 // node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
