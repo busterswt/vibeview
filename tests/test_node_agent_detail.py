@@ -5,7 +5,7 @@ import subprocess
 import urllib.error
 from types import SimpleNamespace
 
-from draino import node_agent, node_agent_client
+from draino import node_agent_client, node_agent_host_ops, node_agent_metrics_ops
 from draino.operations import k8s_ops
 
 
@@ -170,15 +170,15 @@ def test_node_agent_host_metrics_parses_load_memory_and_disk(monkeypatch):
     ])
 
     monkeypatch.setattr(
-        node_agent,
+        node_agent_metrics_ops,
         "_run_host_shell",
         lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=stdout, stderr=""),
     )
-    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
-    node_agent._host_metrics_cache = None
-    node_agent._host_metrics_history.clear()
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: 1000.0)
+    node_agent_metrics_ops._host_metrics_cache = None
+    node_agent_metrics_ops._host_metrics_history.clear()
 
-    result = node_agent._get_host_metrics()
+    result = node_agent_metrics_ops._get_host_metrics()
 
     assert result["error"] is None
     assert result["current"]["load1"] == 1.23
@@ -208,15 +208,15 @@ def test_node_agent_host_metrics_dedupes_duplicate_mounts(monkeypatch):
     ])
 
     monkeypatch.setattr(
-        node_agent,
+        node_agent_metrics_ops,
         "_run_host_shell",
         lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=stdout, stderr=""),
     )
-    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
-    node_agent._host_metrics_cache = None
-    node_agent._host_metrics_history.clear()
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: 1000.0)
+    node_agent_metrics_ops._host_metrics_cache = None
+    node_agent_metrics_ops._host_metrics_history.clear()
 
-    result = node_agent._get_host_metrics()
+    result = node_agent_metrics_ops._get_host_metrics()
 
     assert result["error"] is None
     assert len(result["current"]["filesystems"]) == 1
@@ -247,15 +247,15 @@ def test_node_agent_host_network_stats_computes_rates(monkeypatch):
     times = iter([1000.0, 1002.0])
 
     monkeypatch.setattr(
-        node_agent,
+        node_agent_metrics_ops,
         "_run_host_shell",
         lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=next(outputs), stderr=""),
     )
-    monkeypatch.setattr(node_agent.time, "time", lambda: next(times))
-    node_agent._host_network_prev_samples.clear()
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: next(times))
+    node_agent_metrics_ops._host_network_prev_samples.clear()
 
-    first = node_agent._get_host_network_stats()
-    second = node_agent._get_host_network_stats()
+    first = node_agent_metrics_ops._get_host_network_stats()
+    second = node_agent_metrics_ops._get_host_network_stats()
 
     assert first["error"] is None
     assert first["interfaces"][0]["rx_bytes_per_second"] is None
@@ -495,18 +495,18 @@ def test_request_json_invalidates_cached_host_on_url_error(monkeypatch, tmp_path
 
 
 def test_node_agent_static_host_detail_cache_reuses_expensive_probe(monkeypatch):
-    node_agent._host_static_detail_cache = None
+    node_agent_host_ops._host_static_detail_cache = None
     calls = {"static": 0}
 
-    monkeypatch.setattr(node_agent.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(node_agent_host_ops.time, "time", lambda: 1000.0)
     monkeypatch.setattr(
-        node_agent,
+        node_agent_host_ops,
         "_get_static_host_detail",
         lambda: calls.__setitem__("static", calls["static"] + 1) or {"vendor": "Dell", "error": None},
     )
 
-    first = node_agent._get_cached_static_host_detail()
-    second = node_agent._get_cached_static_host_detail()
+    first = node_agent_host_ops._get_cached_static_host_detail()
+    second = node_agent_host_ops._get_cached_static_host_detail()
 
     assert first["vendor"] == "Dell"
     assert second["vendor"] == "Dell"
@@ -514,11 +514,11 @@ def test_node_agent_static_host_detail_cache_reuses_expensive_probe(monkeypatch)
 
 
 def test_node_agent_host_detail_combines_dynamic_with_cached_static(monkeypatch):
-    node_agent._host_static_detail_cache = None
+    node_agent_host_ops._host_static_detail_cache = None
 
-    monkeypatch.setattr(node_agent, "_get_cached_static_host_detail", lambda now=None: {"vendor": "Dell", "error": None})
+    monkeypatch.setattr(node_agent_host_ops, "_get_cached_static_host_detail", lambda now=None: {"vendor": "Dell", "error": None})
     monkeypatch.setattr(
-        node_agent,
+        node_agent_host_ops,
         "_get_dynamic_host_detail",
         lambda: {
             "hostname": "node-1",
@@ -529,7 +529,7 @@ def test_node_agent_host_detail_combines_dynamic_with_cached_static(monkeypatch)
         },
     )
 
-    result = node_agent._get_host_detail()
+    result = node_agent_host_ops._get_host_detail()
 
     assert result["hostname"] == "node-1"
     assert result["kernel_version"] == "6.8.0"
