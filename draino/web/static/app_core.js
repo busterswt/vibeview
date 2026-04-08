@@ -444,6 +444,15 @@ function onStateUpdate(msg) {
 }
 
 function onLog(msg) {
+  if (nodeListRefreshing && msg.node === '-') {
+    if (
+      msg.message?.startsWith('Node list refreshed') ||
+      msg.message?.startsWith('Error loading K8s nodes:') ||
+      msg.message?.startsWith('OpenStack summary failed:')
+    ) {
+      setNodeListRefreshing(false);
+    }
+  }
   const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
   const iconMap  = { success:'✅', error:'❌', warn:'⚠️', magenta:'🔄', important:'ℹ️', dim:'ℹ️', cyan:'ℹ️' };
   const tagMap   = {
