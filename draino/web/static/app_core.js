@@ -25,6 +25,7 @@ let logoutInProgress = false;
 let monitorEntriesHtml = '';
 let sidebarDragging = false;
 let tasksDragging = false;
+let nodeListRefreshing = false;
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -324,6 +325,7 @@ async function logout() {
 function wsConnect() {
   if (!authReady || sessionExpired) return;
   wsSetStatus('connecting');
+  setNodeListRefreshing(true);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen  = () => { wsSetStatus('loading'); };
@@ -379,6 +381,13 @@ function wsSetStatus(mode) {
   }
 }
 
+function setNodeListRefreshing(active) {
+  nodeListRefreshing = !!active;
+  const indicator = document.getElementById('node-refresh-indicator');
+  if (!indicator) return;
+  indicator.classList.toggle('active', nodeListRefreshing);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § MESSAGE HANDLERS
 // ════════════════════════════════════════════════════════════════════════════
@@ -386,6 +395,7 @@ function wsSetStatus(mode) {
 function onFullState(msg) {
   const shouldAutoSelect = !selectedNode || !msg.nodes[selectedNode];
   nodes = msg.nodes;
+  setNodeListRefreshing(false);
   if (wsStatusMode !== 'live') wsSetStatus('live');
   rebuildSidebar();
   if (shouldAutoSelect) {

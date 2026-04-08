@@ -215,6 +215,22 @@ body {
   text-transform: none;
   letter-spacing: 0;
 }
+.node-refresh-indicator {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.node-refresh-indicator.active {
+  display: inline-flex;
+}
 .sidebar-sort button {
   border: 1px solid var(--border);
   background: var(--white);

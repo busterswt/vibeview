@@ -69,6 +69,7 @@ function actionRefreshAll()  {
   Object.keys(nodeMetricsCache).forEach((name) => delete nodeMetricsCache[name]);
   if (selectedNode) loadNodeDetail(selectedNode, true);
   if (selectedNode && activeTab === 'monitor') loadNodeMetrics(selectedNode, true);
+  setNodeListRefreshing(true);
   wsSend({ action: 'refresh' });
 }
 function actionEvacuate() { if (selectedNode) wsSend({ action: 'evacuate',       node: selectedNode }); }
