@@ -927,32 +927,56 @@ def drain_node(
     timeout: int = 300,
     auth: K8sAuth | None = None,
 ) -> None:
-    """Evict all non-DaemonSet pods from a node and wait for termination."""
+    """Evict drainable pods from a node and wait for termination.
+
+    DaemonSet pods are ignored. Static/mirror pods are treated as a hard block
+    because they cannot be evicted via the API and require node-local action.
+    """
     v1 = client.CoreV1Api(_api_client(auth))
+
+    def pod_ref(pod) -> str:
+        return f"{pod.metadata.namespace}/{pod.metadata.name}"
+
+    def is_terminal(pod) -> bool:
+        return pod.status.phase in ("Succeeded", "Failed")
+
+    def is_daemonset_pod(pod) -> bool:
+        return any(ref.kind == "DaemonSet" for ref in (pod.metadata.owner_references or []))
+
+    def is_mirror_pod(pod) -> bool:
+        annotations = pod.metadata.annotations or {}
+        return "kubernetes.io/config.mirror" in annotations
 
     log(f"Listing pods on node '{name}'…")
     pods = v1.list_pod_for_all_namespaces(field_selector=f"spec.nodeName={name}")
 
     to_evict = []
     skipped_ds = 0
+    blocked_mirror: list[str] = []
 
     for pod in pods.items:
-        if pod.status.phase in ("Succeeded", "Failed"):
+        if is_terminal(pod):
             continue
-        is_ds = any(
-            ref.kind == "DaemonSet"
-            for ref in (pod.metadata.owner_references or [])
-        )
-        if is_ds:
+        if is_mirror_pod(pod):
+            blocked_mirror.append(pod_ref(pod))
+            continue
+        if is_daemonset_pod(pod):
             skipped_ds += 1
         else:
             to_evict.append(pod)
+
+    if blocked_mirror:
+        refs = ", ".join(blocked_mirror)
+        raise RuntimeError(
+            f"Static/mirror pod(s) block drain on '{name}': {refs}"
+        )
 
     log(
         f"Evicting {len(to_evict)} pod(s), "
         f"skipping {skipped_ds} DaemonSet pod(s)"
     )
 
+    eviction_failures: list[str] = []
     for pod in to_evict:
         ns    = pod.metadata.namespace
         pname = pod.metadata.name
@@ -973,8 +997,15 @@ def drain_node(
                 elif exc.status == 404:
                     break  # already gone
                 else:
+                    detail = f"{ns}/{pname}: HTTP {exc.status} {exc.reason}"
+                    eviction_failures.append(detail)
                     log(f"Warning: could not evict {ns}/{pname}: {exc.reason}")
                     break
+
+    if eviction_failures:
+        raise RuntimeError(
+            f"Pod eviction failed on '{name}': {', '.join(eviction_failures)}"
+        )
 
     log("Waiting for pods to terminate…")
     deadline = time.time() + timeout
@@ -982,14 +1013,23 @@ def drain_node(
         remaining = v1.list_pod_for_all_namespaces(
             field_selector=f"spec.nodeName={name}"
         )
+        blocking_mirror = [
+            p
+            for p in remaining.items
+            if not is_terminal(p) and is_mirror_pod(p)
+        ]
+        if blocking_mirror:
+            refs = ", ".join(pod_ref(p) for p in blocking_mirror)
+            raise RuntimeError(
+                f"Static/mirror pod(s) block drain on '{name}': {refs}"
+            )
+
         non_ds_alive = [
             p
             for p in remaining.items
-            if p.status.phase not in ("Succeeded", "Failed")
-            and not any(
-                r.kind == "DaemonSet"
-                for r in (p.metadata.owner_references or [])
-            )
+            if not is_terminal(p)
+            and not is_daemonset_pod(p)
+            and not is_mirror_pod(p)
         ]
         if not non_ds_alive:
             log(f"All pods drained from '{name}'")
@@ -997,4 +1037,12 @@ def drain_node(
         log(f"{len(non_ds_alive)} pod(s) still terminating on '{name}'…")
         time.sleep(10)
 
-    log(f"WARNING: drain timeout reached for '{name}' — some pods may remain")
+    terminating = [pod_ref(p) for p in non_ds_alive if p.metadata.deletion_timestamp]
+    remaining_refs = [pod_ref(p) for p in non_ds_alive if not p.metadata.deletion_timestamp]
+    details: list[str] = []
+    if terminating:
+        details.append(f"stuck terminating: {', '.join(terminating)}")
+    if remaining_refs:
+        details.append(f"remaining: {', '.join(remaining_refs)}")
+    suffix = f" ({'; '.join(details)})" if details else ""
+    raise RuntimeError(f"Drain timeout reached for '{name}'{suffix}")
