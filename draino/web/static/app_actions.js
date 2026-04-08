@@ -23,8 +23,6 @@ function updateActionButtons(nd) {
   const evBtn = document.getElementById('bc-evacuate');
   const drBtn = document.getElementById('bc-drain');
   const rbBtn = document.getElementById('bc-reboot');
-  const poBtn = document.getElementById('bc-pods');
-  const nsBtn = document.getElementById('bc-noschedule');
 
   evBtn.textContent = phase === 'running'    ? '▶ Evacuating…' : '▶ Evacuate';
   evBtn.disabled    = busy || !nd.is_compute;
@@ -41,15 +39,6 @@ function updateActionButtons(nd) {
     : !rebootReady
       ? "Reboot is available only after the node has been cordoned and fully drained"
       : '';
-
-  poBtn.disabled = false;
-  const managedNoSchedule = hasManagedNoScheduleTaint(nd);
-  nsBtn.textContent = managedNoSchedule ? '↺ Remove NoSchedule' : '＋ Add NoSchedule';
-  nsBtn.disabled = busy;
-  nsBtn.className = `btn ${managedNoSchedule ? 'warning' : ''}`;
-  nsBtn.title = managedNoSchedule
-    ? 'Remove VibeView-managed maintenance NoSchedule taint'
-    : 'Add VibeView-managed maintenance NoSchedule taint';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
