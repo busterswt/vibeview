@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from ...operations import k8s_ops, openstack_ops
+from ..latency import measure_latency
 
 router = APIRouter()
 
@@ -70,68 +71,71 @@ async def api_network_ovn(network_id: str, request: Request):
 
 @router.get("/api/nodes/{node_name}/detail")
 async def api_node_detail(node_name: str, request: Request):
-    session = _require_session_record()(request)
-    server = session.server
-    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-    if force_refresh:
-        server.invalidate_node_detail(node_name)
-    cached = server.get_cached_node_detail(node_name)
-    if cached is not None:
-        return cached
-    loop = asyncio.get_running_loop()
-    state = server.node_states.get(node_name)
-    k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
-    hw_future = loop.run_in_executor(
-        None,
-        k8s_ops.get_node_hardware_info,
-        node_name,
-        state.hypervisor if state else None,
-    )
+    with measure_latency("node_detail"):
+        session = _require_session_record()(request)
+        server = session.server
+        force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+        if force_refresh:
+            server.invalidate_node_detail(node_name)
+        cached = server.get_cached_node_detail(node_name)
+        if cached is not None:
+            return cached
+        loop = asyncio.get_running_loop()
+        state = server.node_states.get(node_name)
+        k8s_future = loop.run_in_executor(None, k8s_ops.get_node_k8s_detail, node_name, server.k8s_auth)
+        hw_future = loop.run_in_executor(
+            None,
+            k8s_ops.get_node_hardware_info,
+            node_name,
+            state.hypervisor if state else None,
+        )
 
-    nova: dict = {}
-    if state and state.is_compute:
-        nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
+        nova: dict = {}
+        if state and state.is_compute:
+            nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
 
-    k8s = await k8s_future
-    hw = await hw_future
-    payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
-    server.set_cached_node_detail(node_name, payload)
-    return payload
+        k8s = await k8s_future
+        hw = await hw_future
+        payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
+        server.set_cached_node_detail(node_name, payload)
+        return payload
 
 
 @router.get("/api/nodes/{node_name}/metrics")
 async def api_node_metrics(node_name: str, request: Request):
-    session = _require_session_record()(request)
-    server = session.server
-    force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-    if force_refresh:
-        server.invalidate_node_metrics(node_name)
-    cached = server.get_cached_node_metrics(node_name)
-    if cached is not None:
-        return cached
-    loop = asyncio.get_running_loop()
-    state = server.node_states.get(node_name)
-    payload = await loop.run_in_executor(
-        None,
-        k8s_ops.get_node_monitor_metrics,
-        node_name,
-        state.hypervisor if state else None,
-    )
-    server.set_cached_node_metrics(node_name, payload)
-    return payload
+    with measure_latency("node_metrics"):
+        session = _require_session_record()(request)
+        server = session.server
+        force_refresh = request.query_params.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+        if force_refresh:
+            server.invalidate_node_metrics(node_name)
+        cached = server.get_cached_node_metrics(node_name)
+        if cached is not None:
+            return cached
+        loop = asyncio.get_running_loop()
+        state = server.node_states.get(node_name)
+        payload = await loop.run_in_executor(
+            None,
+            k8s_ops.get_node_monitor_metrics,
+            node_name,
+            state.hypervisor if state else None,
+        )
+        server.set_cached_node_metrics(node_name, payload)
+        return payload
 
 
 @router.get("/api/nodes/{node_name}/network-stats")
 async def api_node_network_stats(node_name: str, request: Request):
-    session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
-    state = session.server.node_states.get(node_name)
-    return await loop.run_in_executor(
-        None,
-        k8s_ops.get_node_network_stats,
-        node_name,
-        state.hypervisor if state else None,
-    )
+    with measure_latency("node_network_stats"):
+        session = _require_session_record()(request)
+        loop = asyncio.get_running_loop()
+        state = session.server.node_states.get(node_name)
+        return await loop.run_in_executor(
+            None,
+            k8s_ops.get_node_network_stats,
+            node_name,
+            state.hypervisor if state else None,
+        )
 
 
 @router.get("/api/nodes/{node_name}/ovn-annotations")
@@ -186,50 +190,51 @@ async def api_node_network_interfaces(node_name: str, request: Request):
 
 @router.get("/api/nodes/{node_name}/instances/{instance_id}")
 async def api_node_instance_detail(node_name: str, instance_id: str, request: Request):
-    session = _require_session_record()(request)
-    server = session.server
-    loop = asyncio.get_running_loop()
+    with measure_latency("vm_detail"):
+        session = _require_session_record()(request)
+        server = session.server
+        loop = asyncio.get_running_loop()
 
-    try:
-        instance = await loop.run_in_executor(
-            None,
-            openstack_ops.get_instance_network_detail,
-            instance_id,
-            server.openstack_auth,
-        )
-    except Exception as exc:
-        return {"instance": None, "error": str(exc)}
+        try:
+            instance = await loop.run_in_executor(
+                None,
+                openstack_ops.get_instance_network_detail,
+                instance_id,
+                server.openstack_auth,
+            )
+        except Exception as exc:
+            return {"instance": None, "error": str(exc)}
 
-    enriched_ports = []
-    for port in instance.get("ports", []):
-        payload = dict(port)
-        ovn = None
-        ovn_error = None
-        if port.get("id") and port.get("network_id"):
-            try:
-                ovn = await loop.run_in_executor(
-                    None,
-                    k8s_ops.get_ovn_port_logical_switch,
-                    port["id"],
-                    port["network_id"],
-                    server.k8s_auth,
-                )
-            except Exception as exc:
-                ovn_error = str(exc)
-        payload["ovn"] = ovn
-        payload["ovn_error"] = ovn_error
-        enriched_ports.append(payload)
-    instance["ports"] = enriched_ports
+        enriched_ports = []
+        for port in instance.get("ports", []):
+            payload = dict(port)
+            ovn = None
+            ovn_error = None
+            if port.get("id") and port.get("network_id"):
+                try:
+                    ovn = await loop.run_in_executor(
+                        None,
+                        k8s_ops.get_ovn_port_logical_switch,
+                        port["id"],
+                        port["network_id"],
+                        server.k8s_auth,
+                    )
+                except Exception as exc:
+                    ovn_error = str(exc)
+            payload["ovn"] = ovn
+            payload["ovn_error"] = ovn_error
+            enriched_ports.append(payload)
+        instance["ports"] = enriched_ports
 
-    state = server.node_states.get(node_name)
-    if state and state.hypervisor and instance.get("compute_host") and instance["compute_host"] != state.hypervisor:
-        instance["node_mismatch"] = {
-            "requested_node": node_name,
-            "requested_hypervisor": state.hypervisor,
-            "actual_hypervisor": instance["compute_host"],
-        }
+        state = server.node_states.get(node_name)
+        if state and state.hypervisor and instance.get("compute_host") and instance["compute_host"] != state.hypervisor:
+            instance["node_mismatch"] = {
+                "requested_node": node_name,
+                "requested_hypervisor": state.hypervisor,
+                "actual_hypervisor": instance["compute_host"],
+            }
 
-    return {"instance": instance, "error": None}
+        return {"instance": instance, "error": None}
 
 
 @router.get("/api/networks/{network_id}")

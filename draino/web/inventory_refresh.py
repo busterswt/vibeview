@@ -9,6 +9,7 @@ from .. import node_agent_client
 from ..models import NodePhase, NodeState
 from ..operations import k8s_ops, openstack_ops
 from ..time_utils import format_uptime
+from .latency import measure_latency
 from .serialise import serialise_state as _serialise
 
 _OPENSTACK_SUMMARY_TTL = float(os.getenv("DRAINO_OPENSTACK_SUMMARY_TTL", "60"))
@@ -97,104 +98,105 @@ class InventoryRefreshMixin:
         self._mariadb_node_cache = (now + _MARIADB_NODE_TTL, set(mariadb_nodes))
 
     def _load_nodes_bg(self, cached_nodes: list[dict] | None = None, silent: bool = False) -> None:
-        now = time.time()
-        nodes = cached_nodes
-        if nodes is None:
-            try:
-                nodes = k8s_ops.get_nodes(auth=self.k8s_auth)
-            except Exception as exc:
-                self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
-                return
-
-        membership_changed = self._apply_k8s_nodes(nodes)
-        self._push_inventory_state(force_full_state=membership_changed)
-
-        try:
-            ready_node_agents = node_agent_client.get_ready_node_names()
-        except Exception as exc:
-            ready_node_agents = set()
-            if not silent:
-                self._push({"type": "log", "node": "-", "message": f"Node-agent readiness probe failed: {exc}", "color": "warn"})
-        for node in nodes:
-            state = self.node_states.get(node["name"])
-            if state:
-                state.node_agent_ready = node["name"] in ready_node_agents
-
-        def _os_log(message: str) -> None:
-            self._push({"type": "log", "node": "-", "message": message, "color": "dim"})
-
-        edge_nodes = self._get_cached_ovn_edge_nodes(now=now, force=not silent)
-        if edge_nodes is None:
-            try:
-                edge_nodes = k8s_ops.get_ovn_edge_nodes(auth=self.k8s_auth)
-                self._set_cached_ovn_edge_nodes(edge_nodes, now=now)
-            except Exception as exc:
-                edge_nodes = set()
-                if not silent:
-                    self._push({"type": "log", "node": "-", "message": f"OVN edge-node probe failed: {exc}", "color": "warn"})
-
-        edge_aliases = {name.lower() for name in edge_nodes}
-        edge_aliases |= {name.split(".", 1)[0].lower() for name in edge_nodes}
-
-        mariadb_nodes = self._get_cached_mariadb_nodes(now=now, force=not silent)
-        if mariadb_nodes is None:
-            if self.k8s_auth is None and k8s_ops.get_mariadb_node_names is _DEFAULT_GET_MARIADB_NODE_NAMES:
-                mariadb_nodes = set()
-                self._set_cached_mariadb_nodes(mariadb_nodes, now=now)
-            else:
+        with measure_latency("node_list_refresh"):
+            now = time.time()
+            nodes = cached_nodes
+            if nodes is None:
                 try:
-                    mariadb_nodes = k8s_ops.get_mariadb_node_names(auth=self.k8s_auth)
-                    self._set_cached_mariadb_nodes(mariadb_nodes, now=now)
+                    nodes = k8s_ops.get_nodes(auth=self.k8s_auth)
                 except Exception as exc:
-                    mariadb_nodes = set()
-                    if not silent:
-                        self._push({"type": "log", "node": "-", "message": f"MariaDB pod placement probe failed: {exc}", "color": "warn"})
+                    self._push({"type": "log", "node": "-", "message": f"Error loading K8s nodes: {exc}", "color": "error"})
+                    return
 
-        summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
-        if summaries is None:
+            membership_changed = self._apply_k8s_nodes(nodes)
+            self._push_inventory_state(force_full_state=membership_changed)
+
             try:
-                summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
+                ready_node_agents = node_agent_client.get_ready_node_names()
             except Exception as exc:
-                self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
-                return
-            self._set_cached_openstack_summaries(summaries, now=now)
+                ready_node_agents = set()
+                if not silent:
+                    self._push({"type": "log", "node": "-", "message": f"Node-agent readiness probe failed: {exc}", "color": "warn"})
+            for node in nodes:
+                state = self.node_states.get(node["name"])
+                if state:
+                    state.node_agent_ready = node["name"] in ready_node_agents
 
-        self._etcd_node_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
+            def _os_log(message: str) -> None:
+                self._push({"type": "log", "node": "-", "message": message, "color": "dim"})
 
-        for node in nodes:
-            name = node["name"]
-            hostname = node.get("hostname", name)
-            summary = summaries.get(hostname, {})
-            state = self.node_states.get(name)
-            if not state:
-                continue
-            candidates = {
-                state.k8s_name.lower(),
-                state.k8s_name.split(".", 1)[0].lower(),
-                hostname.lower(),
-                hostname.split(".", 1)[0].lower(),
-            }
-            state.is_edge = any(candidate in edge_aliases for candidate in candidates if candidate)
-            state.is_etcd = name in self._etcd_node_names
-            state.hosts_mariadb = any(candidate in mariadb_nodes for candidate in candidates if candidate)
-            state.availability_zone = summary.get("availability_zone")
-            state.aggregates = summary.get("aggregates", [])
-            if state.phase == NodePhase.IDLE:
-                state.is_compute = summary.get("is_compute", False)
-                state.compute_status = summary.get("compute_status")
-                state.amphora_count = summary.get("amphora_count")
-                state.vm_count = summary.get("vm_count")
-            if self._should_refresh_host_signals(name, now=now, force=not silent):
-                signals = k8s_ops.get_node_host_signals(name, hostname)
-                if signals.get("kernel_version"):
-                    state.kernel_version = signals.get("kernel_version")
-                state.latest_kernel_version = signals.get("latest_kernel_version")
-                state.reboot_required = bool(signals.get("reboot_required", False))
-                self._host_signal_refresh_at[name] = now
+            edge_nodes = self._get_cached_ovn_edge_nodes(now=now, force=not silent)
+            if edge_nodes is None:
+                try:
+                    edge_nodes = k8s_ops.get_ovn_edge_nodes(auth=self.k8s_auth)
+                    self._set_cached_ovn_edge_nodes(edge_nodes, now=now)
+                except Exception as exc:
+                    edge_nodes = set()
+                    if not silent:
+                        self._push({"type": "log", "node": "-", "message": f"OVN edge-node probe failed: {exc}", "color": "warn"})
 
-        self._push_inventory_state(force_full_state=membership_changed)
-        if not silent:
-            self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
+            edge_aliases = {name.lower() for name in edge_nodes}
+            edge_aliases |= {name.split(".", 1)[0].lower() for name in edge_nodes}
+
+            mariadb_nodes = self._get_cached_mariadb_nodes(now=now, force=not silent)
+            if mariadb_nodes is None:
+                if self.k8s_auth is None and k8s_ops.get_mariadb_node_names is _DEFAULT_GET_MARIADB_NODE_NAMES:
+                    mariadb_nodes = set()
+                    self._set_cached_mariadb_nodes(mariadb_nodes, now=now)
+                else:
+                    try:
+                        mariadb_nodes = k8s_ops.get_mariadb_node_names(auth=self.k8s_auth)
+                        self._set_cached_mariadb_nodes(mariadb_nodes, now=now)
+                    except Exception as exc:
+                        mariadb_nodes = set()
+                        if not silent:
+                            self._push({"type": "log", "node": "-", "message": f"MariaDB pod placement probe failed: {exc}", "color": "warn"})
+
+            summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
+            if summaries is None:
+                try:
+                    summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
+                except Exception as exc:
+                    self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
+                    return
+                self._set_cached_openstack_summaries(summaries, now=now)
+
+            self._etcd_node_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
+
+            for node in nodes:
+                name = node["name"]
+                hostname = node.get("hostname", name)
+                summary = summaries.get(hostname, {})
+                state = self.node_states.get(name)
+                if not state:
+                    continue
+                candidates = {
+                    state.k8s_name.lower(),
+                    state.k8s_name.split(".", 1)[0].lower(),
+                    hostname.lower(),
+                    hostname.split(".", 1)[0].lower(),
+                }
+                state.is_edge = any(candidate in edge_aliases for candidate in candidates if candidate)
+                state.is_etcd = name in self._etcd_node_names
+                state.hosts_mariadb = any(candidate in mariadb_nodes for candidate in candidates if candidate)
+                state.availability_zone = summary.get("availability_zone")
+                state.aggregates = summary.get("aggregates", [])
+                if state.phase == NodePhase.IDLE:
+                    state.is_compute = summary.get("is_compute", False)
+                    state.compute_status = summary.get("compute_status")
+                    state.amphora_count = summary.get("amphora_count")
+                    state.vm_count = summary.get("vm_count")
+                if self._should_refresh_host_signals(name, now=now, force=not silent):
+                    signals = k8s_ops.get_node_host_signals(name, hostname)
+                    if signals.get("kernel_version"):
+                        state.kernel_version = signals.get("kernel_version")
+                    state.latest_kernel_version = signals.get("latest_kernel_version")
+                    state.reboot_required = bool(signals.get("reboot_required", False))
+                    self._host_signal_refresh_at[name] = now
+
+            self._push_inventory_state(force_full_state=membership_changed)
+            if not silent:
+                self._push({"type": "log", "node": "-", "message": f"Node list refreshed — {len(nodes)} nodes loaded.", "color": "success"})
 
     def _should_refresh_host_signals(self, node_name: str, now: float, force: bool = False) -> bool:
         if force:

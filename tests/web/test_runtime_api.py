@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from draino.web import server as web_server
+from draino.web import latency as web_latency
 
 
 def test_normalise_image_digest_handles_kubernetes_image_ids():
@@ -265,3 +266,14 @@ def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
     assert runtime.status_code == 200
     assert runtime.json()["current"]["cpu_percent"] == 12.5
     assert runtime.json()["limits"]["memory"] == "1Gi"
+
+
+def test_get_app_runtime_includes_latency_summary():
+    web_latency.record_latency("node_detail", 120.0)
+    web_latency.record_latency("node_detail", 180.0)
+
+    runtime = web_server._get_app_runtime()
+
+    assert "latencies" in runtime
+    assert runtime["latencies"]["node_detail"]["count"] >= 2
+    assert runtime["latencies"]["node_detail"]["last_ms"] >= 120.0

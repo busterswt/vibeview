@@ -8,6 +8,7 @@ from collections.abc import Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..operations import k8s_ops
+from .latency import measure_latency
 
 router = APIRouter()
 
@@ -74,14 +75,15 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
 def _serve_pods(server, node_name: str) -> None:
     try:
-        raw_pods = k8s_ops.get_pods_on_node(node_name, auth=server.k8s_auth)
-        pods = []
-        for pod in raw_pods:
-            payload = dict(pod)
-            created_at = payload.get("created_at")
-            if created_at is not None and hasattr(created_at, "isoformat"):
-                payload["created_at"] = created_at.isoformat()
-            pods.append(payload)
+        with measure_latency("pods_list"):
+            raw_pods = k8s_ops.get_pods_on_node(node_name, auth=server.k8s_auth)
+            pods = []
+            for pod in raw_pods:
+                payload = dict(pod)
+                created_at = payload.get("created_at")
+                if created_at is not None and hasattr(created_at, "isoformat"):
+                    payload["created_at"] = created_at.isoformat()
+                pods.append(payload)
     except Exception as exc:
         pods = [{"error": str(exc)}]
     server._push({"type": "pods", "node": node_name, "pods": pods})

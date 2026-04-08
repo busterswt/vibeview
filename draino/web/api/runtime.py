@@ -5,6 +5,7 @@ import asyncio
 from collections.abc import Callable
 
 from fastapi import APIRouter, Request
+from ..latency import measure_latency
 
 router = APIRouter()
 
@@ -56,10 +57,11 @@ async def readyz() -> dict[str, str]:
 
 @router.get("/api/app-meta")
 async def api_app_meta(request: Request):
-    get_session_record, get_app_update_status, _, _ = _require_configured()
-    get_session_record(request)
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, lambda: get_app_update_status(force=True))
+    with measure_latency("app_meta"):
+        get_session_record, get_app_update_status, _, _ = _require_configured()
+        get_session_record(request)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: get_app_update_status(force=True))
 
 
 @router.get("/api/version")
@@ -71,7 +73,8 @@ async def api_version():
 
 @router.get("/api/app-runtime")
 async def api_app_runtime(request: Request):
-    get_session_record, _, _, get_app_runtime = _require_configured()
-    get_session_record(request)
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, get_app_runtime)
+    with measure_latency("app_runtime"):
+        get_session_record, _, _, get_app_runtime = _require_configured()
+        get_session_record(request)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, get_app_runtime)

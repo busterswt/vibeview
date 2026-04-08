@@ -8,6 +8,7 @@ from .. import worker
 from ..models import NodePhase
 from ..operations import k8s_ops, openstack_ops
 from ..reboot import is_ready_for_reboot
+from .latency import measure_latency
 from .serialise import serialise_state as _serialise
 
 
@@ -29,10 +30,11 @@ class InventoryActionsMixin:
         if not state:
             return
         try:
-            state.preflight_instances = openstack_ops.get_instances_preflight(
-                state.hypervisor,
-                auth=self.openstack_auth,
-            )
+            with measure_latency("instance_preflight"):
+                state.preflight_instances = openstack_ops.get_instances_preflight(
+                    state.hypervisor,
+                    auth=self.openstack_auth,
+                )
         except Exception as exc:
             state.preflight_instances = []
             self._push({"type": "log", "node": "-", "message": f"Preflight failed for {node_name}: {exc}", "color": "warn"})

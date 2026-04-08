@@ -194,6 +194,14 @@ function fmtSeconds(seconds) {
   return `${minutes}m`;
 }
 
+function fmtLatencyMs(value) {
+  if (value == null) return '—';
+  const ms = Number(value);
+  if (!Number.isFinite(ms)) return '—';
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`;
+  return `${ms.toFixed(0)} ms`;
+}
+
 function fmtNetRate(bytesPerSecond) {
   if (bytesPerSecond == null) return 'warming up';
   const bitsPerSecond = Number(bytesPerSecond) * 8;
@@ -247,6 +255,19 @@ function renderMonitorView() {
   const current = state.current || {};
   const requests = state.requests || {};
   const limits = state.limits || {};
+  const latencyLabels = {
+    node_list_refresh: 'Node refresh',
+    node_detail: 'Node detail',
+    node_metrics: 'Node metrics',
+    node_network_stats: 'Node net stats',
+    instance_preflight: 'VM list',
+    vm_detail: 'VM detail',
+    pods_list: 'Pod list',
+    app_meta: 'Update check',
+    app_runtime: 'Monitor data',
+  };
+  const latencyEntries = Object.entries(state.latencies || {})
+    .sort((a, b) => (latencyLabels[a[0]] || a[0]).localeCompare(latencyLabels[b[0]] || b[0]));
   tab.innerHTML = `
     <div class="tab-section-title" style="margin-bottom:10px"><span>VibeView Runtime</span></div>
     <div class="app-runtime-grid">
@@ -277,6 +298,27 @@ function renderMonitorView() {
         <div class="card-title">Memory Usage History</div>
         <div class="card-body">
           ${buildRuntimeChart(state.history, 'rss_bytes', '#2e7d32', fmtBytes, fmtBytes)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">API Latency</div>
+        <div class="card-body">
+          ${latencyEntries.length ? `
+            <table class="data-table" style="margin-bottom:0">
+              <thead><tr><th>Operation</th><th>Last</th><th>Avg</th><th>P95</th><th>Count</th></tr></thead>
+              <tbody>
+                ${latencyEntries.map(([key, value]) => `
+                  <tr>
+                    <td>${esc(latencyLabels[key] || key)}</td>
+                    <td>${esc(fmtLatencyMs(value.last_ms))}</td>
+                    <td>${esc(fmtLatencyMs(value.avg_ms))}</td>
+                    <td>${esc(fmtLatencyMs(value.p95_ms))}</td>
+                    <td>${esc(String(value.count ?? 0))}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : `<div class="runtime-note">No latency samples yet.</div>`}
         </div>
       </div>
     </div>
