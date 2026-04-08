@@ -400,20 +400,31 @@ function onFullState(msg) {
 }
 
 function onStateUpdate(msg) {
-  const prevPhase = nodes[msg.node]?.phase;
-  const prevIsEtcd = nodes[msg.node]?.is_etcd;
-  nodes[msg.node] = msg.data;
+  const prevNode = nodes[msg.node] || null;
+  const prevPhase = prevNode?.phase;
+  const prevIsEtcd = prevNode?.is_etcd;
+  const nextNode = { ...msg.data };
+  const keepPreflightPreview =
+    nextNode.preflight_loading === true &&
+    Array.isArray(nextNode.preflight_instances) &&
+    nextNode.preflight_instances.length === 0 &&
+    Array.isArray(prevNode?.preflight_instances) &&
+    prevNode.preflight_instances.length > 0;
+  if (keepPreflightPreview) {
+    nextNode.preflight_instances = prevNode.preflight_instances;
+  }
+  nodes[msg.node] = nextNode;
   // Clear individual migrate state when a full workflow kicks off
-  if (msg.data.phase === 'running' && prevPhase !== 'running') {
+  if (nextNode.phase === 'running' && prevPhase !== 'running') {
     Object.keys(instanceMigrateStates).forEach(k => delete instanceMigrateStates[k]);
     Object.keys(instanceMigrateTasks).forEach(k => delete instanceMigrateTasks[k]);
   }
-  trackStepTimes(msg.node, msg.data.steps || []);
+  trackStepTimes(msg.node, nextNode.steps || []);
   updateSidebarRow(msg.node);
   if (msg.node === selectedNode) {
-    if (msg.data.is_etcd && !prevIsEtcd) ensureSelectedEtcdHealthCheck();
+    if (nextNode.is_etcd && !prevIsEtcd) ensureSelectedEtcdHealthCheck();
     renderInfraDetail();
-  } else if (msg.data.is_etcd && selectedNode && nodes[selectedNode]?.is_etcd && activeTab === 'summary') {
+  } else if (nextNode.is_etcd && selectedNode && nodes[selectedNode]?.is_etcd && activeTab === 'summary') {
     // A peer etcd node's health changed — re-render so the etcd quorum block updates
     renderSummaryTab(nodes[selectedNode]);
   }
@@ -488,4 +499,3 @@ function onInstanceMigrateStatus(msg) {
   if (activeTab === 'instances' && selectedNode === msg.node && nodes[selectedNode])
     renderInstancesTab(nodes[selectedNode]);
 }
-
