@@ -48,6 +48,8 @@ const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
 const nodeMetricsCache = {};  // node_name → { loading, current, history, error }
 const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
 const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
+const instanceDetailCache = {}; // instance_id -> { loading, data, error }
+const expandedInstanceIdByNode = {}; // node_name -> instance_id
 
 // Node network config cache (configure tab)
 // node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }

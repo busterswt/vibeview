@@ -877,6 +877,7 @@ function renderNodeMonitorTab(nd) {
 
 function renderInstancesTab(nd) {
   const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  const expandedId = expandedInstanceIdByNode[nd.k8s_name] || '';
   let h = `<div class="inst-toolbar">
     <button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>
     <button class="btn ${drained?'warning':''}" onclick="actionDrainOrUndrain()">${drained ? '↺ Undrain' : '▽ Drain'}</button>
@@ -917,18 +918,22 @@ function renderInstancesTab(nd) {
         const tp = i.is_amphora ? `<span class="tag-amp">Amphora LB</span>` : 'VM';
         const st = i.is_volume_backed ? `<span class="tag-vol">Volume</span>` : `<span class="tag-eph">Ephemeral</span>`;
         const ms = instanceMigrateStates[i.id];
+        const detailsLabel = expandedId === i.id ? '▾ Details' : '▸ Details';
         let action = '';
+        const actions = [`<button class="btn" style="font-size:11px" onclick="toggleInstanceDetail('${escAttr(i.id)}')">${detailsLabel}</button>`];
         if (!i.is_amphora) {
           if (ms === 'migrating')
-            action = `<button class="btn" disabled style="font-size:11px"><span class="spinner">⟳</span> Migrating…</button>`;
+            actions.push(`<button class="btn" disabled style="font-size:11px"><span class="spinner">⟳</span> Migrating…</button>`);
           else if (ms === 'error')
-            action = `<button class="btn danger" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↺ Retry</button>`;
+            actions.push(`<button class="btn danger" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↺ Retry</button>`);
           else
-            action = `<button class="btn" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↗ Migrate</button>`;
+            actions.push(`<button class="btn" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↗ Migrate</button>`);
         }
+        action = `<div style="display:flex;gap:6px;flex-wrap:wrap">${actions.join('')}</div>`;
         h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${st}</td><td>${action}</td></tr>`;
       }
       h += `</tbody></table>`;
+      if (expandedId) h += renderInstanceDetailPanel(nd.k8s_name, expandedId);
       if (nd.preflight_loading) h += `<div style="font-size:10px;color:var(--dim);margin-top:4px"><span class="spinner">⟳</span> Refreshing…</div>`;
     } else {
       h += `<div style="color:var(--dim);font-size:12px;padding:4px 0">No instances on this hypervisor.</div>`;
@@ -953,6 +958,128 @@ function renderInstancesTab(nd) {
   h += `</div>`;
 
   document.getElementById('instances-content').innerHTML = h;
+}
+
+function renderInstanceDetailPanel(nodeName, instanceId) {
+  const cached = instanceDetailCache[instanceId];
+  if (!cached || cached.loading) {
+    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body" style="color:var(--dim)"><span class="spinner">⟳</span> Loading instance detail…</div></div>`;
+  }
+  if (cached.error || !cached.data) {
+    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body"><div class="err-block">${esc(cached.error || 'Unknown error')}</div></div></div>`;
+  }
+
+  const inst = cached.data;
+  const flavor = inst.flavor || {};
+  const ports = inst.ports || [];
+  let h = `<div class="card" style="margin-top:10px">
+    <div class="card-title">Instance Detail</div>
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="card">
+          <div class="card-title">Nova</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(inst.name || instanceId)}</span></div>
+            <div class="mrow"><span class="ml">UUID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(inst.id || instanceId)}</span></div>
+            <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(inst.status || 'UNKNOWN')}</span></div>
+            <div class="mrow"><span class="ml">Host</span><span class="mv dim">${esc(inst.compute_host || '—')}</span></div>
+            <div class="mrow"><span class="ml">AZ</span><span class="mv dim">${esc(inst.availability_zone || '—')}</span></div>
+            <div class="mrow"><span class="ml">Task state</span><span class="mv dim">${esc(inst.task_state || '—')}</span></div>
+            <div class="mrow"><span class="ml">Boot source</span><span class="mv">${inst.is_volume_backed ? 'Volume-backed' : 'Image / Ephemeral'}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Flavor</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(flavor.name || flavor.id || '—')}</span></div>
+            <div class="mrow"><span class="ml">vCPU</span><span class="mv">${esc(flavor.vcpus ?? '—')}</span></div>
+            <div class="mrow"><span class="ml">RAM</span><span class="mv">${flavor.ram_mb != null ? esc(`${flavor.ram_mb} MB`) : '—'}</span></div>
+            <div class="mrow"><span class="ml">Disk</span><span class="mv">${flavor.disk_gb != null ? esc(`${flavor.disk_gb} GB`) : '—'}</span></div>
+            <div class="mrow"><span class="ml">Ephemeral</span><span class="mv">${flavor.ephemeral_gb != null ? esc(`${flavor.ephemeral_gb} GB`) : '—'}</span></div>
+            <div class="mrow"><span class="ml">Swap</span><span class="mv">${flavor.swap_mb != null ? esc(`${flavor.swap_mb} MB`) : '—'}</span></div>
+          </div>
+        </div>
+      </div>`;
+  if (inst.node_mismatch) {
+    h += `<div class="err-block" style="margin-top:10px">Instance no longer appears to be on ${esc(nodeName)}. Current hypervisor: ${esc(inst.node_mismatch.actual_hypervisor || 'unknown')}.</div>`;
+  }
+  h += `<div class="tab-section-title" style="margin-top:10px"><span>Neutron Ports &amp; OVN</span></div>`;
+  if (!ports.length) {
+    h += `<div style="color:var(--dim);font-size:12px">No Neutron ports found for this instance.</div>`;
+  } else {
+    for (const port of ports) {
+      const ovn = port.ovn || {};
+      const ovnPort = ovn.port || {};
+      h += `<div class="card" style="margin-top:10px">
+        <div class="card-title">${esc(port.name || port.id || 'Port')}</div>
+        <div class="card-body">
+          <div class="summary-grid">
+            <div class="card">
+              <div class="card-title">Neutron Port</div>
+              <div class="card-body">
+                <div class="mrow"><span class="ml">Port ID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(port.id || '—')}</span></div>
+                <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
+                <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(port.mac_address || '—')}</span></div>
+                <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv">${esc((port.fixed_ips || []).join(', ') || '—')}</span></div>
+                <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
+                <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
+                <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
+                <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">OVN Attachment</div>
+              <div class="card-body">
+                ${port.ovn_error ? `<div class="err-block">${esc(port.ovn_error)}</div>` : `
+                  <div class="mrow"><span class="ml">Logical switch</span><span class="mv">${esc(ovn.ls_name || '—')}</span></div>
+                  <div class="mrow"><span class="ml">Switch UUID</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(ovn.ls_uuid || '—')}</span></div>
+                  <div class="mrow"><span class="ml">Port type</span><span class="mv">${esc(ovnPort.type || 'normal')}</span></div>
+                  <div class="mrow"><span class="ml">Router port</span><span class="mv dim">${esc(ovnPort.router_port || '—')}</span></div>
+                  <div class="mrow"><span class="ml">Up</span><span class="mv">${ovnPort.up == null ? '—' : (ovnPort.up ? 'true' : 'false')}</span></div>
+                  <div class="mrow"><span class="ml">Enabled</span><span class="mv">${ovnPort.enabled == null ? '—' : (ovnPort.enabled ? 'true' : 'false')}</span></div>
+                  <div class="mrow"><span class="ml">Addresses</span><span class="mv" style="font-family:monospace;font-size:11px">${esc((ovnPort.addresses || []).join(', ') || '—')}</span></div>
+                `}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+  h += `</div></div>`;
+  return h;
+}
+
+function toggleInstanceDetail(instanceId) {
+  if (!selectedNode) return;
+  const nodeName = selectedNode;
+  if (expandedInstanceIdByNode[nodeName] === instanceId) {
+    delete expandedInstanceIdByNode[nodeName];
+    renderInstancesTab(nodes[nodeName]);
+    return;
+  }
+  expandedInstanceIdByNode[nodeName] = instanceId;
+  renderInstancesTab(nodes[nodeName]);
+  loadInstanceDetail(nodeName, instanceId);
+}
+
+async function loadInstanceDetail(nodeName, instanceId, force = false) {
+  const cached = instanceDetailCache[instanceId];
+  if (!force && (cached?.loading || cached?.data)) {
+    if (selectedNode === nodeName && activeTab === 'instances' && nodes[nodeName]) renderInstancesTab(nodes[nodeName]);
+    return;
+  }
+  instanceDetailCache[instanceId] = { loading: true, data: null, error: null };
+  if (selectedNode === nodeName && activeTab === 'instances' && nodes[nodeName]) renderInstancesTab(nodes[nodeName]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/instances/${encodeURIComponent(instanceId)}`);
+    const json = await resp.json();
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+    instanceDetailCache[instanceId] = { loading: false, data: json.instance, error: null };
+  } catch (err) {
+    instanceDetailCache[instanceId] = { loading: false, data: null, error: String(err) };
+  }
+  if (selectedNode === nodeName && activeTab === 'instances' && nodes[nodeName]) renderInstancesTab(nodes[nodeName]);
 }
 
 function filterInstTable() {
@@ -1658,4 +1785,3 @@ function _showToast(title, body, type) {
   document.body.appendChild(t);
   setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 4000);
 }
-

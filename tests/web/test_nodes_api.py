@@ -166,6 +166,74 @@ def test_node_network_stats_endpoint_returns_agent_data(monkeypatch):
     assert resp.json()["interfaces"][0]["name"] == "bond0"
 
 
+def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_instance_network_detail",
+        lambda instance_id, auth=None: {
+            "id": instance_id,
+            "name": "vm-1",
+            "status": "ACTIVE",
+            "compute_host": "hv-a",
+            "flavor": {"name": "m1.large", "vcpus": 4, "ram_mb": 8192, "disk_gb": 40, "ephemeral_gb": 0, "swap_mb": 0},
+            "ports": [{
+                "id": "port-1",
+                "network_id": "net-1",
+                "network_name": "tenant-net",
+                "fixed_ips": ["10.0.0.12"],
+                "security_groups": ["default"],
+                "floating_ips": ["203.0.113.10"],
+            }],
+        },
+    )
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_ovn_port_logical_switch",
+        lambda port_id, network_id, auth=None: {
+            "ls_name": "neutron-net-1",
+            "ls_uuid": "ls-uuid",
+            "port": {"id": port_id, "type": "", "up": True, "enabled": True, "router_port": "", "addresses": ["fa:16:3e:00:00:01 10.0.0.12"]},
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        resp = client.get("/api/nodes/node-a/instances/vm-1")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is None
+    assert body["instance"]["flavor"]["name"] == "m1.large"
+    assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
+    assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
+
+
 def test_patch_managed_noschedule_taint_endpoint(monkeypatch):
     captured: dict[str, object] = {}
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)

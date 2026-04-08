@@ -155,6 +155,21 @@ def get_ovn_logical_switch(network_id: str, auth: K8sAuth | None = None) -> dict
     return {"ls_name": logical_switch_name, "ls_uuid": logical_switch_uuid, "ports": ports}
 
 
+def get_ovn_port_logical_switch(port_id: str, network_id: str, auth: K8sAuth | None = None) -> dict:
+    """Return the logical switch attachment for a specific Neutron port."""
+    logical_switch = get_ovn_logical_switch(network_id, auth=auth)
+    port = next((item for item in logical_switch["ports"] if item.get("id") == port_id), None)
+    if port is None:
+        raise RuntimeError(f"Logical switch {logical_switch['ls_name']!r} does not contain port {port_id!r}")
+    return {
+        "port_id": port_id,
+        "network_id": network_id,
+        "ls_name": logical_switch["ls_name"],
+        "ls_uuid": logical_switch["ls_uuid"],
+        "port": port,
+    }
+
+
 def _ovsdb_map_to_dict(value) -> dict[str, str]:
     if not isinstance(value, list) or len(value) != 2 or value[0] != "map":
         return {}

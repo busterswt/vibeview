@@ -184,6 +184,54 @@ async def api_node_network_interfaces(node_name: str, request: Request):
     )
 
 
+@router.get("/api/nodes/{node_name}/instances/{instance_id}")
+async def api_node_instance_detail(node_name: str, instance_id: str, request: Request):
+    session = _require_session_record()(request)
+    server = session.server
+    loop = asyncio.get_running_loop()
+
+    try:
+        instance = await loop.run_in_executor(
+            None,
+            openstack_ops.get_instance_network_detail,
+            instance_id,
+            server.openstack_auth,
+        )
+    except Exception as exc:
+        return {"instance": None, "error": str(exc)}
+
+    enriched_ports = []
+    for port in instance.get("ports", []):
+        payload = dict(port)
+        ovn = None
+        ovn_error = None
+        if port.get("id") and port.get("network_id"):
+            try:
+                ovn = await loop.run_in_executor(
+                    None,
+                    k8s_ops.get_ovn_port_logical_switch,
+                    port["id"],
+                    port["network_id"],
+                    server.k8s_auth,
+                )
+            except Exception as exc:
+                ovn_error = str(exc)
+        payload["ovn"] = ovn
+        payload["ovn_error"] = ovn_error
+        enriched_ports.append(payload)
+    instance["ports"] = enriched_ports
+
+    state = server.node_states.get(node_name)
+    if state and state.hypervisor and instance.get("compute_host") and instance["compute_host"] != state.hypervisor:
+        instance["node_mismatch"] = {
+            "requested_node": node_name,
+            "requested_hypervisor": state.hypervisor,
+            "actual_hypervisor": instance["compute_host"],
+        }
+
+    return {"instance": instance, "error": None}
+
+
 @router.get("/api/networks/{network_id}")
 async def api_network_detail(network_id: str, request: Request):
     session = _require_session_record()(request)

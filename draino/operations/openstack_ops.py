@@ -396,6 +396,100 @@ def get_instances_preflight(
     return result
 
 
+def get_instance_network_detail(
+    instance_id: str,
+    auth: OpenStackAuth | None = None,
+) -> dict:
+    """Return flavor and Neutron port detail for a Nova instance."""
+    conn = _conn(auth=auth)
+    server = conn.compute.get_server(instance_id)
+    if server is None:
+        raise RuntimeError(f"No server found with id '{instance_id}'")
+
+    server_data = server.to_dict() if hasattr(server, "to_dict") else {}
+    flavor_ref = getattr(server, "flavor", None) or server_data.get("flavor") or {}
+    flavor_id = ""
+    flavor_name = ""
+    if isinstance(flavor_ref, dict):
+        flavor_id = flavor_ref.get("id") or ""
+        flavor_name = flavor_ref.get("original_name") or flavor_ref.get("name") or ""
+
+    flavor_data: dict = {
+        "id": flavor_id,
+        "name": flavor_name,
+        "vcpus": None,
+        "ram_mb": None,
+        "disk_gb": None,
+        "ephemeral_gb": None,
+        "swap_mb": None,
+    }
+    if flavor_id:
+        try:
+            flavor = conn.compute.get_flavor(flavor_id)
+            if flavor is not None:
+                flavor_data.update({
+                    "id": getattr(flavor, "id", None) or flavor_id,
+                    "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
+                    "vcpus": getattr(flavor, "vcpus", None),
+                    "ram_mb": getattr(flavor, "ram", None),
+                    "disk_gb": getattr(flavor, "disk", None),
+                    "ephemeral_gb": getattr(flavor, "ephemeral", None),
+                    "swap_mb": getattr(flavor, "swap", None),
+                })
+        except Exception:
+            pass
+
+    network_names: dict[str, str] = {}
+    ports: list[dict] = []
+    for port in conn.network.ports(device_id=instance_id):
+        port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+        network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+        if network_id and network_id not in network_names:
+            try:
+                network = conn.network.get_network(network_id)
+                network_names[network_id] = getattr(network, "name", None) or "(unnamed)"
+            except Exception:
+                network_names[network_id] = ""
+
+        floating_ips: list[str] = []
+        try:
+            for floating_ip in conn.network.ips(port_id=port.id):
+                address = getattr(floating_ip, "floating_ip_address", None)
+                if address:
+                    floating_ips.append(address)
+        except Exception:
+            pass
+
+        ports.append({
+            "id": getattr(port, "id", None) or "",
+            "name": getattr(port, "name", None) or "",
+            "status": getattr(port, "status", None) or "UNKNOWN",
+            "admin_state_up": bool(getattr(port, "is_admin_state_up", port_data.get("admin_state_up", False))),
+            "mac_address": getattr(port, "mac_address", None) or "",
+            "network_id": network_id,
+            "network_name": network_names.get(network_id, ""),
+            "fixed_ips": [item.get("ip_address", "") for item in (getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or []) if item.get("ip_address")],
+            "security_groups": list(getattr(port, "security_group_ids", None) or port_data.get("security_group_ids") or []),
+            "device_owner": getattr(port, "device_owner", None) or port_data.get("device_owner") or "",
+            "binding_vnic_type": port_data.get("binding:vnic_type") or getattr(port, "binding_vnic_type", None) or "",
+            "floating_ips": floating_ips,
+        })
+
+    return {
+        "id": getattr(server, "id", None) or instance_id,
+        "name": getattr(server, "name", None) or instance_id,
+        "status": getattr(server, "status", None) or "UNKNOWN",
+        "compute_host": _server_host(server) or "",
+        "availability_zone": getattr(server, "availability_zone", None) or server_data.get("OS-EXT-AZ:availability_zone") or "",
+        "task_state": getattr(server, "task_state", None) or server_data.get("OS-EXT-STS:task_state"),
+        "created_at": getattr(server, "created_at", None) or server_data.get("created"),
+        "updated_at": getattr(server, "updated_at", None) or server_data.get("updated"),
+        "is_volume_backed": not getattr(server, "image", None),
+        "flavor": flavor_data,
+        "ports": ports,
+    }
+
+
 def list_servers_on_host(
     hypervisor: str,
     log: LogFn,
