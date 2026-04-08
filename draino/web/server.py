@@ -197,7 +197,7 @@ def _compute_update_status() -> dict:
     try:
         latest_digest = _resolve_remote_track_digest(_UPDATE_REPOSITORY, _UPDATE_TRACK)
         if current_digest is None and _IMAGE_TAG:
-            current_tag_digest = _resolve_remote_track_digest(_UPDATE_REPOSITORY, _IMAGE_TAG)
+            current_tag_digest = _resolve_remote_track_digest(_IMAGE_REPOSITORY, _IMAGE_TAG)
     except Exception as exc:  # pragma: no cover - network failure path
         error = str(exc)
         _LOGGER.warning("failed to resolve upstream image digest: %s", exc)

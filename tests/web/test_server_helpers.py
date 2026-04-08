@@ -91,7 +91,7 @@ def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
         web_server,
         "_resolve_remote_track_digest",
         lambda repo, ref: {
-            ("ghcr.io/upstream/draino", "0.1.0"): "sha256:old",
+            ("ghcr.io/example/draino", "0.1.0"): "sha256:old",
             ("ghcr.io/upstream/draino", "main"): "sha256:new",
         }[(repo, ref)],
     )

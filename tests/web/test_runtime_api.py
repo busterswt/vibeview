@@ -42,7 +42,7 @@ def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
         web_server,
         "_resolve_remote_track_digest",
         lambda repo, ref: {
-            ("ghcr.io/upstream/draino", "0.1.0"): "sha256:old",
+            ("ghcr.io/example/draino", "0.1.0"): "sha256:old",
             ("ghcr.io/upstream/draino", "main"): "sha256:new",
         }[(repo, ref)],
     )
@@ -54,6 +54,34 @@ def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
     assert status["latest_digest"] == "sha256:new"
     assert status["update_available"] is True
     assert status["update_repository"] == "ghcr.io/upstream/draino"
+
+
+def test_compute_update_status_resolves_current_tag_from_image_repository(monkeypatch):
+    monkeypatch.setattr(web_server, "_get_running_image_digest", lambda: None)
+    monkeypatch.setattr(web_server, "_IMAGE_TAG", "0.1.0")
+    monkeypatch.setattr(web_server, "_UPDATE_TRACK", "main")
+    monkeypatch.setattr(web_server, "_IMAGE_REPOSITORY", "ghcr.io/local/draino")
+    monkeypatch.setattr(web_server, "_UPDATE_REPOSITORY", "ghcr.io/upstream/draino")
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_resolve(repo, ref):
+        calls.append((repo, ref))
+        return {
+            ("ghcr.io/local/draino", "0.1.0"): "sha256:old",
+            ("ghcr.io/upstream/draino", "main"): "sha256:new",
+        }[(repo, ref)]
+
+    monkeypatch.setattr(web_server, "_resolve_remote_track_digest", fake_resolve)
+
+    status = web_server._compute_update_status()
+
+    assert calls == [
+        ("ghcr.io/upstream/draino", "main"),
+        ("ghcr.io/local/draino", "0.1.0"),
+    ]
+    assert status["current_digest"] == "sha256:old"
+    assert status["update_available"] is True
 
 
 def test_health_and_readiness_endpoints():
