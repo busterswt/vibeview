@@ -128,4 +128,5 @@ class NodeState:
             WorkflowStep("issue_reboot",  "Issue reboot command"),
             WorkflowStep("await_offline", "Wait for node to go offline"),
             WorkflowStep("await_online",  "Wait for node to come back online"),
+            WorkflowStep("uncordon",      "Uncordon K8s node"),
         ]

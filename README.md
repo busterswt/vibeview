@@ -271,6 +271,7 @@ In the web UI, reboot is only available to authenticated sessions with the OpenS
 2. Send a reboot request to the node-local agent
 3. Wait for the node to go `NotReady` (up to 5 min)
 4. Wait for the node to return `Ready` (up to 10 min)
+5. Automatically uncordon the node when it comes back
 5. Report total downtime
 
 ---

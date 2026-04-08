@@ -407,11 +407,20 @@ def run_reboot(
 
     dt = int(state.reboot_downtime)
     step_set("await_online", StepStatus.SUCCESS, f"Online — downtime {dt}s")
+    step_set("uncordon", StepStatus.RUNNING)
+    try:
+        k8s_ops.uncordon_node(state.k8s_name, log, auth=k8s_auth)
+        state.k8s_cordoned = False
+        step_set("uncordon", StepStatus.SUCCESS)
+    except Exception as exc:
+        abort("uncordon", str(exc))
+        return
+
     state.phase        = NodePhase.IDLE
     state.etcd_healthy = None   # needs re-verification on next selection
-    log(f"✓ '{state.k8s_name}' back online — total downtime: {dt}s")
+    log(f"✓ '{state.k8s_name}' back online and uncordoned — total downtime: {dt}s")
     if audit_cb:
-        audit_cb("completed", f"downtime={dt}s")
+        audit_cb("completed", f"downtime={dt}s auto_uncordoned=true")
     update_cb()
 
 
