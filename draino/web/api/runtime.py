@@ -59,7 +59,7 @@ async def api_app_meta(request: Request):
     get_session_record, get_app_update_status, _, _ = _require_configured()
     get_session_record(request)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, get_app_update_status)
+    return await loop.run_in_executor(None, lambda: get_app_update_status(force=True))
 
 
 @router.get("/api/version")

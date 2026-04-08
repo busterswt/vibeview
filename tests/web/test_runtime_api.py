@@ -146,6 +146,59 @@ def test_app_meta_endpoint_returns_update_status(monkeypatch):
     assert meta.json()["track"] == "main"
 
 
+def test_app_meta_endpoint_forces_fresh_update_check(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    calls: list[bool] = []
+
+    def fake_update_status(force=False):
+        calls.append(force)
+        return {
+            "current_tag": "0.1.0",
+            "current_digest": "sha256:111",
+            "track": "main",
+            "latest_digest": "sha256:222",
+            "update_available": True,
+            "update_url": "https://example.com/update",
+            "error": None,
+        }
+
+    monkeypatch.setattr(web_server, "_get_app_update_status", fake_update_status)
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        meta = client.get("/api/app-meta")
+
+    assert meta.status_code == 200
+    assert calls == [True]
+
+
 def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
     monkeypatch.setattr(
         web_server,
