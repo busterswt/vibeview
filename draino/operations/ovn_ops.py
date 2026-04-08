@@ -176,7 +176,7 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
 
     logical_router_name = f"neutron-{router_id}"
     cmd = ["kubectl", "ko", "nbctl", "show", logical_router_name]
-    chassis_name_map = _get_ovn_chassis_name_map(auth=auth)
+    chassis_host_cache: dict[str, str] = {}
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_kubectl_plugin_env(auth))
@@ -227,7 +227,9 @@ def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
                 chassis_name = value.strip('"')
                 if chassis_name:
                     current["gateway_chassis"].append(chassis_name)
-                    current["gateway_hosts"].append(chassis_name_map.get(chassis_name, chassis_name))
+                    if chassis_name not in chassis_host_cache:
+                        chassis_host_cache[chassis_name] = _get_ovn_chassis_hostname(chassis_name, auth=auth)
+                    current["gateway_hosts"].append(chassis_host_cache[chassis_name])
             elif key == "networks":
                 try:
                     current["networks"] = _json.loads(value)
@@ -255,9 +257,9 @@ def _ovsdb_map_to_dict(value) -> dict[str, str]:
     return out
 
 
-def _get_ovn_chassis_name_map(auth: K8sAuth | None = None) -> dict[str, str]:
-    """Return OVN chassis name -> hostname mapping via kubectl ko sbctl."""
-    cmd = ["kubectl", "ko", "sbctl", "--format=json", "list", "Chassis"]
+def _get_ovn_chassis_hostname(chassis_name: str, auth: K8sAuth | None = None) -> str:
+    """Return the hostname for one OVN chassis name via kubectl ko sbctl find."""
+    cmd = ["kubectl", "ko", "sbctl", "--format=json", "find", "chassis", f"name={chassis_name}"]
 
     try:
         result = subprocess.run(
@@ -287,22 +289,19 @@ def _get_ovn_chassis_name_map(auth: K8sAuth | None = None) -> dict[str, str]:
         raise RuntimeError("unexpected kubectl ko sbctl JSON shape")
 
     try:
-        name_idx = headings.index("name")
         hostname_idx = headings.index("hostname")
     except ValueError as exc:
         raise RuntimeError("required Chassis columns not present in kubectl ko sbctl output") from exc
 
-    out: dict[str, str] = {}
     for row in rows:
         if not isinstance(row, list):
             continue
-        if name_idx >= len(row) or hostname_idx >= len(row):
+        if hostname_idx >= len(row):
             continue
-        name = row[name_idx]
         hostname = row[hostname_idx]
-        if isinstance(name, str) and isinstance(hostname, str):
-            out[name] = hostname
-    return out
+        if isinstance(hostname, str) and hostname:
+            return hostname
+    return chassis_name
 
 
 def get_ovn_edge_nodes(auth: K8sAuth | None = None) -> set[str]:

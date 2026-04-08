@@ -335,12 +335,9 @@ def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
 
 
 def test_get_ovn_logical_router_parses_router_ports(monkeypatch):
-    sbctl_payload = {
-        "headings": ["hostname", "name", "other_config"],
-        "data": [
-            ["gw-1.example.com", "chassis-1", ["map", []]],
-            ["gw-2.example.com", "chassis-2", ["map", []]],
-        ],
+    chassis_payloads = {
+        "name=chassis-1": {"headings": ["hostname"], "data": [["gw-1.example.com"]]},
+        "name=chassis-2": {"headings": ["hostname"], "data": [["gw-2.example.com"]]},
     }
     output = """router 7e4dc0d9-1234-5678-9abc-def012345678 (neutron-router-1)
     port lrp-subnet-1
@@ -360,7 +357,11 @@ def test_get_ovn_logical_router_parses_router_ports(monkeypatch):
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args=args[0],
             returncode=0,
-            stdout=json.dumps(sbctl_payload) if "sbctl" in args[0] else output,
+            stdout=(
+                json.dumps(chassis_payloads[args[0][-1]])
+                if "sbctl" in args[0]
+                else output
+            ),
             stderr="",
         ),
     )

@@ -55,6 +55,16 @@ def _get_audit_log_path() -> str | None:
     return _audit_log_path_getter()
 
 
+def _request_is_secure(request: Request) -> bool:
+    forwarded = request.headers.get("forwarded", "")
+    if forwarded and "proto=https" in forwarded.lower():
+        return True
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if forwarded_proto:
+        return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
+    return request.url.scheme.lower() == "https"
+
+
 @router.get("/")
 async def index(request: Request):
     static_dir, sessions = _require_configured()
@@ -89,7 +99,7 @@ async def api_session(request: Request):
 
 
 @router.post("/api/session")
-async def api_login(payload: LoginPayload, response: Response):
+async def api_login(payload: LoginPayload, request: Request, response: Response):
     _, sessions = _require_configured()
     k8s_auth = _build_k8s_auth(payload.kubernetes)
     openstack_auth = _build_openstack_auth(payload.openstack)
@@ -138,7 +148,7 @@ async def api_login(payload: LoginPayload, response: Response):
         value=session_id,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=_request_is_secure(request),
         max_age=SESSION_TTL,
     )
     server.start_refresh(cached_nodes=initial_nodes)
