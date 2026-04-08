@@ -112,10 +112,6 @@ function returnToLogin() {
   window.location = '/';
 }
 
-function reloadForReconnect() {
-  window.location.reload();
-}
-
 function setAuthenticatedUI(info) {
   authReady = true;
   logoutInProgress = false;
