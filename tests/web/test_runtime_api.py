@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from draino.web import server as web_server
+
+
+def test_normalise_image_digest_handles_kubernetes_image_ids():
+    assert web_server._normalise_image_digest("docker-pullable://ghcr.io/busterswt/draino-claude@sha256:abc123") == "sha256:abc123"
+    assert web_server._normalise_image_digest("sha256:def456") == "sha256:def456"
+    assert web_server._normalise_image_digest("ghcr.io/busterswt/draino-claude:main") is None
+
+
+def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_ghcr_manifest_request",
+        lambda repository_path, reference, token=None: (
+            {
+                "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+                "manifests": [
+                    {"digest": "sha256:child1", "platform": {"os": "linux", "architecture": "amd64"}},
+                    {"digest": "sha256:child2", "platform": {"os": "linux", "architecture": "arm64"}},
+                ],
+            },
+            {"Docker-Content-Digest": "sha256:toplevel"},
+        ),
+    )
+
+    digest = web_server._resolve_remote_track_digest("ghcr.io/busterswt/draino-claude", "main")
+
+    assert digest == "sha256:toplevel"
+
+
+def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
+    monkeypatch.setattr(web_server, "_get_running_image_digest", lambda: None)
+    monkeypatch.setattr(web_server, "_IMAGE_TAG", "0.1.0")
+    monkeypatch.setattr(web_server, "_UPDATE_TRACK", "main")
+    monkeypatch.setattr(web_server, "_IMAGE_REPOSITORY", "ghcr.io/example/draino")
+    monkeypatch.setattr(web_server, "_UPDATE_REPOSITORY", "ghcr.io/upstream/draino")
+    monkeypatch.setattr(
+        web_server,
+        "_resolve_remote_track_digest",
+        lambda repo, ref: {
+            ("ghcr.io/upstream/draino", "0.1.0"): "sha256:old",
+            ("ghcr.io/upstream/draino", "main"): "sha256:new",
+        }[(repo, ref)],
+    )
+
+    status = web_server._compute_update_status()
+
+    assert status["current_digest"] == "sha256:old"
+    assert status["current_digest_source"] == "image_tag"
+    assert status["latest_digest"] == "sha256:new"
+    assert status["update_available"] is True
+    assert status["update_repository"] == "ghcr.io/upstream/draino"
+
+
+def test_health_and_readiness_endpoints():
+    with TestClient(web_server.fastapi_app) as client:
+        health = client.get("/healthz")
+        ready = client.get("/readyz")
+
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+    assert ready.status_code == 200
+    assert ready.json() == {"status": "ready"}
+
+
+def test_app_meta_endpoint_returns_update_status(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server,
+        "_get_app_update_status",
+        lambda force=False: {
+            "current_tag": "0.1.0",
+            "current_digest": "sha256:111",
+            "track": "main",
+            "latest_digest": "sha256:222",
+            "update_available": True,
+            "update_url": "https://example.com/update",
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        meta = client.get("/api/app-meta")
+
+    assert meta.status_code == 200
+    assert meta.json()["update_available"] is True
+    assert meta.json()["track"] == "main"
+
+
+def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_get_public_version_status",
+        lambda: {
+            "current_digest": "sha256:1234567890abcdef",
+            "short_sha": "1234567890ab",
+            "current_tag": "main",
+            "current_digest_source": "running_pod",
+        },
+    )
+
+    with TestClient(web_server.fastapi_app) as client:
+        version = client.get("/api/version")
+
+    assert version.status_code == 200
+    assert version.json()["short_sha"] == "1234567890ab"
+
+
+def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server,
+        "_get_app_runtime",
+        lambda: {
+            "current": {"cpu_percent": 12.5, "rss_bytes": 104857600, "timestamp": 1000.0},
+            "history": [{"cpu_percent": 5.0, "rss_bytes": 52428800, "timestamp": 900.0}],
+            "requests": {"cpu": "250m", "memory": "512Mi"},
+            "limits": {"cpu": "1", "memory": "1Gi"},
+            "restart_count": 1,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        runtime = client.get("/api/app-runtime")
+
+    assert runtime.status_code == 200
+    assert runtime.json()["current"]["cpu_percent"] == 12.5
+    assert runtime.json()["limits"]["memory"] == "1Gi"
