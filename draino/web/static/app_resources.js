@@ -536,6 +536,15 @@ function closeRouterDetail() {
   document.querySelectorAll('#router-wrap tr[data-router-id]').forEach(r => r.classList.remove('selected'));
 }
 
+async function openNetworkFromRouterPeer(portId) {
+  const connected = routerDetailState.data?.connected_subnets || [];
+  const match = connected.find(item => item.port_id === portId && item.network_id);
+  if (!match) return;
+  switchView('networking');
+  if (!netState.data && !netState.loading) await loadNetworks();
+  selectNetwork(match.network_id);
+}
+
 function renderRouterDetail() {
   const wrap = document.getElementById('router-detail-wrap');
   if (routerDetailState.loading) {
@@ -551,6 +560,11 @@ function renderRouterDetail() {
 
   const stCls = rd.status === 'ACTIVE' ? 'st-active' : rd.status === 'DOWN' ? 'st-down' : 'st-error';
   const gateway = rd.external_gateway || {};
+  const peerNetworkByPortId = {};
+  for (const subnet of (rd.connected_subnets || [])) {
+    if (!subnet.port_id || !subnet.network_id) continue;
+    if (!peerNetworkByPortId[subnet.port_id]) peerNetworkByPortId[subnet.port_id] = subnet;
+  }
   let h = `<div class="net-detail-inner">
     <div class="net-detail-head">
       <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(rd.name)}</strong>
@@ -641,12 +655,18 @@ function renderRouterDetail() {
       h += `<div style="padding:0">
         <table class="data-table" style="font-size:11px">
           <thead><tr><th>Port</th><th>MAC</th><th>Networks</th><th>Peer</th></tr></thead>
-          <tbody>${lr.ports.map(port => `<tr>
+          <tbody>${lr.ports.map(port => {
+            const peerMatch = peerNetworkByPortId[port.peer || ''];
+            const peerCell = peerMatch
+              ? `<a href="#" onclick="event.preventDefault();openNetworkFromRouterPeer('${escAttr(port.peer || '')}')">${esc(port.peer || '')}</a>`
+              : (esc(port.peer || port.gateway_chassis || '') || '—');
+            return `<tr>
             <td style="font-family:monospace;font-size:10px">${esc(port.id || '')}</td>
             <td style="font-family:monospace;font-size:10px">${esc(port.mac || '') || '—'}</td>
             <td style="font-family:monospace;font-size:10px">${esc((port.networks || []).join(', ')) || '—'}</td>
-            <td style="font-family:monospace;font-size:10px">${esc(port.peer || port.gateway_chassis || '') || '—'}</td>
-          </tr>`).join('')}</tbody>
+            <td style="font-family:monospace;font-size:10px">${peerCell}</td>
+          </tr>`;
+          }).join('')}</tbody>
         </table>
       </div>`;
     } else {
