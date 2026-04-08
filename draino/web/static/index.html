@@ -1695,7 +1695,7 @@ function taintLabel(t) {
 
 function treeItemHtml(name, nd) {
   const sel     = name === selectedNode ? ' selected' : '';
-  const ico     = nd.is_compute ? '🖥️' : nd.is_etcd ? '🔵' : '⚙️';
+  const ico     = nd.is_compute ? '🖥️' : nd.is_etcd ? '☣️' : '⚙️';
   const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
   const dot     = phaseColor(nd);
   const etcBdg  = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
@@ -1978,7 +1978,7 @@ function clearObjHeader() {
 }
 
 function renderObjHeader(nd) {
-  document.getElementById('oh-icon').textContent = nd.is_compute ? '🖥️' : nd.is_etcd ? '🔵' : '⚙️';
+  document.getElementById('oh-icon').textContent = nd.is_compute ? '🖥️' : nd.is_etcd ? '☣️' : '⚙️';
   document.getElementById('oh-name').textContent = nd.k8s_name;
 
   const parts = [];
