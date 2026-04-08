@@ -146,7 +146,7 @@ def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
 
 
 def get_mariadb_node_names(auth: K8sAuth | None = None) -> set[str]:
-    """Return node names currently hosting MariaDB/Galera pods."""
+    """Return node names currently hosting mariadb-cluster pods."""
     v1 = client.CoreV1Api(_api_client(auth))
     result: set[str] = set()
     raw = v1.list_pod_for_all_namespaces()
@@ -154,24 +154,18 @@ def get_mariadb_node_names(auth: K8sAuth | None = None) -> set[str]:
     def _looks_like_mariadb(pod) -> bool:
         labels = pod.metadata.labels or {}
         pod_name = (pod.metadata.name or "").lower()
+        instance_label = str(labels.get("app.kubernetes.io/instance", "")).lower()
         label_values = " ".join(str(value).lower() for value in labels.values())
-        images = " ".join((container.image or "").lower() for container in (pod.spec.containers or []))
-        haystack = " ".join(part for part in (pod_name, label_values, images) if part)
+        haystack = " ".join(part for part in (pod_name, label_values) if part)
 
         # Backup and restore jobs often reuse MariaDB images/labels but should
         # not mark the node as hosting the active cluster.
         if any(token in haystack for token in ("backup", "restore")):
             return False
 
-        if "mariadb-cluster" in haystack:
+        if instance_label == "mariadb-cluster":
             return True
-        if "galera" in haystack:
-            return True
-        for container in (pod.spec.containers or []):
-            image = (container.image or "").lower()
-            if "mariadb" in image:
-                return True
-        return False
+        return "mariadb-cluster" in pod_name
 
     for pod in raw.items:
         if pod.status.phase in ("Succeeded", "Failed"):

@@ -91,7 +91,7 @@ def test_get_node_host_signals_uses_node_agent(monkeypatch):
     assert result["reboot_required"] is True
 
 
-def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
+def test_get_mariadb_node_names_only_matches_mariadb_cluster_pods(monkeypatch):
     pods = [
         SimpleNamespace(
             metadata=SimpleNamespace(name="mariadb-cluster-0", labels={}, namespace="openstack"),
@@ -99,18 +99,18 @@ def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
             status=SimpleNamespace(phase="Running"),
         ),
         SimpleNamespace(
-            metadata=SimpleNamespace(name="db-0", labels={"app.kubernetes.io/name": "mariadb-cluster"}, namespace="openstack"),
+            metadata=SimpleNamespace(name="db-0", labels={"app.kubernetes.io/instance": "mariadb-cluster"}, namespace="openstack"),
             spec=SimpleNamespace(node_name="node-b", containers=[]),
             status=SimpleNamespace(phase="Running"),
         ),
         SimpleNamespace(
-            metadata=SimpleNamespace(name="galera-helper", labels={}, namespace="openstack"),
-            spec=SimpleNamespace(node_name="node-c", containers=[SimpleNamespace(image="quay.io/example/galera:latest")]),
+            metadata=SimpleNamespace(name="mariadb-operator-0", labels={"app.kubernetes.io/name": "mariadb-operator"}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-c", containers=[SimpleNamespace(image="quay.io/example/mariadb-operator:latest")]),
             status=SimpleNamespace(phase="Running"),
         ),
         SimpleNamespace(
-            metadata=SimpleNamespace(name="rabbitmq-0", labels={}, namespace="openstack"),
-            spec=SimpleNamespace(node_name="node-d", containers=[SimpleNamespace(image="rabbitmq:3")]),
+            metadata=SimpleNamespace(name="galera-helper", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-d", containers=[SimpleNamespace(image="quay.io/example/galera:latest")]),
             status=SimpleNamespace(phase="Running"),
         ),
         SimpleNamespace(
@@ -121,6 +121,11 @@ def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
         SimpleNamespace(
             metadata=SimpleNamespace(name="mariadb-restore-0", labels={}, namespace="openstack"),
             spec=SimpleNamespace(node_name="node-f", containers=[SimpleNamespace(image="quay.io/example/mariadb-restore:latest")]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="db-1", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-g", containers=[SimpleNamespace(image="mariadb:11")]),
             status=SimpleNamespace(phase="Running"),
         ),
     ]
@@ -137,7 +142,7 @@ def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
 
     result = k8s_ops.get_mariadb_node_names()
 
-    assert result == {"node-a", "node-b", "node-c"}
+    assert result == {"node-a", "node-b"}
 
 
 def test_get_node_monitor_metrics_uses_node_agent(monkeypatch):
