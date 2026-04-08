@@ -76,6 +76,7 @@ _OVN_EDGE_TTL = float(os.getenv("DRAINO_OVN_EDGE_TTL", "60"))
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
 _IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
 _IMAGE_TAG = os.getenv("DRAINO_IMAGE_TAG", "main")
+_UPDATE_REPOSITORY = os.getenv("DRAINO_UPDATE_REPOSITORY", _IMAGE_REPOSITORY)
 _UPDATE_TRACK = os.getenv("DRAINO_UPDATE_TRACK", "main")
 _UPDATE_URL = os.getenv(
     "DRAINO_UPDATE_URL",
@@ -233,19 +234,27 @@ def _get_running_image_digest() -> str | None:
 
 def _compute_update_status() -> dict:
     current_digest = _get_running_image_digest()
+    current_tag_digest = None
     latest_digest = None
     error = None
     try:
-        latest_digest = _resolve_remote_track_digest(_IMAGE_REPOSITORY, _UPDATE_TRACK)
+        latest_digest = _resolve_remote_track_digest(_UPDATE_REPOSITORY, _UPDATE_TRACK)
+        if current_digest is None and _IMAGE_TAG:
+            current_tag_digest = _resolve_remote_track_digest(_UPDATE_REPOSITORY, _IMAGE_TAG)
     except Exception as exc:  # pragma: no cover - network failure path
         error = str(exc)
         _LOGGER.warning("failed to resolve upstream image digest: %s", exc)
 
-    update_available = bool(current_digest and latest_digest and current_digest != latest_digest)
+    effective_current_digest = current_digest or current_tag_digest
+    update_available = bool(
+        effective_current_digest and latest_digest and effective_current_digest != latest_digest
+    )
     return {
         "image_repository": _IMAGE_REPOSITORY,
+        "update_repository": _UPDATE_REPOSITORY,
         "current_tag": _IMAGE_TAG,
-        "current_digest": current_digest,
+        "current_digest": effective_current_digest,
+        "current_digest_source": "running_pod" if current_digest else ("image_tag" if current_tag_digest else None),
         "track": _UPDATE_TRACK,
         "latest_digest": latest_digest,
         "update_available": update_available,

@@ -94,6 +94,30 @@ def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch)
     assert digest == "sha256:toplevel"
 
 
+def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
+    monkeypatch.setattr(web_server, "_get_running_image_digest", lambda: None)
+    monkeypatch.setattr(web_server, "_IMAGE_TAG", "0.1.0")
+    monkeypatch.setattr(web_server, "_UPDATE_TRACK", "main")
+    monkeypatch.setattr(web_server, "_IMAGE_REPOSITORY", "ghcr.io/example/draino")
+    monkeypatch.setattr(web_server, "_UPDATE_REPOSITORY", "ghcr.io/upstream/draino")
+    monkeypatch.setattr(
+        web_server,
+        "_resolve_remote_track_digest",
+        lambda repo, ref: {
+            ("ghcr.io/upstream/draino", "0.1.0"): "sha256:old",
+            ("ghcr.io/upstream/draino", "main"): "sha256:new",
+        }[(repo, ref)],
+    )
+
+    status = web_server._compute_update_status()
+
+    assert status["current_digest"] == "sha256:old"
+    assert status["current_digest_source"] == "image_tag"
+    assert status["latest_digest"] == "sha256:new"
+    assert status["update_available"] is True
+    assert status["update_repository"] == "ghcr.io/upstream/draino"
+
+
 def test_root_serves_login_when_unauthenticated():
     with TestClient(web_server.fastapi_app) as client:
         resp = client.get("/")
