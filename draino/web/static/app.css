@@ -263,9 +263,27 @@ body {
 .tree-dot.cyan    { background: #80deea; animation: pulse 1.2s ease-in-out infinite; }
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; background: var(--blue-bg); color: var(--blue); font-weight: 500; }
 .tree-badge.warn { background: #fff8e1; color: #e65100; }
-.tree-badge.etcd { background: #ffebee; color: var(--red); font-weight: 700; }
-.tree-badge.edge { background: #e8f5e9; color: #1b5e20; font-weight: 700; }
-.tree-badge.mariadb { background: #fce4ec; color: #ad1457; font-weight: 700; }
+.tree-badge.etcd {
+  background: #880e4f;
+  color: #fff;
+  font-weight: 800;
+  border: 1px solid #560027;
+  box-shadow: 0 0 0 1px rgba(136, 14, 79, 0.2);
+}
+.tree-badge.edge {
+  background: #0d47a1;
+  color: #fff;
+  font-weight: 800;
+  border: 1px solid #002171;
+  box-shadow: 0 0 0 1px rgba(13, 71, 161, 0.2);
+}
+.tree-badge.mariadb {
+  background: #1b5e20;
+  color: #fff;
+  font-weight: 800;
+  border: 1px solid #003300;
+  box-shadow: 0 0 0 1px rgba(27, 94, 32, 0.2);
+}
 .tree-badge.agg  { background: #e8f5e9; color: var(--green); font-weight: 400; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-badge.nosched { background: #ffebee; color: var(--red); font-weight: 700; }
 .tree-badge.noagent {

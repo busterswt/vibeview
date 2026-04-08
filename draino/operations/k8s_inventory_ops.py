@@ -153,17 +153,23 @@ def get_mariadb_node_names(auth: K8sAuth | None = None) -> set[str]:
 
     def _looks_like_mariadb(pod) -> bool:
         labels = pod.metadata.labels or {}
-        label_values = " ".join(str(value).lower() for value in labels.values())
-        if "mariadb" in label_values or "galera" in label_values:
-            return True
-
         pod_name = (pod.metadata.name or "").lower()
-        if "mariadb" in pod_name or "galera" in pod_name:
-            return True
+        label_values = " ".join(str(value).lower() for value in labels.values())
+        images = " ".join((container.image or "").lower() for container in (pod.spec.containers or []))
+        haystack = " ".join(part for part in (pod_name, label_values, images) if part)
 
+        # Backup and restore jobs often reuse MariaDB images/labels but should
+        # not mark the node as hosting the active cluster.
+        if any(token in haystack for token in ("backup", "restore")):
+            return False
+
+        if "mariadb-cluster" in haystack:
+            return True
+        if "galera" in haystack:
+            return True
         for container in (pod.spec.containers or []):
             image = (container.image or "").lower()
-            if "mariadb" in image or "galera" in image:
+            if "mariadb" in image:
                 return True
         return False
 

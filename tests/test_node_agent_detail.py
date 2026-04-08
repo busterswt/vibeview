@@ -94,12 +94,12 @@ def test_get_node_host_signals_uses_node_agent(monkeypatch):
 def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
     pods = [
         SimpleNamespace(
-            metadata=SimpleNamespace(name="mariadb-server-0", labels={}, namespace="openstack"),
+            metadata=SimpleNamespace(name="mariadb-cluster-0", labels={}, namespace="openstack"),
             spec=SimpleNamespace(node_name="node-a", containers=[]),
             status=SimpleNamespace(phase="Running"),
         ),
         SimpleNamespace(
-            metadata=SimpleNamespace(name="db-0", labels={"app.kubernetes.io/name": "mariadb"}, namespace="openstack"),
+            metadata=SimpleNamespace(name="db-0", labels={"app.kubernetes.io/name": "mariadb-cluster"}, namespace="openstack"),
             spec=SimpleNamespace(node_name="node-b", containers=[]),
             status=SimpleNamespace(phase="Running"),
         ),
@@ -111,6 +111,16 @@ def test_get_mariadb_node_names_matches_pod_name_label_and_image(monkeypatch):
         SimpleNamespace(
             metadata=SimpleNamespace(name="rabbitmq-0", labels={}, namespace="openstack"),
             spec=SimpleNamespace(node_name="node-d", containers=[SimpleNamespace(image="rabbitmq:3")]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="mariadb-backup-0", labels={"app.kubernetes.io/name": "mariadb-cluster-backup"}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-e", containers=[SimpleNamespace(image="mariadb:11")]),
+            status=SimpleNamespace(phase="Running"),
+        ),
+        SimpleNamespace(
+            metadata=SimpleNamespace(name="mariadb-restore-0", labels={}, namespace="openstack"),
+            spec=SimpleNamespace(node_name="node-f", containers=[SimpleNamespace(image="quay.io/example/mariadb-restore:latest")]),
             status=SimpleNamespace(phase="Running"),
         ),
     ]
