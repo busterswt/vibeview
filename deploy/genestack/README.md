@@ -63,7 +63,7 @@ helm upgrade --install draino ./charts/draino \
 
 ```bash
 kubectl -n draino rollout status deployment/draino
-kubectl -n draino rollout status daemonset/draino-node-agent
+kubectl -n draino rollout status daemonset/draino-trustmebro-agent
 kubectl -n draino get pods -o wide
 ```
 
@@ -72,7 +72,7 @@ to force a fresh pull on every node:
 
 ```bash
 kubectl -n draino rollout restart deployment/draino
-kubectl -n draino rollout restart daemonset/draino-node-agent
+kubectl -n draino rollout restart daemonset/draino-trustmebro-agent
 ```
 
 ## New Gateway listener

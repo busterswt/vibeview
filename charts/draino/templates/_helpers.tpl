@@ -58,7 +58,7 @@ Service account name.
 Node agent resource names.
 */}}
 {{- define "draino.nodeAgentName" -}}
-{{- printf "%s-node-agent" (include "draino.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-trustmebro-agent" (include "draino.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "draino.nodeAgentSecretName" -}}

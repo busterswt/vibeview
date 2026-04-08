@@ -18,7 +18,7 @@ from kubernetes.config.config_exception import ConfigException
 @dataclass(slots=True)
 class NodeAgentConfig:
     namespace: str = "default"
-    service_name: str = "draino-node-agent"
+    service_name: str = "trustmebro-agent"
     label_selector: str = ""
     port: int = 8443
     ca_file: str = ""
@@ -38,7 +38,7 @@ def enabled() -> bool:
 def load_config_from_env() -> NodeAgentConfig:
     return NodeAgentConfig(
         namespace=os.getenv("DRAINO_NODE_AGENT_NAMESPACE", "default"),
-        service_name=os.getenv("DRAINO_NODE_AGENT_SERVICE_NAME", "draino-node-agent"),
+        service_name=os.getenv("DRAINO_NODE_AGENT_SERVICE_NAME", "trustmebro-agent"),
         label_selector=os.getenv("DRAINO_NODE_AGENT_LABEL_SELECTOR", ""),
         port=int(os.getenv("DRAINO_NODE_AGENT_PORT", "8443")),
         ca_file=os.getenv("DRAINO_NODE_AGENT_CA_FILE", ""),

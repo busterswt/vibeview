@@ -325,7 +325,7 @@ def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, 
         "/host/etcd",
         agent_config=node_agent_client.NodeAgentConfig(
             namespace="draino",
-            service_name="draino-node-agent",
+            service_name="trustmebro-agent",
             label_selector="app=node-agent",
             port=8443,
             ca_file=str(ca_file),
@@ -365,7 +365,7 @@ def test_discover_agent_pod_host_uses_cache_until_ttl(monkeypatch):
     monkeypatch.setattr(node_agent_client.config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(node_agent_client.client, "CoreV1Api", lambda: FakeCore())
 
-    cfg = node_agent_client.NodeAgentConfig(namespace="draino", label_selector="app=node-agent", endpoint_ttl=30.0)
+    cfg = node_agent_client.NodeAgentConfig(namespace="draino", service_name="trustmebro-agent", label_selector="app=node-agent", endpoint_ttl=30.0)
 
     first = node_agent_client._discover_agent_pod_host("node-1", cfg)
     second = node_agent_client._discover_agent_pod_host("node-1", cfg)
@@ -401,7 +401,7 @@ def test_discover_agent_pod_host_refreshes_after_ttl(monkeypatch):
     monkeypatch.setattr(node_agent_client.config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(node_agent_client.client, "CoreV1Api", lambda: FakeCore())
 
-    cfg = node_agent_client.NodeAgentConfig(namespace="draino", label_selector="app=node-agent", endpoint_ttl=30.0)
+    cfg = node_agent_client.NodeAgentConfig(namespace="draino", service_name="trustmebro-agent", label_selector="app=node-agent", endpoint_ttl=30.0)
 
     first = node_agent_client._discover_agent_pod_host("node-1", cfg)
     second = node_agent_client._discover_agent_pod_host("node-1", cfg)
@@ -438,6 +438,7 @@ def test_request_json_invalidates_cached_host_on_url_error(monkeypatch, tmp_path
             "/host/etcd",
             agent_config=node_agent_client.NodeAgentConfig(
                 namespace="draino",
+                service_name="trustmebro-agent",
                 label_selector="app=node-agent",
                 port=8443,
                 ca_file=str(ca_file),
