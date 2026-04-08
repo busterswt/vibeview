@@ -383,15 +383,63 @@ def get_instances_preflight(
     """
     conn = _conn(auth=auth)
     servers = _servers_on_host(conn, hypervisor)
+    flavor_cache: dict[str, dict] = {}
+
+    def _field(source, *names):
+        if source is None:
+            return None
+        if isinstance(source, dict):
+            for name in names:
+                value = source.get(name)
+                if value not in (None, ""):
+                    return value
+            return None
+        for name in names:
+            value = getattr(source, name, None)
+            if value not in (None, ""):
+                return value
+        return None
+
+    def _get_flavor_data(server) -> dict:
+        server_data = server.to_dict() if hasattr(server, "to_dict") else {}
+        flavor_ref = getattr(server, "flavor", None) or server_data.get("flavor") or {}
+        flavor_id = _field(flavor_ref, "id") or ""
+        flavor_name = _field(flavor_ref, "original_name", "name") or ""
+        flavor_data = {
+            "name": flavor_name or flavor_id,
+            "vcpus": None,
+            "ram_mb": None,
+        }
+        if not flavor_id:
+            return flavor_data
+        cached = flavor_cache.get(flavor_id)
+        if cached is not None:
+            return dict(cached)
+        try:
+            flavor = conn.compute.get_flavor(flavor_id)
+        except Exception:
+            flavor = None
+        if flavor is not None:
+            flavor_data = {
+                "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
+                "vcpus": getattr(flavor, "vcpus", None),
+                "ram_mb": getattr(flavor, "ram", None),
+            }
+        flavor_cache[flavor_id] = dict(flavor_data)
+        return dict(flavor_data)
+
     result = []
     for s in servers:
         name = s.name or s.id
+        flavor = _get_flavor_data(s)
         result.append({
             "id":               s.id,
             "name":             name,
             "status":           s.status,
             "is_amphora":       name.startswith("amphora-"),
             "is_volume_backed": not s.image,  # {} or None → booted from volume
+            "vcpus":            flavor.get("vcpus"),
+            "ram_mb":           flavor.get("ram_mb"),
         })
     return result
 
@@ -406,13 +454,25 @@ def get_instance_network_detail(
     if server is None:
         raise RuntimeError(f"No server found with id '{instance_id}'")
 
+    def _field(source, *names):
+        if source is None:
+            return None
+        if isinstance(source, dict):
+            for name in names:
+                value = source.get(name)
+                if value not in (None, ""):
+                    return value
+            return None
+        for name in names:
+            value = getattr(source, name, None)
+            if value not in (None, ""):
+                return value
+        return None
+
     server_data = server.to_dict() if hasattr(server, "to_dict") else {}
     flavor_ref = getattr(server, "flavor", None) or server_data.get("flavor") or {}
-    flavor_id = ""
-    flavor_name = ""
-    if isinstance(flavor_ref, dict):
-        flavor_id = flavor_ref.get("id") or ""
-        flavor_name = flavor_ref.get("original_name") or flavor_ref.get("name") or ""
+    flavor_id = _field(flavor_ref, "id") or ""
+    flavor_name = _field(flavor_ref, "original_name", "name") or ""
 
     flavor_data: dict = {
         "id": flavor_id,

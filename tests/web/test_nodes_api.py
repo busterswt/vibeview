@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from draino.models import NodeState
 from draino.operations import k8s_ops
@@ -232,6 +233,102 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["instance"]["flavor"]["name"] == "m1.large"
     assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
     assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
+
+
+def test_instance_network_detail_reads_flavor_from_object_reference(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = SimpleNamespace(id="flavor-1", original_name="m1.large")
+
+        def to_dict(self):
+            return {"OS-EXT-AZ:availability_zone": "nova"}
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            assert flavor_id == "flavor-1"
+            return SimpleNamespace(
+                id="flavor-1",
+                name="m1.large",
+                vcpus=4,
+                ram=8192,
+                disk=40,
+                ephemeral=20,
+                swap=0,
+            )
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None):
+            assert device_id == "vm-1"
+            return []
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["flavor"]["name"] == "m1.large"
+    assert detail["flavor"]["vcpus"] == 4
+    assert detail["flavor"]["ram_mb"] == 8192
+    assert detail["flavor"]["disk_gb"] == 40
+    assert detail["flavor"]["ephemeral_gb"] == 20
+
+
+def test_get_instances_preflight_includes_flavor_sizing(monkeypatch):
+    class FakeServer:
+        def __init__(self, instance_id, name, flavor_id):
+            self.id = instance_id
+            self.name = name
+            self.status = "ACTIVE"
+            self.image = {"id": "img-1"}
+            self.flavor = SimpleNamespace(id=flavor_id, original_name=f"{flavor_id}-name")
+
+    class FakeCompute:
+        calls = []
+
+        @classmethod
+        def get_flavor(cls, flavor_id):
+            cls.calls.append(flavor_id)
+            return SimpleNamespace(
+                id=flavor_id,
+                name=f"{flavor_id}-name",
+                vcpus=4 if flavor_id == "flavor-1" else 8,
+                ram=8192 if flavor_id == "flavor-1" else 16384,
+            )
+
+    class FakeConn:
+        compute = FakeCompute()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "_servers_on_host",
+        lambda conn, hypervisor: [
+            FakeServer("vm-1", "vm-1", "flavor-1"),
+            FakeServer("vm-2", "vm-2", "flavor-1"),
+            FakeServer("vm-3", "vm-3", "flavor-2"),
+        ],
+    )
+
+    items = web_server.openstack_ops.get_instances_preflight("hv-a")
+
+    assert items[0]["vcpus"] == 4
+    assert items[0]["ram_mb"] == 8192
+    assert items[2]["vcpus"] == 8
+    assert items[2]["ram_mb"] == 16384
+    assert FakeCompute.calls == ["flavor-1", "flavor-2"]
 
 
 def test_patch_managed_noschedule_taint_endpoint(monkeypatch):

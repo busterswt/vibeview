@@ -918,11 +918,13 @@ function renderInstancesTab(nd) {
     } else if (nd.preflight_instances?.length) {
       h += `<table class="data-table" id="inst-data-table">
         <thead><tr>
-          <th>Name</th><th>Status</th><th>Type</th><th>Storage <span class="hint">Datastore</span></th><th>Action</th>
+          <th>Name</th><th>Status</th><th>Type</th><th>vCPU</th><th>Memory</th><th>Storage <span class="hint">Datastore</span></th><th>Action</th>
         </tr></thead><tbody>`;
       for (const i of nd.preflight_instances) {
         const tp = i.is_amphora ? `<span class="tag-amp">Amphora LB</span>` : 'VM';
         const st = i.is_volume_backed ? `<span class="tag-vol">Volume</span>` : `<span class="tag-eph">Ephemeral</span>`;
+        const vcpu = i.vcpus != null ? esc(String(i.vcpus)) : '—';
+        const memory = i.ram_mb != null ? esc(`${Math.round(i.ram_mb / 1024)} GB`) : '—';
         const ms = instanceMigrateStates[i.id];
         const detailsLabel = expandedId === i.id ? '▾ Details' : '▸ Details';
         let action = '';
@@ -936,7 +938,7 @@ function renderInstancesTab(nd) {
             actions.push(`<button class="btn" style="font-size:11px" onclick="migrateInstance('${escAttr(i.id)}')">↗ Migrate</button>`);
         }
         action = `<div style="display:flex;gap:6px;flex-wrap:wrap">${actions.join('')}</div>`;
-        h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${st}</td><td>${action}</td></tr>`;
+        h += `<tr><td>${esc(i.name)}</td><td><span class="sdot green"></span>${esc(i.status)}</td><td>${tp}</td><td>${vcpu}</td><td>${memory}</td><td>${st}</td><td>${action}</td></tr>`;
       }
       h += `</tbody></table>`;
       if (expandedId) h += renderInstanceDetailPanel(nd.k8s_name, expandedId);
