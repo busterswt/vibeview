@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeView / Session Lost Mockup</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --vc-navy: #1a2332;
+  --vc-blue: #0072c6;
+  --vc-blue-lt: #1e88e5;
+  --vc-blue-bg: #e3f2fd;
+  --vc-border: #d1d9e0;
+  --vc-text: #1a2332;
+  --vc-dim: #607d8b;
+  --vc-white: #ffffff;
+  --vc-gray: #f0f2f5;
+  --vc-soft: #f7f9fb;
+  --red: #b71c1c;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--vc-text);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(30,136,229,0.10), transparent 26%),
+    radial-gradient(circle at bottom left, rgba(0,114,198,0.12), transparent 24%),
+    linear-gradient(180deg, #f6f9fc 0%, #edf2f6 100%);
+}
+
+.app-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  height: 42px;
+  background: var(--vc-navy);
+  border-bottom: 2px solid var(--vc-blue);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.brand-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--vc-blue);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.logo-sub {
+  color: #90a4ae;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.top-right {
+  margin-left: auto;
+  color: #90a4ae;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#sub-bar {
+  height: 34px;
+  background: white;
+  border-bottom: 1px solid var(--vc-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  color: var(--vc-dim);
+  font-size: 12px;
+}
+
+.sub-status {
+  color: var(--red);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.shell {
+  min-height: calc(100vh - 76px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 22px;
+}
+
+.auth-shell {
+  width: min(1080px, calc(100vw - 44px));
+  background: var(--vc-white);
+  border: 1px solid var(--vc-border);
+  border-top: 3px solid var(--vc-blue);
+  border-radius: 4px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.22);
+}
+
+.auth-head {
+  padding: 16px 22px 14px;
+  border-bottom: 1px solid var(--vc-border);
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+}
+
+.auth-head-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.auth-brand-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--vc-blue);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 900;
+  color: white;
+}
+
+.auth-brand {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--vc-text);
+  line-height: 1.15;
+}
+
+.auth-kicker {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vc-dim);
+  margin-top: 2px;
+}
+
+.auth-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vc-dim);
+  margin-bottom: 4px;
+}
+
+.auth-sub {
+  font-size: 12px;
+  color: var(--vc-dim);
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  padding: 18px 22px 18px;
+}
+
+.auth-panel {
+  border: 1px solid var(--vc-border);
+  border-radius: 4px;
+  background: var(--vc-white);
+  overflow: hidden;
+}
+
+.auth-panel-head {
+  padding: 8px 14px;
+  background: var(--vc-gray);
+  border-bottom: 1px solid var(--vc-border);
+}
+
+.auth-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vc-dim);
+}
+
+.auth-panel-sub { font-size: 11px; color: var(--vc-dim); margin-top: 2px; }
+.tree-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--vc-blue-bg);
+  color: var(--vc-blue);
+  font-weight: 500;
+}
+.tree-badge.red {
+  background: #ffebee;
+  color: var(--red);
+  font-weight: 700;
+}
+
+.auth-panel-body { padding: 14px; display: grid; gap: 12px; }
+
+.node-list {
+  display: grid;
+  gap: 6px;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--vc-border);
+  border-radius: 3px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.node.active {
+  background: #eef6ff;
+  border-color: #9fc5ea;
+}
+
+.node-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-card {
+  border: 1px solid var(--vc-border);
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.status-card-head {
+  padding: 8px 14px;
+  background: var(--vc-gray);
+  border-bottom: 1px solid var(--vc-border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vc-dim);
+}
+
+.status-card-body {
+  padding: 14px;
+}
+
+.detail-box {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--vc-blue);
+  background: #f7fafc;
+  color: #37474f;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.detail-box strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--vc-text);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 7px 12px;
+  border: 1px solid var(--vc-border);
+  background: var(--vc-white);
+  border-radius: 3px;
+  cursor: default;
+  font-size: 12px;
+  color: var(--vc-text);
+  font-family: inherit;
+}
+
+.btn.primary {
+  background: var(--vc-blue);
+  color: white;
+  border-color: var(--vc-blue);
+}
+
+.help {
+  color: var(--vc-dim);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(rgba(26, 35, 50, 0.78), rgba(26, 35, 50, 0.78)),
+    radial-gradient(circle at top right, rgba(30,136,229,0.16), transparent 32%);
+  backdrop-filter: blur(4px);
+}
+
+@media (max-width: 900px) {
+  .auth-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+  <div class="app-shell" aria-hidden="true">
+    <div id="top-bar">
+      <div class="logo">
+        <div class="brand-icon">D</div>
+        <div>
+          <div>VibeView</div>
+          <div class="logo-sub">Flushing Cloud Infrastructure Since 2026</div>
+        </div>
+      </div>
+      <div class="top-right">Infrastructure</div>
+    </div>
+
+    <div id="sub-bar">
+      <span>Session state requires attention before the UI can resume.</span>
+      <span class="sub-status">Reconnecting…</span>
+    </div>
+
+    <div class="shell">
+      <div class="auth-shell" aria-hidden="true">
+        <div class="auth-head">
+          <div class="auth-head-brand">
+            <div class="auth-brand-icon">D</div>
+            <div>
+              <div class="auth-brand">VibeView</div>
+              <div class="auth-kicker">Session recovery mockup using the authentication page theme</div>
+            </div>
+          </div>
+          <div class="auth-title">Background View</div>
+          <div class="auth-sub">The existing application remains visually present but inaccessible until the session is recreated.</div>
+        </div>
+
+        <div class="auth-grid">
+          <div class="auth-panel">
+            <div class="auth-panel-head">
+              <div>
+                <div class="auth-panel-title">Navigator</div>
+                <div class="auth-panel-sub">Infrastructure</div>
+              </div>
+            </div>
+            <div class="auth-panel-body">
+              <div class="node-list">
+                <div class="node active"><span>🖥️</span><span class="node-name">compute01.cluster.local</span><span class="tree-badge red">NoAgent</span></div>
+                <div class="node"><span>🖥️</span><span class="node-name">compute02.cluster.local</span></div>
+                <div class="node"><span>🔵</span><span class="node-name">control01.cluster.local</span></div>
+                <div class="node"><span>⚙️</span><span class="node-name">network01.cluster.local</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-card">
+            <div class="status-card-head">Selected Node</div>
+            <div class="status-card-body">
+              <div class="detail-box">
+                <strong>compute01.cluster.local</strong>
+                Lightweight node metrics, host status, and operational details would normally render here.
+              </div>
+              <div class="detail-box">
+                <strong>Why the background is obscured</strong>
+                The overlay prevents operators from interacting with stale state after the web pod or session has been replaced.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="session-expired-title">
+    <div class="auth-shell" style="width:min(760px, calc(100vw - 44px))">
+      <div class="auth-head">
+        <div class="auth-head-brand">
+          <div class="auth-brand-icon">D</div>
+          <div>
+            <div class="auth-brand">Reconnect Required</div>
+            <div class="auth-kicker">The current VibeView session cannot be resumed.</div>
+          </div>
+        </div>
+        <div class="auth-title">Session Lost</div>
+        <div class="auth-sub">Your live connection to the VibeView web pod was interrupted. A new login is required before the UI can continue.</div>
+      </div>
+
+      <div class="auth-grid" style="grid-template-columns: 1fr">
+        <div class="auth-panel">
+          <div class="auth-panel-head">
+            <div>
+              <div class="auth-panel-title">What Happened</div>
+              <div class="auth-panel-sub">Common after a Helm upgrade, rollout, or web pod restart</div>
+            </div>
+          </div>
+          <div class="auth-panel-body">
+            <div class="detail-box">
+              <strong>Session state is no longer valid</strong>
+              The web UI cannot safely reconnect to the previous session after the connection is lost. Operators need to sign in again so VibeView can build a fresh server-side session.
+            </div>
+
+            <div class="actions">
+              <button class="btn primary">Return to Login</button>
+              <button class="btn">Reload Page</button>
+            </div>
+
+            <div class="help">
+              If a deployment was just updated, return to the login page and create a new session. The background remains obscured until that happens.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
