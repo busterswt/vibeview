@@ -38,12 +38,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional
 
 import uvicorn
-import yaml
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -61,12 +59,26 @@ from pydantic import BaseModel
 from .. import node_agent_client
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
+from .api import auth as auth_api
+from .api import runtime as runtime_api
+from .auth_builders import (
+    K8sLoginPayload,
+    LoginPayload,
+    OpenStackLoginPayload,
+    _build_k8s_auth,
+    _build_openstack_auth,
+    _build_openstack_auth_from_clouds_yaml,
+    _parse_yaml_document,
+    _require,
+    _validate_supported_kubeconfig,
+)
 from . import inventory as inventory_module
 from .inventory import DrainoServer, _serialise
+from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session
 
 _STATIC = Path(__file__).parent / "static"
 _SESSION_COOKIE = "draino_session"
-_SESSION_TTL = 60 * 60 * 12
+_SESSION_TTL = SESSION_TTL
 _HOST_SIGNALS_TTL = inventory_module._HOST_SIGNALS_TTL
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
 _IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
@@ -88,48 +100,6 @@ _runtime_lock = threading.Lock()
 _runtime_history: list[dict] = []
 _runtime_pod_cache: tuple[float, dict] | None = None
 _runtime_prev_sample: tuple[float, float] | None = None
-
-
-@dataclass(slots=True)
-class SessionRecord:
-    session_id: str
-    server: "DrainoServer"
-    username: str
-    project_name: str
-    role_names: list[str]
-    is_admin: bool
-    created_at: float
-    last_seen: float
-
-
-class SessionStore:
-    def __init__(self) -> None:
-        self._sessions: dict[str, SessionRecord] = {}
-        self._lock = threading.Lock()
-
-    def put(self, record: SessionRecord) -> None:
-        with self._lock:
-            self._sessions[record.session_id] = record
-
-    def get(self, session_id: str | None) -> SessionRecord | None:
-        if not session_id:
-            return None
-        with self._lock:
-            record = self._sessions.get(session_id)
-            if record is None:
-                return None
-            now = time.time()
-            if now - record.last_seen > _SESSION_TTL:
-                self._sessions.pop(session_id, None)
-                return None
-            record.last_seen = now
-            return record
-
-    def delete(self, session_id: str | None) -> None:
-        if not session_id:
-            return
-        with self._lock:
-            self._sessions.pop(session_id, None)
 
 
 _sessions = SessionStore()
@@ -519,22 +489,15 @@ def _get_volumes(
         })
     return result, all_projects
 
-
 # ── FastAPI application ───────────────────────────────────────────────────────
 
 
 def _get_session_record(request: Request) -> SessionRecord:
-    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-        )
-    return record
+    return get_session_record(request, _sessions, _SESSION_COOKIE)
 
 
 def _get_ws_session(ws: WebSocket) -> SessionRecord | None:
-    return _sessions.get(ws.cookies.get(_SESSION_COOKIE))
+    return get_ws_session(ws, _sessions, _SESSION_COOKIE)
 
 
 @asynccontextmanager
@@ -545,349 +508,20 @@ async def _lifespan(app: FastAPI):
 
 
 fastapi_app = FastAPI(title="VibeView", lifespan=_lifespan)
-
-
-class K8sLoginPayload(BaseModel):
-    mode: str = "token"
-    server: str | None = None
-    token: str | None = None
-    skip_tls_verify: bool = False
-    ca_cert: str | None = None
-    client_cert: str | None = None
-    client_key: str | None = None
-    kubeconfig_yaml: str | None = None
-    context: str | None = None
-
-
-class OpenStackLoginPayload(BaseModel):
-    mode: str = "password"
-    auth_url: str | None = None
-    username: str | None = None
-    password: str | None = None
-    project_name: str | None = None
-    user_domain_name: str = "Default"
-    project_domain_name: str = "Default"
-    region_name: str | None = None
-    interface: str | None = None
-    skip_tls_verify: bool = False
-    application_credential_id: str | None = None
-    application_credential_secret: str | None = None
-    clouds_yaml: str | None = None
-    cloud_name: str | None = None
-
-
-class LoginPayload(BaseModel):
-    kubernetes: K8sLoginPayload
-    openstack: OpenStackLoginPayload
-
-
-def _require(value: str | None, label: str) -> str:
-    result = (value or "").strip()
-    if not result:
-        raise HTTPException(status_code=400, detail=f"{label} is required")
-    return result
-
-
-def _parse_yaml_document(source: str, label: str) -> dict:
-    try:
-        data = yaml.safe_load(source) or {}
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid {label}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail=f"Invalid {label}: expected a YAML mapping")
-    return data
-
-
-def _build_k8s_auth(payload: K8sLoginPayload) -> k8s_ops.K8sAuth:
-    mode = (payload.mode or "token").strip().lower()
-    if mode == "token":
-        return k8s_ops.K8sAuth(
-            mode="token",
-            server=_require(payload.server, "Kubernetes API server URL"),
-            token=_require(payload.token, "Kubernetes bearer token"),
-            skip_tls_verify=payload.skip_tls_verify,
-            ca_cert=(payload.ca_cert or "").strip() or None,
-        )
-    if mode == "client_cert":
-        return k8s_ops.K8sAuth(
-            mode="client_cert",
-            server=_require(payload.server, "Kubernetes API server URL"),
-            skip_tls_verify=payload.skip_tls_verify,
-            ca_cert=(payload.ca_cert or "").strip() or None,
-            client_cert=_require(payload.client_cert, "Kubernetes client certificate"),
-            client_key=_require(payload.client_key, "Kubernetes client key"),
-        )
-    if mode == "kubeconfig":
-        kubeconfig = _parse_yaml_document(
-            _require(payload.kubeconfig_yaml, "Kubeconfig"),
-            "kubeconfig",
-        )
-        context_name = (payload.context or "").strip() or None
-        _validate_supported_kubeconfig(kubeconfig, context_name)
-        return k8s_ops.K8sAuth(mode="kubeconfig", kubeconfig=kubeconfig, context=context_name)
-    raise HTTPException(status_code=400, detail=f"Unsupported Kubernetes auth mode: {mode}")
-
-
-def _validate_supported_kubeconfig(kubeconfig: dict, context_name: str | None) -> None:
-    contexts = {item.get("name"): item.get("context", {}) for item in kubeconfig.get("contexts", [])}
-    if not contexts:
-        raise HTTPException(status_code=400, detail="Invalid kubeconfig: no contexts defined")
-    active_context = context_name or kubeconfig.get("current-context") or next(iter(contexts))
-    context = contexts.get(active_context)
-    if not isinstance(context, dict):
-        raise HTTPException(status_code=400, detail=f"Invalid kubeconfig: context {active_context!r} not found")
-
-    clusters = {item.get("name"): item.get("cluster", {}) for item in kubeconfig.get("clusters", [])}
-    users = {item.get("name"): item.get("user", {}) for item in kubeconfig.get("users", [])}
-    cluster = clusters.get(context.get("cluster"))
-    user = users.get(context.get("user"))
-    if not isinstance(cluster, dict) or not cluster.get("server"):
-        raise HTTPException(status_code=400, detail="Invalid kubeconfig: selected context has no cluster server")
-    if not isinstance(user, dict):
-        raise HTTPException(status_code=400, detail="Invalid kubeconfig: selected context has no user")
-    if user.get("exec") or user.get("auth-provider"):
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported kubeconfig: exec/auth-provider plugins are not supported in the web UI",
-        )
-    unsupported_paths = [
-        cluster.get("certificate-authority"),
-        user.get("client-certificate"),
-        user.get("client-key"),
-        user.get("tokenFile"),
-    ]
-    if any(unsupported_paths):
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported kubeconfig: local file references are not supported; use inline data or upload certificates directly",
-        )
-    has_token = bool(user.get("token"))
-    has_client_cert = bool(user.get("client-certificate-data")) and bool(user.get("client-key-data"))
-    if not has_token and not has_client_cert:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported kubeconfig: selected user must contain an inline token or inline client certificate/key",
-        )
-
-
-def _build_openstack_auth(payload: OpenStackLoginPayload) -> openstack_ops.OpenStackAuth:
-    mode = (payload.mode or "password").strip().lower()
-    if mode == "password":
-        return openstack_ops.OpenStackAuth(
-            mode="password",
-            auth_url=_require(payload.auth_url, "OpenStack auth URL"),
-            username=_require(payload.username, "OpenStack username"),
-            password=_require(payload.password, "OpenStack password"),
-            project_name=_require(payload.project_name, "OpenStack project name"),
-            user_domain_name=(payload.user_domain_name or "").strip() or "Default",
-            project_domain_name=(payload.project_domain_name or "").strip() or "Default",
-            region_name=(payload.region_name or "").strip() or None,
-            interface=(payload.interface or "").strip() or None,
-            skip_tls_verify=payload.skip_tls_verify,
-        )
-    if mode == "application_credential":
-        return openstack_ops.OpenStackAuth(
-            mode="application_credential",
-            auth_url=_require(payload.auth_url, "OpenStack auth URL"),
-            application_credential_id=_require(
-                payload.application_credential_id,
-                "OpenStack application credential ID",
-            ),
-            application_credential_secret=_require(
-                payload.application_credential_secret,
-                "OpenStack application credential secret",
-            ),
-            region_name=(payload.region_name or "").strip() or None,
-            interface=(payload.interface or "").strip() or None,
-            skip_tls_verify=payload.skip_tls_verify,
-        )
-    if mode == "clouds_yaml":
-        config_data = _parse_yaml_document(
-            _require(payload.clouds_yaml, "clouds.yaml"),
-            "clouds.yaml",
-        )
-        return _build_openstack_auth_from_clouds_yaml(config_data, payload.cloud_name)
-    raise HTTPException(status_code=400, detail=f"Unsupported OpenStack auth mode: {mode}")
-
-
-def _build_openstack_auth_from_clouds_yaml(
-    config_data: dict,
-    cloud_name: str | None,
-) -> openstack_ops.OpenStackAuth:
-    clouds = config_data.get("clouds")
-    if not isinstance(clouds, dict) or not clouds:
-        raise HTTPException(status_code=400, detail="Invalid clouds.yaml: no clouds mapping found")
-
-    selected_cloud = (cloud_name or "").strip()
-    if not selected_cloud:
-        if len(clouds) != 1:
-            raise HTTPException(
-                status_code=400,
-                detail="clouds.yaml contains multiple clouds; specify a cloud name",
-            )
-        selected_cloud = next(iter(clouds))
-
-    cloud = clouds.get(selected_cloud)
-    if not isinstance(cloud, dict):
-        raise HTTPException(status_code=400, detail=f"clouds.yaml cloud {selected_cloud!r} not found")
-
-    auth = cloud.get("auth")
-    if not isinstance(auth, dict):
-        raise HTTPException(status_code=400, detail="Invalid clouds.yaml: selected cloud has no auth section")
-
-    region_name = str(cloud.get("region_name", "")).strip() or None
-    interface = str(cloud.get("interface", "")).strip() or None
-    skip_tls_verify = cloud.get("verify") is False
-    if auth.get("application_credential_id") and auth.get("application_credential_secret"):
-        return openstack_ops.OpenStackAuth(
-            mode="application_credential",
-            auth_url=_require(str(auth.get("auth_url", "")), "OpenStack auth URL"),
-            application_credential_id=_require(
-                str(auth.get("application_credential_id", "")),
-                "OpenStack application credential ID",
-            ),
-            application_credential_secret=_require(
-                str(auth.get("application_credential_secret", "")),
-                "OpenStack application credential secret",
-            ),
-            region_name=region_name,
-            interface=interface,
-            skip_tls_verify=skip_tls_verify,
-        )
-
-    return openstack_ops.OpenStackAuth(
-        mode="password",
-        auth_url=_require(str(auth.get("auth_url", "")), "OpenStack auth URL"),
-        username=_require(str(auth.get("username", "")), "OpenStack username"),
-        password=str(auth.get("password", "")),
-        project_name=_require(str(auth.get("project_name", "")), "OpenStack project name"),
-        user_domain_name=str(auth.get("user_domain_name", "Default")).strip() or "Default",
-        project_domain_name=str(auth.get("project_domain_name", "Default")).strip() or "Default",
-        region_name=region_name,
-        interface=interface,
-        skip_tls_verify=skip_tls_verify,
-    )
-
-
-@fastapi_app.get("/")
-async def index(request: Request):
-    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
-    if record is not None:
-        return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
-    return FileResponse(_STATIC / "login.html")
-
-
-@fastapi_app.get("/app")
-async def app(request: Request):
-    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
-    if record is None:
-        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    return FileResponse(_STATIC / "index.html")
-
-
-@fastapi_app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@fastapi_app.get("/readyz")
-async def readyz() -> dict[str, str]:
-    return {"status": "ready"}
-
-
-@fastapi_app.get("/api/session")
-async def api_session(request: Request):
-    record = _sessions.get(request.cookies.get(_SESSION_COOKIE))
-    if record is None:
-        return {"authenticated": False}
-    return {
-        "authenticated": True,
-        "username": record.username,
-        "project_name": record.project_name,
-        "role_names": record.role_names,
-        "is_admin": record.is_admin,
-    }
-
-
-@fastapi_app.get("/api/app-meta")
-async def api_app_meta(request: Request):
-    _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _get_app_update_status)
-
-
-@fastapi_app.get("/api/version")
-async def api_version():
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _get_public_version_status)
-
-
-@fastapi_app.get("/api/app-runtime")
-async def api_app_runtime(request: Request):
-    _get_session_record(request)
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _get_app_runtime)
-
-
-@fastapi_app.post("/api/session")
-async def api_login(payload: LoginPayload, response: Response):
-    k8s_auth = _build_k8s_auth(payload.kubernetes)
-    openstack_auth = _build_openstack_auth(payload.openstack)
-
-    try:
-        initial_nodes = k8s_ops.get_nodes(auth=k8s_auth)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Kubernetes authentication failed: {exc}",
-        ) from exc
-
-    try:
-        openstack_ops._conn(auth=openstack_auth).authorize()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"OpenStack authentication failed: {exc}",
-        ) from exc
-
-    role_names = openstack_ops.get_current_role_names(auth=openstack_auth)
-    server = DrainoServer(
-        k8s_auth=k8s_auth,
-        openstack_auth=openstack_auth,
-        role_names=role_names,
-        audit_log=_audit_log_path,
-    )
-    if _app_loop is not None:
-        server.set_loop(_app_loop)
-    server._audit.log("session", "-", "started", "web ui user-authenticated session")
-    session_id = secrets.token_urlsafe(32)
-    _sessions.put(SessionRecord(
-        session_id=session_id,
-        server=server,
-        username=openstack_auth.username,
-        project_name=openstack_auth.project_name,
-        role_names=role_names,
-        is_admin=server.is_admin,
-        created_at=time.time(),
-        last_seen=time.time(),
-    ))
-    response.set_cookie(
-        key=_SESSION_COOKIE,
-        value=session_id,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        max_age=_SESSION_TTL,
-    )
-    server.start_refresh(cached_nodes=initial_nodes)
-    return {"ok": True}
-
-
-@fastapi_app.delete("/api/session")
-async def api_logout(request: Request, response: Response):
-    _sessions.delete(request.cookies.get(_SESSION_COOKIE))
-    response.delete_cookie(_SESSION_COOKIE)
-    return {"ok": True}
+auth_api.configure(
+    static_dir=_STATIC,
+    get_sessions=lambda: _sessions,
+    get_app_loop=lambda: _app_loop,
+    get_audit_log_path=lambda: _audit_log_path,
+)
+runtime_api.configure(
+    get_session_record=lambda: _get_session_record,
+    get_app_update_status=lambda: _get_app_update_status,
+    get_public_version_status=lambda: _get_public_version_status,
+    get_app_runtime=lambda: _get_app_runtime,
+)
+fastapi_app.include_router(auth_api.router)
+fastapi_app.include_router(runtime_api.router)
 
 
 @fastapi_app.get("/api/networks")
