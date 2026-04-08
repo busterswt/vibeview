@@ -394,6 +394,126 @@ def test_get_instances_preflight_includes_flavor_sizing(monkeypatch):
     assert FakeCompute.calls == ["flavor-1", "flavor-2"]
 
 
+def test_get_instances_preflight_falls_back_to_flavor_name_lookup(monkeypatch):
+    web_server.openstack_ops._flavor_cache.clear()
+
+    class FakeServer:
+        def __init__(self, instance_id, name, flavor_name):
+            self.id = instance_id
+            self.name = name
+            self.status = "ACTIVE"
+            self.image = {"id": "img-1"}
+            self.flavor = {"name": flavor_name}
+
+        def to_dict(self):
+            return {}
+
+    class FakeCompute:
+        get_flavor_calls = []
+        find_flavor_calls = []
+
+        @classmethod
+        def get_flavor(cls, flavor_id):
+            cls.get_flavor_calls.append(flavor_id)
+            raise AssertionError("get_flavor should not be called without a flavor id")
+
+        @classmethod
+        def find_flavor(cls, flavor_name, ignore_missing=True):
+            cls.find_flavor_calls.append((flavor_name, ignore_missing))
+            return SimpleNamespace(
+                id="d5e8faba-aa99-473d-8105-24707e37fa67",
+                name=flavor_name,
+                vcpus=4,
+                ram=2048,
+            )
+
+    class FakeConn:
+        compute = FakeCompute()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "_servers_on_host",
+        lambda conn, hypervisor: [
+            FakeServer("vm-1", "vm-1", "m1.small"),
+            FakeServer("vm-2", "vm-2", "m1.small"),
+        ],
+    )
+
+    items = web_server.openstack_ops.get_instances_preflight("hv-a")
+
+    assert items[0]["vcpus"] == 4
+    assert items[0]["ram_mb"] == 2048
+    assert items[1]["vcpus"] == 4
+    assert items[1]["ram_mb"] == 2048
+    assert FakeCompute.get_flavor_calls == []
+    assert FakeCompute.find_flavor_calls == [("m1.small", True)]
+
+
+def test_flavor_cache_is_reused_between_preflight_and_detail(monkeypatch):
+    web_server.openstack_ops._flavor_cache.clear()
+
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"name": "m1.small"}
+
+        def to_dict(self):
+            return {}
+
+    class FakeCompute:
+        find_flavor_calls = []
+
+        @classmethod
+        def get_server(cls, instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @classmethod
+        def get_flavor(cls, flavor_id):
+            raise AssertionError("get_flavor should not be called without a flavor id")
+
+        @classmethod
+        def find_flavor(cls, flavor_name, ignore_missing=True):
+            cls.find_flavor_calls.append((flavor_name, ignore_missing))
+            return SimpleNamespace(
+                id="d5e8faba-aa99-473d-8105-24707e37fa67",
+                name=flavor_name,
+                vcpus=4,
+                ram=2048,
+                disk=18,
+                ephemeral=0,
+                swap=0,
+            )
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None, network_id=None):
+            if device_id == "vm-1":
+                return []
+            raise AssertionError((device_id, network_id))
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "_servers_on_host",
+        lambda conn, hypervisor: [FakeServer()],
+    )
+
+    items = web_server.openstack_ops.get_instances_preflight("hv-a")
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert items[0]["vcpus"] == 4
+    assert detail["flavor"]["ram_mb"] == 2048
+    assert FakeCompute.find_flavor_calls == [("m1.small", True)]
+
+
 def test_instance_network_detail_includes_dhcp_flag_from_subnet(monkeypatch):
     class FakeServer:
         id = "vm-1"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from threading import Lock
 from typing import Callable, Optional
 
 import openstack
@@ -11,6 +12,9 @@ import openstack.connection
 LogFn = Callable[[str], None]
 
 _CLOUD: str | None = None
+_FLAVOR_CACHE_TTL = 600.0
+_flavor_cache_lock = Lock()
+_flavor_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
 @dataclass(slots=True)
@@ -84,6 +88,89 @@ def _servers_on_host(conn, hypervisor: str) -> list:
         s for s in conn.compute.servers(all_projects=True)
         if _server_host(s) == hypervisor
     ]
+
+
+def _field(source, *names):
+    if source is None:
+        return None
+    if isinstance(source, dict):
+        for name in names:
+            value = source.get(name)
+            if value not in (None, ""):
+                return value
+        return None
+    for name in names:
+        value = getattr(source, name, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _flavor_cache_get(cache_key: tuple[str, str]) -> dict | None:
+    now = time.time()
+    with _flavor_cache_lock:
+        cached = _flavor_cache.get(cache_key)
+        if cached is None:
+            return None
+        expires_at, payload = cached
+        if now >= expires_at:
+            _flavor_cache.pop(cache_key, None)
+            return None
+        return dict(payload)
+
+
+def _flavor_cache_set(cache_key: tuple[str, str], payload: dict) -> None:
+    with _flavor_cache_lock:
+        _flavor_cache[cache_key] = (time.time() + _FLAVOR_CACHE_TTL, dict(payload))
+
+
+def _resolve_flavor_data(conn, flavor_ref) -> dict:
+    flavor_id = _field(flavor_ref, "id") or ""
+    flavor_name = _field(flavor_ref, "original_name", "name") or ""
+    cache_key = (flavor_id, flavor_name)
+    cached = _flavor_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    flavor_data = {
+        "id": flavor_id,
+        "name": flavor_name,
+        "vcpus": None,
+        "ram_mb": None,
+        "disk_gb": None,
+        "ephemeral_gb": None,
+        "swap_mb": None,
+    }
+
+    flavor = None
+    if flavor_id:
+        try:
+            flavor = conn.compute.get_flavor(flavor_id)
+        except Exception:
+            flavor = None
+    if flavor is None and flavor_name:
+        try:
+            flavor = conn.compute.find_flavor(flavor_name, ignore_missing=True)
+        except Exception:
+            flavor = None
+    if flavor is not None:
+        flavor_data.update({
+            "id": getattr(flavor, "id", None) or flavor_id,
+            "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
+            "vcpus": getattr(flavor, "vcpus", None),
+            "ram_mb": getattr(flavor, "ram", None),
+            "disk_gb": getattr(flavor, "disk", None),
+            "ephemeral_gb": getattr(flavor, "ephemeral", None),
+            "swap_mb": getattr(flavor, "swap", None),
+        })
+
+    _flavor_cache_set(cache_key, flavor_data)
+    resolved_id = flavor_data.get("id") or ""
+    resolved_name = flavor_data.get("name") or ""
+    resolved_key = (resolved_id, resolved_name)
+    if resolved_key != cache_key:
+        _flavor_cache_set(resolved_key, flavor_data)
+    return dict(flavor_data)
 
 
 # ── Node summary (for the node-list panel) ────────────────────────────────────
@@ -383,55 +470,12 @@ def get_instances_preflight(
     """
     conn = _conn(auth=auth)
     servers = _servers_on_host(conn, hypervisor)
-    flavor_cache: dict[str, dict] = {}
-
-    def _field(source, *names):
-        if source is None:
-            return None
-        if isinstance(source, dict):
-            for name in names:
-                value = source.get(name)
-                if value not in (None, ""):
-                    return value
-            return None
-        for name in names:
-            value = getattr(source, name, None)
-            if value not in (None, ""):
-                return value
-        return None
-
-    def _get_flavor_data(server) -> dict:
-        server_data = server.to_dict() if hasattr(server, "to_dict") else {}
-        flavor_ref = getattr(server, "flavor", None) or server_data.get("flavor") or {}
-        flavor_id = _field(flavor_ref, "id") or ""
-        flavor_name = _field(flavor_ref, "original_name", "name") or ""
-        flavor_data = {
-            "name": flavor_name or flavor_id,
-            "vcpus": None,
-            "ram_mb": None,
-        }
-        if not flavor_id:
-            return flavor_data
-        cached = flavor_cache.get(flavor_id)
-        if cached is not None:
-            return dict(cached)
-        try:
-            flavor = conn.compute.get_flavor(flavor_id)
-        except Exception:
-            flavor = None
-        if flavor is not None:
-            flavor_data = {
-                "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
-                "vcpus": getattr(flavor, "vcpus", None),
-                "ram_mb": getattr(flavor, "ram", None),
-            }
-        flavor_cache[flavor_id] = dict(flavor_data)
-        return dict(flavor_data)
 
     result = []
     for s in servers:
         name = s.name or s.id
-        flavor = _get_flavor_data(s)
+        server_data = s.to_dict() if hasattr(s, "to_dict") else {}
+        flavor = _resolve_flavor_data(conn, getattr(s, "flavor", None) or server_data.get("flavor") or {})
         result.append({
             "id":               s.id,
             "name":             name,
@@ -454,56 +498,9 @@ def get_instance_network_detail(
     if server is None:
         raise RuntimeError(f"No server found with id '{instance_id}'")
 
-    def _field(source, *names):
-        if source is None:
-            return None
-        if isinstance(source, dict):
-            for name in names:
-                value = source.get(name)
-                if value not in (None, ""):
-                    return value
-            return None
-        for name in names:
-            value = getattr(source, name, None)
-            if value not in (None, ""):
-                return value
-        return None
-
     server_data = server.to_dict() if hasattr(server, "to_dict") else {}
     flavor_ref = getattr(server, "flavor", None) or server_data.get("flavor") or {}
-    flavor_id = _field(flavor_ref, "id") or ""
-    flavor_name = _field(flavor_ref, "original_name", "name") or ""
-
-    flavor_data: dict = {
-        "id": flavor_id,
-        "name": flavor_name,
-        "vcpus": None,
-        "ram_mb": None,
-        "disk_gb": None,
-        "ephemeral_gb": None,
-        "swap_mb": None,
-    }
-    flavor = None
-    if flavor_id:
-        try:
-            flavor = conn.compute.get_flavor(flavor_id)
-        except Exception:
-            flavor = None
-    if flavor is None and flavor_name:
-        try:
-            flavor = conn.compute.find_flavor(flavor_name, ignore_missing=True)
-        except Exception:
-            flavor = None
-    if flavor is not None:
-        flavor_data.update({
-            "id": getattr(flavor, "id", None) or flavor_id,
-            "name": getattr(flavor, "name", None) or flavor_name or flavor_id,
-            "vcpus": getattr(flavor, "vcpus", None),
-            "ram_mb": getattr(flavor, "ram", None),
-            "disk_gb": getattr(flavor, "disk", None),
-            "ephemeral_gb": getattr(flavor, "ephemeral", None),
-            "swap_mb": getattr(flavor, "swap", None),
-        })
+    flavor_data = _resolve_flavor_data(conn, flavor_ref)
 
     network_names: dict[str, str] = {}
     subnet_dhcp: dict[str, bool | None] = {}
