@@ -1059,8 +1059,8 @@ function renderPortDetailPanel(port) {
             <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
             <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(port.mac_address || '—')}</span></div>
             <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv">${esc((port.fixed_ips || []).join(', ') || '—')}</span></div>
-            <div class="mrow"><span class="ml">Allowed address pairs</span><span class="mv">${esc(allowedAddressPairs.join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Allowed address pairs</span><span class="mv">${esc(allowedAddressPairs.join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
             <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
