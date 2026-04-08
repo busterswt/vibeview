@@ -216,7 +216,7 @@ body {
   letter-spacing: 0;
 }
 .node-refresh-indicator {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 7px;
@@ -227,9 +227,12 @@ body {
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
 }
 .node-refresh-indicator.active {
-  display: inline-flex;
+  visibility: visible;
+  pointer-events: auto;
 }
 .sidebar-sort button {
   border: 1px solid var(--border);
