@@ -878,6 +878,12 @@ function renderNodeMonitorTab(nd) {
 function renderInstancesTab(nd) {
   const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
   const expandedId = expandedInstanceIdByNode[nd.k8s_name] || '';
+  const instanceRefreshPill = nd.preflight_loading
+    ? `<span class="node-refresh-indicator active" title="Refreshing VM list">
+        <span class="spinner">⟳</span>
+        <span>Refreshing</span>
+      </span>`
+    : '<span class="node-refresh-indicator instances-refresh-slot" aria-hidden="true"></span>';
   let h = `<div class="inst-toolbar">
     <button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>
     <button class="btn ${drained?'warning':''}" onclick="actionDrainOrUndrain()">${drained ? '↺ Undrain' : '▽ Drain'}</button>
@@ -888,7 +894,7 @@ function renderInstancesTab(nd) {
 
   // Live migration instances
   if (nd.instances?.length) {
-    h += `<div class="tab-section-title"><span>Nova Instances — Migration Status <span class="hint">vMotion Progress</span></span></div>
+    h += `<div class="tab-section-title"><span>Nova Instances — Migration Status <span class="hint">vMotion Progress</span></span>${instanceRefreshPill}</div>
     <table class="data-table" id="inst-data-table">
       <thead><tr>
         <th>Name <span class="hint">VM Name</span></th><th>Type</th>
@@ -904,11 +910,11 @@ function renderInstancesTab(nd) {
         <td><span class="sdot ${dotc}"></span>${esc(inst.status)}</td>
         <td><span class="ph-badge ${phc}">${esc(op)}</span></td></tr>`;
     }
-    h += `</tbody></table>`;
+      h += `</tbody></table>`;
   } else if (nd.is_compute) {
-    h += `<div class="tab-section-title"><span>Nova Instances <span class="hint">VMs &amp; Templates</span></span></div>`;
+    h += `<div class="tab-section-title"><span>Nova Instances <span class="hint">VMs &amp; Templates</span></span>${instanceRefreshPill}</div>`;
     if (nd.preflight_loading && !nd.preflight_instances?.length) {
-      h += `<div style="color:var(--dim);padding:8px 0;font-size:12px"><span class="spinner">⟳</span> Loading instances…</div>`;
+      h += `<div style="height:8px"></div>`;
     } else if (nd.preflight_instances?.length) {
       h += `<table class="data-table" id="inst-data-table">
         <thead><tr>
@@ -934,7 +940,6 @@ function renderInstancesTab(nd) {
       }
       h += `</tbody></table>`;
       if (expandedId) h += renderInstanceDetailPanel(nd.k8s_name, expandedId);
-      if (nd.preflight_loading) h += `<div style="font-size:10px;color:var(--dim);margin-top:4px"><span class="spinner">⟳</span> Refreshing…</div>`;
     } else {
       h += `<div style="color:var(--dim);font-size:12px;padding:4px 0">No instances on this hypervisor.</div>`;
     }
