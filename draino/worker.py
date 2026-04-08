@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from .models import InstanceInfo, NodePhase, NodeState, StepStatus
 from .operations import k8s_ops, openstack_ops
 from .reboot import issue_reboot
+from . import workflows_maintenance
 
 UpdateFn  = Callable[[], None]
 LogFn     = Callable[[str], None]
@@ -15,9 +16,6 @@ AuditCb   = Callable[[str, str], None]  # (event, detail)
 POLL_INTERVAL  = 15    # seconds between migration / drain status polls
 MIGRATE_TIMEOUT = 1800  # hard limit for all live migrations (seconds)
 EMPTY_TIMEOUT   = 900   # hard limit for hypervisor-empty wait (seconds)
-
-REBOOT_OFFLINE_TIMEOUT = 300    # seconds to wait for node to go NotReady
-REBOOT_ONLINE_TIMEOUT  = 1200   # seconds to wait for node to return Ready
 
 
 def run_workflow(
@@ -35,26 +33,13 @@ def run_workflow(
     *audit_cb*, if provided, is called as audit_cb(event, detail) on terminal outcomes.
     """
 
-    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
-        step = state.get_step(key)
-        if step:
-            step.status = status
-            if detail:
-                step.detail = detail
-        update_cb()
-
-    def log(msg: str) -> None:
-        state.add_log(msg)
-        log_cb(msg)
-        update_cb()
-
-    def abort(key: str, reason: str) -> None:
-        step_set(key, StepStatus.FAILED, reason)
-        state.phase = NodePhase.ERROR
-        log(f"Evacuation aborted: {reason}")
-        if audit_cb:
-            audit_cb("failed", f"step={key} reason={reason}")
-        update_cb()
+    ctx = workflows_maintenance.WorkflowContext(
+        state=state,
+        update_cb=update_cb,
+        log_cb=log_cb,
+        audit_cb=audit_cb,
+        abort_prefix="Evacuation aborted",
+    )
 
     # ── Initialise ────────────────────────────────────────────────────────
     state.phase = NodePhase.RUNNING
@@ -63,29 +48,29 @@ def run_workflow(
     update_cb()
 
     # ── Step 1: Cordon ────────────────────────────────────────────────────
-    step_set("cordon", StepStatus.RUNNING)
+    ctx.step_set("cordon", StepStatus.RUNNING)
     try:
-        k8s_ops.cordon_node(state.k8s_name, log, auth=k8s_auth)
-        step_set("cordon", StepStatus.SUCCESS)
+        k8s_ops.cordon_node(state.k8s_name, ctx.log, auth=k8s_auth)
+        ctx.step_set("cordon", StepStatus.SUCCESS)
     except Exception as exc:
-        abort("cordon", str(exc))
+        ctx.abort("cordon", str(exc))
         return
 
     # ── Step 2: Disable Nova compute ──────────────────────────────────────
-    step_set("disable_nova", StepStatus.RUNNING)
+    ctx.step_set("disable_nova", StepStatus.RUNNING)
     try:
-        openstack_ops.disable_compute_service(state.hypervisor, log, auth=openstack_auth)
+        openstack_ops.disable_compute_service(state.hypervisor, ctx.log, auth=openstack_auth)
         state.compute_status = "disabled"   # reflect immediately in node panel
-        step_set("disable_nova", StepStatus.SUCCESS)
+        ctx.step_set("disable_nova", StepStatus.SUCCESS)
     except Exception as exc:
-        abort("disable_nova", str(exc))
+        ctx.abort("disable_nova", str(exc))
         return
 
     # ── Step 3: Enumerate instances ───────────────────────────────────────
-    step_set("list_instances", StepStatus.RUNNING)
+    ctx.step_set("list_instances", StepStatus.RUNNING)
     try:
-        servers = openstack_ops.list_servers_on_host(state.hypervisor, log, auth=openstack_auth)
-        amp_map = openstack_ops.get_amphora_lb_mapping(log, auth=openstack_auth)
+        servers = openstack_ops.list_servers_on_host(state.hypervisor, ctx.log, auth=openstack_auth)
+        amp_map = openstack_ops.get_amphora_lb_mapping(ctx.log, auth=openstack_auth)
         for s in servers:
             lb_id  = amp_map.get(s["id"])
             is_amp = s["is_amphora"] or lb_id is not None
@@ -103,23 +88,23 @@ def run_workflow(
         # Update the node-panel summary counters
         state.vm_count      = n_vm
         state.amphora_count = n_amp
-        step_set("list_instances", StepStatus.SUCCESS, f"{n_vm} VM(s), {n_amp} Amphora")
+        ctx.step_set("list_instances", StepStatus.SUCCESS, f"{n_vm} VM(s), {n_amp} Amphora")
     except Exception as exc:
-        abort("list_instances", str(exc))
+        ctx.abort("list_instances", str(exc))
         return
 
     # ── Step 4: Live-migrate regular VMs ──────────────────────────────────
-    step_set("migrate_vms", StepStatus.RUNNING)
+    ctx.step_set("migrate_vms", StepStatus.RUNNING)
     vms = [i for i in state.instances if not i.is_amphora]
 
     if not vms:
-        step_set("migrate_vms", StepStatus.SUCCESS, "No VMs to migrate")
+        ctx.step_set("migrate_vms", StepStatus.SUCCESS, "No VMs to migrate")
     else:
         for inst in vms:
             inst.migration_status = "queued"
             update_cb()
             try:
-                openstack_ops.live_migrate_server(inst.id, log, auth=openstack_auth)
+                openstack_ops.live_migrate_server(inst.id, ctx.log, auth=openstack_auth)
                 inst.migration_status = "migrating"
             except Exception as live_exc:
                 # A 504 timeout means Nova accepted the request but the HTTP
@@ -128,18 +113,18 @@ def run_workflow(
                 # cold migrate against an already-migrating instance gets a 409.
                 task_state = openstack_ops.get_server_task_state(inst.id, auth=openstack_auth) or ""
                 if "migrat" in task_state.lower():
-                    log(
+                    ctx.log(
                         f"Live migration for '{inst.name}' timed out but instance "
                         f"is already in task_state '{task_state}' — continuing to poll"
                     )
                     inst.migration_status = "migrating"
                 else:
-                    log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
+                    ctx.log(f"Live migration failed for '{inst.name}': {live_exc} — trying cold migration")
                     try:
-                        openstack_ops.cold_migrate_server(inst.id, log, auth=openstack_auth)
+                        openstack_ops.cold_migrate_server(inst.id, ctx.log, auth=openstack_auth)
                         inst.migration_status = "cold-migrating"
                     except Exception as cold_exc:
-                        log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
+                        ctx.log(f"Cold migration also failed for '{inst.name}': {cold_exc}")
                         inst.migration_status = "failed"
             update_cb()
 
@@ -160,9 +145,9 @@ def run_workflow(
                     inst.migration_status = "confirming"
                     update_cb()
                     try:
-                        openstack_ops.confirm_resize_server(inst.id, log, auth=openstack_auth)
+                        openstack_ops.confirm_resize_server(inst.id, ctx.log, auth=openstack_auth)
                     except Exception as exc:
-                        log(f"Confirm resize failed for '{inst.name}': {exc}")
+                        ctx.log(f"Confirm resize failed for '{inst.name}': {exc}")
                         inst.migration_status = "failed"
                 elif nova_status == "ACTIVE":
                     # Check migration records to confirm it actually moved
@@ -173,13 +158,13 @@ def run_workflow(
                             inst.migration_status = "complete"
                         elif latest in ("error", "failed"):
                             inst.migration_status = "failed"
-                            log(f"Migration failed for '{inst.name}'")
+                            ctx.log(f"Migration failed for '{inst.name}'")
                         # else still in-flight; leave status as-is
                     else:
                         inst.migration_status = "complete"
                 elif nova_status == "ERROR":
                     inst.migration_status = "failed"
-                    log(f"Server '{inst.name}' entered ERROR state")
+                    ctx.log(f"Server '{inst.name}' entered ERROR state")
 
             done_n   = sum(1 for i in vms if i.migration_status == "complete")
             failed_n = sum(1 for i in vms if i.migration_status == "failed")
@@ -192,16 +177,16 @@ def run_workflow(
         failed_n = sum(1 for i in vms if i.migration_status == "failed")
         done_n   = sum(1 for i in vms if i.migration_status == "complete")
         if failed_n:
-            abort("migrate_vms", f"{done_n}/{len(vms)} migrated — {failed_n} failed")
+            ctx.abort("migrate_vms", f"{done_n}/{len(vms)} migrated — {failed_n} failed")
             return
-        step_set("migrate_vms", StepStatus.SUCCESS, f"{done_n}/{len(vms)} migrated")
+        ctx.step_set("migrate_vms", StepStatus.SUCCESS, f"{done_n}/{len(vms)} migrated")
 
     # ── Step 5: Failover Amphora load balancers ───────────────────────────
-    step_set("failover_lbs", StepStatus.RUNNING)
+    ctx.step_set("failover_lbs", StepStatus.RUNNING)
     amphora = [i for i in state.instances if i.is_amphora and i.lb_id]
 
     if not amphora:
-        step_set("failover_lbs", StepStatus.SUCCESS, "No Amphora to fail over")
+        ctx.step_set("failover_lbs", StepStatus.SUCCESS, "No Amphora to fail over")
     else:
         lb_ids     = list({i.lb_id for i in amphora})
         any_failed = False
@@ -213,14 +198,14 @@ def run_workflow(
             update_cb()
 
             try:
-                openstack_ops.failover_loadbalancer(lb_id, log, auth=openstack_auth)
-                ok        = openstack_ops.wait_for_lb_active(lb_id, log, auth=openstack_auth)
+                openstack_ops.failover_loadbalancer(lb_id, ctx.log, auth=openstack_auth)
+                ok        = openstack_ops.wait_for_lb_active(lb_id, ctx.log, auth=openstack_auth)
                 fo_status = "complete" if ok else "failed"
                 if not ok:
                     any_failed = True
-                    log(f"LB {lb_id} did not return to ACTIVE")
+                    ctx.log(f"LB {lb_id} did not return to ACTIVE")
             except Exception as exc:
-                log(f"Failover error for LB {lb_id}: {exc}")
+                ctx.log(f"Failover error for LB {lb_id}: {exc}")
                 fo_status  = "failed"
                 any_failed = True
 
@@ -230,12 +215,12 @@ def run_workflow(
             update_cb()
 
         if any_failed:
-            abort("failover_lbs", "One or more LB failovers failed")
+            ctx.abort("failover_lbs", "One or more LB failovers failed")
             return
-        step_set("failover_lbs", StepStatus.SUCCESS, f"{len(lb_ids)} LB(s) failed over")
+        ctx.step_set("failover_lbs", StepStatus.SUCCESS, f"{len(lb_ids)} LB(s) failed over")
 
     # ── Step 6: Wait for hypervisor to be empty ───────────────────────────
-    step_set("await_empty", StepStatus.RUNNING)
+    ctx.step_set("await_empty", StepStatus.RUNNING)
     deadline = time.time() + EMPTY_TIMEOUT
     count    = -1
     while time.time() < deadline:
@@ -259,23 +244,23 @@ def run_workflow(
             break
         time.sleep(POLL_INTERVAL)
     else:
-        abort("await_empty", f"Timeout — {count} instance(s) still present")
+        ctx.abort("await_empty", f"Timeout — {count} instance(s) still present")
         return
 
-    step_set("await_empty", StepStatus.SUCCESS, "Hypervisor empty")
+    ctx.step_set("await_empty", StepStatus.SUCCESS, "Hypervisor empty")
 
     # ── Step 7: Drain K8s node ────────────────────────────────────────────
-    step_set("drain_k8s", StepStatus.RUNNING)
+    ctx.step_set("drain_k8s", StepStatus.RUNNING)
     try:
-        k8s_ops.drain_node(state.k8s_name, log, auth=k8s_auth)
-        step_set("drain_k8s", StepStatus.SUCCESS)
+        k8s_ops.drain_node(state.k8s_name, ctx.log, auth=k8s_auth)
+        ctx.step_set("drain_k8s", StepStatus.SUCCESS)
     except Exception as exc:
-        abort("drain_k8s", str(exc))
+        ctx.abort("drain_k8s", str(exc))
         return
 
     # ── Done ──────────────────────────────────────────────────────────────
     state.phase = NodePhase.COMPLETE
-    log(f"✓ '{state.k8s_name}' fully evacuated — ready for reboot!")
+    ctx.log(f"✓ '{state.k8s_name}' fully evacuated — ready for reboot!")
     if audit_cb:
         audit_cb("completed", "hypervisor empty, K8s node drained")
     update_cb()
@@ -289,139 +274,16 @@ def run_reboot(
     k8s_auth: Optional[k8s_ops.K8sAuth] = None,
 ) -> None:
     """Issue a reboot and track downtime.  Runs in a daemon thread."""
-
-    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
-        step = state.get_step(key)
-        if step:
-            step.status = status
-            if detail:
-                step.detail = detail
-        update_cb()
-
-    def log(msg: str) -> None:
-        state.add_log(msg)
-        log_cb(msg)
-        update_cb()
-
-    def abort(key: str, reason: str) -> None:
-        step_set(key, StepStatus.FAILED, reason)
-        state.phase = NodePhase.ERROR
-        log(f"Reboot aborted: {reason}")
-        if audit_cb:
-            audit_cb("failed", f"step={key} reason={reason}")
-        update_cb()
-
-    state.phase = NodePhase.REBOOTING
-    state.reboot_start    = time.time()
-    state.reboot_downtime = None
-    state.etcd_healthy    = False   # definitely not serving etcd during reboot
-    state.init_reboot_steps()
-    update_cb()
-
-    # Capture pre-reboot ready_since so we can detect any change (avoids
-    # clock-skew issues with timestamp comparisons).
-    baseline_ready_since = None
-    try:
-        for nd in k8s_ops.get_nodes(auth=k8s_auth):
-            if nd["name"] == state.k8s_name:
-                baseline_ready_since = nd.get("ready_since")
-                break
-    except Exception:
-        pass
-
-    # ── Step 1: Trigger reboot ────────────────────────────────────────────
-    step_set("issue_reboot", StepStatus.RUNNING)
-    try:
-        issue_reboot(state, log)
-    except Exception as exc:
-        abort("issue_reboot", str(exc))
-        return
-
-    step_set("issue_reboot", StepStatus.SUCCESS)
-
-    # ── Step 2: Wait for node to go offline (best-effort) ─────────────────
-    # Fast reboots may never register NotReady in K8s (kubelet reconnects
-    # before the node-monitor grace period fires).  We try for a short window and
-    # skip gracefully rather than aborting, then proceed to await_online.
-    step_set("await_offline", StepStatus.RUNNING)
-    offline_deadline = time.time() + REBOOT_OFFLINE_TIMEOUT
-    went_offline     = False
-
-    while time.time() < offline_deadline:
-        try:
-            for nd in k8s_ops.get_nodes(auth=k8s_auth):
-                if nd["name"] == state.k8s_name and not nd["ready"]:
-                    went_offline = True
-                    break
-        except Exception:
-            pass
-
-        elapsed = int(time.time() - state.reboot_start)
-        step = state.get_step("await_offline")
-        if step:
-            step.detail = f"{elapsed}s elapsed"
-        update_cb()
-
-        if went_offline:
-            break
-        time.sleep(5)
-
-    if went_offline:
-        step_set("await_offline", StepStatus.SUCCESS, "Node offline")
-    else:
-        step_set("await_offline", StepStatus.SKIPPED, "Not detected — proceeding")
-
-    # ── Step 3: Wait for node to return online ────────────────────────────
-    # Detect recovery by watching for ready_since to change from the
-    # baseline captured before the reboot.  This is clock-skew safe.
-    step_set("await_online", StepStatus.RUNNING)
-    deadline   = time.time() + REBOOT_ONLINE_TIMEOUT
-    came_back  = False
-
-    while time.time() < deadline:
-        try:
-            for nd in k8s_ops.get_nodes(auth=k8s_auth):
-                if nd["name"] != state.k8s_name or not nd["ready"]:
-                    continue
-                ready_since = nd.get("ready_since")
-                if ready_since is not None and ready_since != baseline_ready_since:
-                    state.reboot_downtime = time.time() - state.reboot_start
-                    came_back = True
-                    break
-        except Exception:
-            pass
-
-        if came_back:
-            break
-
-        elapsed = int(time.time() - state.reboot_start)
-        step = state.get_step("await_online")
-        if step:
-            step.detail = f"{elapsed}s elapsed"
-        update_cb()
-        time.sleep(5)
-
-    if not came_back:
-        abort("await_online", "Timeout — node did not return online")
-        return
-
-    dt = int(state.reboot_downtime)
-    step_set("await_online", StepStatus.SUCCESS, f"Online — downtime {dt}s")
-    step_set("uncordon", StepStatus.RUNNING)
-    try:
-        k8s_ops.uncordon_node(state.k8s_name, log, auth=k8s_auth)
-        state.k8s_cordoned = False
-        step_set("uncordon", StepStatus.SUCCESS)
-    except Exception as exc:
-        abort("uncordon", str(exc))
-        return
-
-    state.phase        = NodePhase.IDLE
-    state.etcd_healthy = None   # needs re-verification on next selection
-    log(f"✓ '{state.k8s_name}' back online and uncordoned — total downtime: {dt}s")
-    if audit_cb:
-        audit_cb("completed", f"downtime={dt}s auto_uncordoned=true")
-    update_cb()
+    workflows_maintenance.run_reboot(
+        state,
+        update_cb,
+        log_cb,
+        k8s_ops=k8s_ops,
+        issue_reboot_fn=issue_reboot,
+        time_module=time,
+        audit_cb=audit_cb,
+        k8s_auth=k8s_auth,
+    )
 
 
 def run_drain_quick(
@@ -433,60 +295,16 @@ def run_drain_quick(
     openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
 ) -> None:
     """Cordon, optionally disable Nova, then drain pods.  Runs in a daemon thread."""
-
-    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
-        step = state.get_step(key)
-        if step:
-            step.status = status
-            if detail:
-                step.detail = detail
-        update_cb()
-
-    def log(msg: str) -> None:
-        state.add_log(msg)
-        log_cb(msg)
-        update_cb()
-
-    def abort(key: str, reason: str) -> None:
-        step_set(key, StepStatus.FAILED, reason)
-        state.phase = NodePhase.ERROR
-        log(f"Drain aborted: {reason}")
-        if audit_cb:
-            audit_cb("failed", f"step={key} reason={reason}")
-        update_cb()
-
-    step_set("cordon", StepStatus.RUNNING)
-    try:
-        k8s_ops.cordon_node(state.k8s_name, log, auth=k8s_auth)
-        state.k8s_cordoned = True
-        step_set("cordon", StepStatus.SUCCESS)
-    except Exception as exc:
-        abort("cordon", str(exc))
-        return
-
-    if state.is_compute:
-        step_set("disable_nova", StepStatus.RUNNING)
-        try:
-            openstack_ops.disable_compute_service(state.hypervisor, log, auth=openstack_auth)
-            state.compute_status = "disabled"
-            step_set("disable_nova", StepStatus.SUCCESS)
-        except Exception as exc:
-            abort("disable_nova", str(exc))
-            return
-
-    step_set("drain_k8s", StepStatus.RUNNING)
-    try:
-        k8s_ops.drain_node(state.k8s_name, log, auth=k8s_auth)
-        step_set("drain_k8s", StepStatus.SUCCESS)
-    except Exception as exc:
-        abort("drain_k8s", str(exc))
-        return
-
-    state.phase = NodePhase.IDLE
-    log(f"✓ '{state.k8s_name}' drained — cordoned, nova disabled, pods evicted")
-    if audit_cb:
-        audit_cb("completed", "cordoned, nova disabled, pods evicted")
-    update_cb()
+    workflows_maintenance.run_drain_quick(
+        state,
+        update_cb,
+        log_cb,
+        k8s_ops=k8s_ops,
+        openstack_ops=openstack_ops,
+        audit_cb=audit_cb,
+        k8s_auth=k8s_auth,
+        openstack_auth=openstack_auth,
+    )
 
 
 def run_undrain(
@@ -498,49 +316,13 @@ def run_undrain(
     openstack_auth: Optional[openstack_ops.OpenStackAuth] = None,
 ) -> None:
     """Enable Nova (if compute) then uncordon.  Runs in a daemon thread."""
-
-    def step_set(key: str, status: StepStatus, detail: str = "") -> None:
-        step = state.get_step(key)
-        if step:
-            step.status = status
-            if detail:
-                step.detail = detail
-        update_cb()
-
-    def log(msg: str) -> None:
-        state.add_log(msg)
-        log_cb(msg)
-        update_cb()
-
-    def abort(key: str, reason: str) -> None:
-        step_set(key, StepStatus.FAILED, reason)
-        state.phase = NodePhase.ERROR
-        log(f"Undrain aborted: {reason}")
-        if audit_cb:
-            audit_cb("failed", f"step={key} reason={reason}")
-        update_cb()
-
-    if state.is_compute:
-        step_set("enable_nova", StepStatus.RUNNING)
-        try:
-            openstack_ops.enable_compute_service(state.hypervisor, log, auth=openstack_auth)
-            state.compute_status = "up"
-            step_set("enable_nova", StepStatus.SUCCESS)
-        except Exception as exc:
-            abort("enable_nova", str(exc))
-            return
-
-    step_set("uncordon", StepStatus.RUNNING)
-    try:
-        k8s_ops.uncordon_node(state.k8s_name, log, auth=k8s_auth)
-        state.k8s_cordoned = False
-        step_set("uncordon", StepStatus.SUCCESS)
-    except Exception as exc:
-        abort("uncordon", str(exc))
-        return
-
-    state.phase = NodePhase.IDLE
-    log(f"✓ '{state.k8s_name}' undrained — nova enabled, node uncordoned")
-    if audit_cb:
-        audit_cb("completed", "nova enabled, node uncordoned")
-    update_cb()
+    workflows_maintenance.run_undrain(
+        state,
+        update_cb,
+        log_cb,
+        k8s_ops=k8s_ops,
+        openstack_ops=openstack_ops,
+        audit_cb=audit_cb,
+        k8s_auth=k8s_auth,
+        openstack_auth=openstack_auth,
+    )
