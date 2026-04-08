@@ -77,6 +77,11 @@ const netState       = { data: null, loading: false, page: 1, pageSize: 25, filt
 let   selectedNetwork  = null;
 const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null }, ovnSelectedPort: null, ovnPortCache: {} };
 
+// Router view state
+const routerState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+let   selectedRouter = null;
+const routerDetailState = { loading: false, data: null, ovn: { loading: false, data: null, error: null } };
+
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
 

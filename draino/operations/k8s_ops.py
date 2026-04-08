@@ -165,6 +165,7 @@ from .k8s_inventory_ops import (
 )
 from .ovn_ops import (
     get_ovn_edge_nodes,
+    get_ovn_logical_router,
     get_ovn_logical_switch,
     get_ovn_port_detail,
     get_ovn_port_logical_switch,

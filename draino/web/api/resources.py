@@ -6,7 +6,8 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Request
 
-from ..resource_helpers import get_network_detail, get_networks, get_volumes
+from ...operations import k8s_ops
+from ..resource_helpers import get_network_detail, get_networks, get_router_detail, get_routers, get_volumes
 
 router = APIRouter()
 
@@ -44,3 +45,36 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc)}
+
+
+@router.get("/api/routers")
+async def api_routers(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_routers, session.server.openstack_auth)
+        return {"routers": data, "error": None}
+    except Exception as exc:
+        return {"routers": [], "error": str(exc)}
+
+
+@router.get("/api/routers/{router_id}")
+async def api_router_detail(router_id: str, request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_router_detail, router_id, session.server.openstack_auth)
+        return {"router": data, "error": None}
+    except Exception as exc:
+        return {"router": None, "error": str(exc)}
+
+
+@router.get("/api/routers/{router_id}/ovn")
+async def api_router_ovn(router_id: str, request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_router, router_id, session.server.k8s_auth)
+        return {"ovn": data, "error": None}
+    except Exception as exc:
+        return {"ovn": None, "error": str(exc)}

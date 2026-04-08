@@ -170,6 +170,71 @@ def get_ovn_port_logical_switch(port_id: str, network_id: str, auth: K8sAuth | N
     }
 
 
+def get_ovn_logical_router(router_id: str, auth: K8sAuth | None = None) -> dict:
+    """Run `kubectl ko nbctl show neutron-<router_id>` and return parsed data."""
+    import json as _json
+
+    logical_router_name = f"neutron-{router_id}"
+    cmd = ["kubectl", "ko", "nbctl", "show", logical_router_name]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_kubectl_plugin_env(auth))
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko nbctl show timed out") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"kubectl ko exited with code {result.returncode}")
+
+    logical_router_uuid = ""
+    ports: list[dict] = []
+    current: dict | None = None
+
+    for line in result.stdout.splitlines():
+        content = line.rstrip()
+        stripped = content.lstrip()
+        if not stripped:
+            continue
+        indent = len(content) - len(stripped)
+
+        if indent == 0 and stripped.startswith("router "):
+            parts = stripped.split(None, 2)
+            logical_router_uuid = parts[1] if len(parts) > 1 else ""
+            current = None
+        elif indent == 4 and stripped.startswith("port "):
+            if current is not None:
+                ports.append(current)
+            current = {
+                "id": stripped[len("port "):].split()[0],
+                "mac": "",
+                "networks": [],
+                "peer": "",
+                "gateway_chassis": "",
+            }
+        elif indent == 8 and current is not None and ":" in stripped:
+            key, _, value = stripped.partition(":")
+            key = key.strip()
+            value = value.strip()
+            if key == "mac":
+                current["mac"] = value.strip('"')
+            elif key == "peer":
+                current["peer"] = value.strip('"')
+            elif key == "gateway chassis":
+                current["gateway_chassis"] = value.strip('"')
+            elif key == "networks":
+                try:
+                    current["networks"] = _json.loads(value)
+                except Exception:
+                    current["networks"] = [value.strip('"')] if value and value != "[]" else []
+
+    if current is not None:
+        ports.append(current)
+
+    return {"lr_name": logical_router_name, "lr_uuid": logical_router_uuid, "ports": ports}
+
+
 def _ovsdb_map_to_dict(value) -> dict[str, str]:
     if not isinstance(value, list) or len(value) != 2 or value[0] != "map":
         return {}

@@ -66,7 +66,14 @@ from .auth_builders import (
 from . import inventory as inventory_module
 from .inventory import DrainoServer, _serialise
 from .latency import get_latency_summary
-from .resource_helpers import coerce_bool as _coerce_bool, get_network_detail as _get_network_detail, get_networks as _get_networks, get_volumes as _get_volumes
+from .resource_helpers import (
+    coerce_bool as _coerce_bool,
+    get_network_detail as _get_network_detail,
+    get_networks as _get_networks,
+    get_router_detail as _get_router_detail,
+    get_routers as _get_routers,
+    get_volumes as _get_volumes,
+)
 from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session
 
 _STATIC = Path(__file__).parent / "static"

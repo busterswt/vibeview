@@ -6,7 +6,7 @@ import urllib.error
 from types import SimpleNamespace
 
 from draino import node_agent_client, node_agent_host_ops, node_agent_metrics_ops
-from draino.operations import k8s_ops
+from draino.operations import k8s_ops, ovn_ops
 
 
 def test_get_node_hardware_info_uses_node_agent(monkeypatch):
@@ -332,6 +332,38 @@ def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
     result = k8s_ops.get_ovn_edge_nodes()
 
     assert result == {"node-1.example.com"}
+
+
+def test_get_ovn_logical_router_parses_router_ports(monkeypatch):
+    output = """router 7e4dc0d9-1234-5678-9abc-def012345678 (neutron-router-1)
+    port lrp-subnet-1
+        mac: \"fa:16:3e:00:00:01\"
+        networks: [\"10.0.0.1/24\"]
+        peer: \"ls-port-1\"
+    port lrp-ext-1
+        mac: \"fa:16:3e:00:00:fe\"
+        networks: [\"203.0.113.2/24\"]
+        gateway chassis: \"chassis-1\"
+"""
+
+    monkeypatch.setattr(
+        ovn_ops.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=output,
+            stderr="",
+        ),
+    )
+
+    result = k8s_ops.get_ovn_logical_router("router-1")
+
+    assert result["lr_name"] == "neutron-router-1"
+    assert result["lr_uuid"] == "7e4dc0d9-1234-5678-9abc-def012345678"
+    assert result["ports"][0]["id"] == "lrp-subnet-1"
+    assert result["ports"][0]["networks"] == ["10.0.0.1/24"]
+    assert result["ports"][1]["gateway_chassis"] == "chassis-1"
 
 
 def test_node_agent_client_uses_pod_ip_and_disables_hostname_check(monkeypatch, tmp_path):

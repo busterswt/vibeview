@@ -20,7 +20,8 @@
     <a data-view="infrastructure" class="active" onclick="switchView('infrastructure')">Infrastructure</a>
     <a data-view="monitor"                       onclick="switchView('monitor')">Monitor</a>
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
-    <a data-view="networking"                    onclick="switchView('networking')">Networking</a>
+    <a data-view="networking"                    onclick="switchView('networking')">Networks</a>
+    <a data-view="routers"                       onclick="switchView('routers')">Routers</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
   </nav>
   <div class="top-right">
@@ -68,6 +69,9 @@
   <!-- Network / Storage refresh -->
   <div class="bc-actions" id="bc-net-actions" style="display:none">
     <button class="btn" onclick="loadNetworks(true)">⟳ Refresh Networks</button>
+  </div>
+  <div class="bc-actions" id="bc-router-actions" style="display:none">
+    <button class="btn" onclick="loadRouters(true)">⟳ Refresh Routers</button>
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="loadVolumes(true)">⟳ Refresh Volumes</button>
@@ -198,6 +202,14 @@
       <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading networks…</div>
     </div>
     <div id="net-detail-wrap"></div>
+  </div>
+
+  <!-- ── Routers view ── -->
+  <div class="view" id="view-routers">
+    <div class="data-view-wrap" id="router-wrap">
+      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading routers…</div>
+    </div>
+    <div id="router-detail-wrap"></div>
   </div>
 
   <!-- ── Storage view ── -->
