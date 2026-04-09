@@ -86,6 +86,23 @@ function stressFlavorLabel(flavor) {
   return `${flavor.name} - ${flavor.vcpus} vCPU - ${Math.round((flavor.ram_mb || 0) / 1024)} GB - ${flavor.disk_gb} GB`;
 }
 
+async function fetchStressJson(url, options) {
+  const resp = await fetch(url, options);
+  const contentType = resp.headers.get('content-type') || '';
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw new Error(text || `${resp.status} ${resp.statusText}`.trim());
+  }
+  if (!contentType.includes('application/json')) {
+    throw new Error(text || `Expected JSON response from ${url}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    throw new Error(text || `Invalid JSON response from ${url}`);
+  }
+}
+
 function stressNeedsPolling() {
   return activeView === 'stress' && (
     stressState.actionLoading ||
@@ -130,8 +147,7 @@ async function loadStressCatalog(force = false) {
   stressState.catalogError = null;
   if (!stressState.catalog) renderStressView();
   try {
-    const resp = await fetch('/api/stress/catalog');
-    const json = await resp.json();
+    const json = await fetchStressJson('/api/stress/catalog');
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -168,8 +184,7 @@ async function loadStressEnvironment(force = false) {
   stressState.actionError = null;
   renderStressView();
   try {
-    const resp = await fetch('/api/stress/environment');
-    const json = await resp.json();
+    const json = await fetchStressJson('/api/stress/environment');
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -199,8 +214,7 @@ async function loadStressStatus(force = false) {
   stressState.actionError = null;
   renderStressView();
   try {
-    const resp = await fetch('/api/stress/status');
-    const json = await resp.json();
+    const json = await fetchStressJson('/api/stress/status');
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -317,7 +331,7 @@ async function launchStressTest() {
   stressState.actionError = null;
   renderStressView();
   try {
-    const resp = await fetch('/api/stress/launch', {
+    const json = await fetchStressJson('/api/stress/launch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -332,7 +346,6 @@ async function launchStressTest() {
         external_network_id: draft.externalNetworkId,
       }),
     });
-    const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -342,6 +355,11 @@ async function launchStressTest() {
     startStressStatusPolling();
   } catch (e) {
     stressState.actionError = String(e);
+    await loadStressCatalog(true);
+    if (stressState.catalog?.guardrail?.active) {
+      await loadStressStatus(true);
+      startStressStatusPolling();
+    }
   } finally {
     stressState.actionLoading = false;
     stressState.actionKind = '';
@@ -357,8 +375,7 @@ async function deleteStressTest() {
   stressState.actionError = null;
   renderStressView();
   try {
-    const resp = await fetch('/api/stress/delete', { method: 'POST' });
-    const json = await resp.json();
+    const json = await fetchStressJson('/api/stress/delete', { method: 'POST' });
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -417,6 +434,41 @@ function renderStressGuardrail() {
             </div>
           ` : ''}
         </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderStressTrace() {
+  const trace = stressState.catalog?.trace || [];
+  return `
+    <section class="card">
+      <div class="card-title"><span>Action Trace</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Message</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${trace.length ? trace.map(item => `
+              <tr>
+                <td class="mono">${esc(item.at || '—')}</td>
+                <td>${esc(item.action || '—')}</td>
+                <td>${esc(item.stage || '—')}</td>
+                <td><span class="report-tag ${item.status === 'bad' ? 'red' : item.status === 'warn' ? 'yellow' : item.status === 'good' ? 'green' : 'blue'}">${esc(item.status || 'info')}</span></td>
+                <td>${esc(item.message || '—')}</td>
+                <td class="mono">${esc(item.detail || '—')}</td>
+              </tr>
+            `).join('') : `<tr><td colspan="6" style="text-align:center;color:var(--dim)">No stress action trace yet.</td></tr>`}
+          </tbody>
+        </table>
       </div>
     </section>
   `;
@@ -793,11 +845,12 @@ function renderStressView() {
             </span>
           </div>
         </section>
-        ${renderStressGuardrail()}
         ${showLoadedGrids ? `
           <section class="stress-launch-grid">
             ${draft?.loaded ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
+            ${renderStressGuardrail()}
           </section>
+          ${renderStressTrace()}
           <section class="card">
             <div class="card-title"><span>Notes</span></div>
             <div class="card-body note">
@@ -808,7 +861,9 @@ function renderStressView() {
         ` : `
           <section class="stress-launch-grid">
             ${renderStressTemplateLaunchState()}
+            ${renderStressGuardrail()}
           </section>
+          ${renderStressTrace()}
         `}
         ${status?.active ? renderStressSummarySection(status) : ''}
         ${status?.active ? renderStressResourceTable(status.resources || []) : ''}

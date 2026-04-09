@@ -353,3 +353,45 @@ def test_stress_launch_status_and_delete_endpoints(monkeypatch):
     assert deleted.status_code == 200
     assert delete_body["result"]["deleted"] is True
     assert state["deleted_ref"] == "stack-1"
+
+
+def test_stress_catalog_returns_action_trace(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+    stress_helpers._STRESS_ACTION_TRACE.clear()
+    stress_helpers.record_stress_action("launch", "request_received", message="Received launch request in Draino", detail="burst")
+    stress_helpers.record_stress_action("launch", "calling_heat", message="Calling Heat create_stack", detail="vibe-stress-20260409-141522")
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+        class orchestration:
+            @staticmethod
+            def stacks():
+                return []
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/stress/catalog")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["catalog"]["trace"][0]["stage"] == "calling_heat"
+    assert body["catalog"]["trace"][1]["stage"] == "request_received"

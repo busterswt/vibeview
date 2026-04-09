@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections import deque
 from datetime import datetime, timezone
 from ipaddress import ip_network
 from statistics import mean
@@ -14,6 +15,8 @@ from ..operations import openstack_ops
 STRESS_STACK_PREFIX = "vibe-stress-"
 STRESS_DEFAULT_KEYPAIR_NAME = "vibe-stress-key"
 STRESS_DEFAULT_SECURITY_GROUP_NAME = "vibe-stress-secgroup"
+STRESS_TRACE_LIMIT = 24
+_STRESS_ACTION_TRACE: deque[dict[str, Any]] = deque(maxlen=STRESS_TRACE_LIMIT)
 
 STRESS_PROFILES: tuple[dict[str, Any], ...] = (
     {
@@ -68,6 +71,21 @@ def _coerce_bool(value: Any) -> bool:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def record_stress_action(action: str, stage: str, *, status: str = "info", message: str = "", detail: str = "") -> None:
+    _STRESS_ACTION_TRACE.appendleft({
+        "at": _now_utc().strftime("%H:%M:%S"),
+        "action": action,
+        "stage": stage,
+        "status": status,
+        "message": message,
+        "detail": detail,
+    })
+
+
+def get_stress_action_trace() -> list[dict[str, Any]]:
+    return list(_STRESS_ACTION_TRACE)
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -374,6 +392,7 @@ def build_stress_catalog(
         "limits": {
             "compute_count": compute_count,
         },
+        "trace": get_stress_action_trace(),
     }
 
 
@@ -590,7 +609,9 @@ def launch_stress_stack(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     conn = openstack_ops._conn(auth=auth)
+    record_stress_action("launch", "validation", message="Validating launch request")
     if _find_active_stress_stack_obj(conn) is not None:
+        record_stress_action("launch", "blocked", status="warn", message="Launch blocked by active stress stack")
         raise ValueError("An active stress stack already exists; delete it before launching a new one")
     options = build_stress_options(
         auth=auth,
@@ -598,6 +619,7 @@ def launch_stress_stack(
         profile_key=str(payload.get("profile") or ""),
     )
     stack_payload = _build_stack_payload(options=options, payload=payload)
+    record_stress_action("launch", "validated", status="good", message="Launch request validated", detail=stack_payload["stack_name"])
     template = _build_stress_template(stack_payload)
     parameters = {
         "test_id": stack_payload["test_id"],
@@ -616,25 +638,40 @@ def launch_stress_stack(
         "security_group_name": stack_payload["security_group_name"],
         "external_network_id": stack_payload["external_network_id"],
     }
-    conn.orchestration.create_stack(
-        name=stack_payload["stack_name"],
-        template=json.dumps(template),
-        parameters=parameters,
-        timeout=60,
-        wait=False,
-    )
+    try:
+        record_stress_action("launch", "calling_heat", message="Calling Heat create_stack", detail=stack_payload["stack_name"])
+        conn.orchestration.create_stack(
+            name=stack_payload["stack_name"],
+            template=json.dumps(template),
+            parameters=parameters,
+            timeout=60,
+            wait=False,
+        )
+        record_stress_action("launch", "heat_accepted", status="good", message="Heat accepted create_stack request", detail=stack_payload["stack_name"])
+    except Exception as exc:
+        record_stress_action("launch", "failed", status="bad", message="Heat create_stack failed", detail=str(exc))
+        raise
     return get_stress_status(auth=auth)
 
 
 def delete_active_stress_stack(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any]:
     conn = openstack_ops._conn(auth=auth)
+    record_stress_action("delete", "validation", message="Looking up active stress stack")
     stack = _find_active_stress_stack_obj(conn)
     if stack is None:
+        record_stress_action("delete", "blocked", status="warn", message="No active stress stack found for deletion")
         return {"deleted": False, "stack_name": "", "message": "No active stress stack detected."}
-    conn.orchestration.delete_stack(stack)
+    stack_name = getattr(stack, "stack_name", None) or getattr(stack, "name", None) or ""
+    try:
+        record_stress_action("delete", "calling_heat", message="Calling Heat delete_stack", detail=stack_name)
+        conn.orchestration.delete_stack(stack)
+        record_stress_action("delete", "heat_accepted", status="good", message="Heat accepted delete_stack request", detail=stack_name)
+    except Exception as exc:
+        record_stress_action("delete", "failed", status="bad", message="Heat delete_stack failed", detail=str(exc))
+        raise
     return {
         "deleted": True,
-        "stack_name": getattr(stack, "stack_name", None) or getattr(stack, "name", None) or "",
+        "stack_name": stack_name,
         "message": "Stress stack deletion requested.",
     }
 

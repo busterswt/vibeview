@@ -15,6 +15,7 @@ from ..stress_helpers import (
     delete_active_stress_stack,
     get_stress_status,
     launch_stress_stack,
+    record_stress_action,
 )
 
 router = APIRouter()
@@ -131,6 +132,7 @@ async def api_stress_launch(request: Request):
     payload = await request.json()
     loop = asyncio.get_running_loop()
     compute_count = sum(1 for state in session.server.node_states.values() if state.is_compute)
+    record_stress_action("launch", "request_received", message="Received launch request in Draino", detail=str(payload.get("profile") or ""))
     try:
         data = await loop.run_in_executor(
             None,
@@ -143,6 +145,7 @@ async def api_stress_launch(request: Request):
         )
         return {"status": data, "error": None, "api_issue": None}
     except Exception as exc:
+        record_stress_action("launch", "route_failed", status="bad", message="Launch request failed before response", detail=str(exc))
         return {
             "status": None,
             "error": str(exc),
@@ -154,6 +157,7 @@ async def api_stress_launch(request: Request):
 async def api_stress_delete(request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
+    record_stress_action("delete", "request_received", message="Received delete request in Draino")
     try:
         data = await loop.run_in_executor(
             None,
@@ -164,6 +168,7 @@ async def api_stress_delete(request: Request):
         )
         return {"result": data, "error": None, "api_issue": None}
     except Exception as exc:
+        record_stress_action("delete", "route_failed", status="bad", message="Delete request failed before response", detail=str(exc))
         return {
             "result": None,
             "error": str(exc),
