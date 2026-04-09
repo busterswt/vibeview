@@ -75,7 +75,9 @@ from .resource_helpers import (
     get_volumes as _get_volumes,
 )
 from .report_helpers import (
+    build_capacity_headroom_report as _build_capacity_headroom_report,
     build_maintenance_readiness_report as _build_maintenance_readiness_report,
+    render_capacity_headroom_csv as _render_capacity_headroom_csv,
     render_maintenance_readiness_csv as _render_maintenance_readiness_csv,
 )
 from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session

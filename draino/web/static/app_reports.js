@@ -8,6 +8,13 @@ const REPORT_META = {
     csvUrl: '/api/reports/maintenance-readiness.csv',
     icon: '🛠️',
   },
+  'capacity-headroom': {
+    label: 'Capacity & Headroom',
+    subtitle: 'Nova, Kubernetes, and cluster planning view',
+    url: '/api/reports/capacity-headroom',
+    csvUrl: '/api/reports/capacity-headroom.csv',
+    icon: '📊',
+  },
 };
 
 async function loadActiveReport(force = false) {
@@ -56,6 +63,212 @@ function renderReportBreakdownBar(label, count, total, cls) {
   `;
 }
 
+function renderPercentValue(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+  return `${Math.round(value)}%`;
+}
+
+function renderCapacityHero(label, value, footClass, footText) {
+  return `
+    <div class="report-hero-card">
+      <div class="report-hero-label">${esc(label)}</div>
+      <div class="report-hero-value">${esc(value)}</div>
+      <div class="report-hero-foot ${escAttr(footClass)}">${esc(footText)}</div>
+    </div>
+  `;
+}
+
+function renderFindingsCard(findings, title = 'Highest-Risk Findings') {
+  return `
+    <div class="card">
+      <div class="card-title"><span>${esc(title)}</span></div>
+      <div class="card-body report-findings">
+        ${findings.length ? findings.map(item => `
+          <div class="report-finding-row">
+            <div><span class="report-severity ${esc(item.severity || 'medium')}">${esc(item.severity || 'medium')}</span></div>
+            <div class="report-finding-text">${item.node ? `<span class="mono">${esc(item.node)}</span> ` : ''}${esc(item.message || '')}</div>
+          </div>
+        `).join('') : `<div class="card-note">No elevated findings in the current snapshot.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderMaintenanceReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const findings = report.findings || [];
+  const items = report.items || [];
+  const totalNodes = Number(report.scope?.nodes ?? items.length) || 0;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+        <div class="report-head-actions">
+          <button class="btn" onclick="refreshActiveReport()">↻ Refresh</button>
+          <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
+          <button class="btn primary" onclick="window.print()">PDF</button>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
+        <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
+        <span class="meta-pill">Scope: ${esc(String(report.scope?.nodes ?? items.length))} nodes</span>
+        <span class="meta-pill">Mode: Live snapshot only</span>
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Ready Now', String(summary.ready_now ?? 0), 'good', 'No immediate blockers')}
+      ${renderCapacityHero('Blocked', String(summary.blocked ?? 0), 'bad', 'Requires operator intervention')}
+      ${renderCapacityHero('Review', String(summary.review ?? 0), 'warn', 'Operational caution advised')}
+      ${renderCapacityHero('Reboot Required', String(summary.reboot_required ?? 0), 'warn', 'Pending reboot or kernel drift')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings)}
+      <div class="card">
+        <div class="card-title"><span>Readiness Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('Ready nodes', summary.ready_now ?? 0, totalNodes, 'good')}
+          ${renderReportBreakdownBar('Blocked nodes', summary.blocked ?? 0, totalNodes, 'bad')}
+          ${renderReportBreakdownBar('Review nodes', summary.review ?? 0, totalNodes, 'warn')}
+          ${renderReportBreakdownBar('No-agent nodes', summary.no_agent ?? 0, totalNodes, 'bad')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Node Maintenance Grid</span></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>AZ</th>
+              <th>Role</th>
+              <th>Nova</th>
+              <th>K8s</th>
+              <th>VMs</th>
+              <th>Pods</th>
+              <th>Reboot</th>
+              <th>Agent</th>
+              <th>Verdict</th>
+              <th>Blocking Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td class="mono">${esc(item.node || '')}</td>
+                <td>${esc(item.availability_zone || '—')}</td>
+                <td>${(item.roles || []).map(role => `<span class="report-tag ${reportRoleTagClass(role)}">${esc(role)}</span>`).join('')}</td>
+                <td>${renderReportStatus(item.nova_status)}</td>
+                <td>${renderReportStatus(item.k8s_status)}</td>
+                <td>${esc(String(item.vm_count ?? 0))}</td>
+                <td>${item.pod_count != null ? esc(String(item.pod_count)) : '—'}</td>
+                <td>${item.reboot_required ? '<span class="report-tag yellow">needed</span>' : '<span class="report-tag blue">clear</span>'}</td>
+                <td>${item.node_agent_ready ? '<span class="report-status good" title="Node agent ready"><span class="report-dot good"></span></span>' : '<span class="report-status bad" title="Node agent unavailable"><span class="report-dot bad"></span></span>'}</td>
+                <td><span class="report-tag ${reportVerdictTagClass(item.verdict)}">${esc(item.verdict || '')}</span></td>
+                <td>${esc(item.blocking_reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderCapacityReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const items = report.items || [];
+  const azHeadroom = report.az_headroom || [];
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+        <div class="report-head-actions">
+          <button class="btn" onclick="refreshActiveReport()">↻ Refresh</button>
+          <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
+          <button class="btn primary" onclick="window.print()">PDF</button>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
+        <span class="meta-pill">Scope: ${esc(String(report.scope?.computes ?? items.length))} computes / ${esc(String(report.scope?.instances ?? 0))} instances / ${esc(String(report.scope?.pods ?? 0))} pods</span>
+        <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
+        <span class="meta-pill">No stored history</span>
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Free vCPU Headroom', renderPercentValue(summary.free_vcpu_pct), summary.free_vcpu_pct != null && summary.free_vcpu_pct < 20 ? 'warn' : 'good', summaryFoot.free_vcpu_pct || '')}
+      ${renderCapacityHero('Free RAM Headroom', renderPercentValue(summary.free_ram_pct), summary.free_ram_pct != null && summary.free_ram_pct < 20 ? 'warn' : 'good', summaryFoot.free_ram_pct || '')}
+      ${renderCapacityHero('Pod Headroom', renderPercentValue(summary.free_pod_pct), summary.free_pod_pct != null && summary.free_pod_pct < 20 ? 'warn' : 'good', summaryFoot.free_pod_pct || '')}
+      ${renderCapacityHero('Drain-Safe Hosts', String(summary.drain_safe_hosts ?? 0), (summary.drain_safe_hosts ?? 0) < 3 ? 'bad' : 'good', summaryFoot.drain_safe_hosts || '')}
+    </section>
+
+    <section class="report-grid-two">
+      <div class="card">
+        <div class="card-title"><span>AZ Headroom</span></div>
+        <div class="card-body report-chart-strip">
+          ${azHeadroom.map(item => renderReportBreakdownBar(
+            item.availability_zone || 'unknown',
+            Math.round(item.vcpus_percent_used || 0),
+            100,
+            item.severity === 'high' ? 'bad' : item.severity === 'medium' ? 'warn' : 'good',
+          ).replace(`${Math.round(item.vcpus_percent_used || 0)} / 100`, `${Math.round(item.vcpus_percent_used || 0)}% vCPU`)).join('')}
+        </div>
+      </div>
+      ${renderFindingsCard(findings, 'Top Constraints')}
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Per-Host Headroom Grid</span></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>AZ</th>
+              <th>Aggregates</th>
+              <th>VMs</th>
+              <th>Amphora</th>
+              <th>vCPU</th>
+              <th>RAM</th>
+              <th>Pods</th>
+              <th>Maintenance</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td class="mono">${esc(item.host || '')}</td>
+                <td>${esc(item.availability_zone || '—')}</td>
+                <td>${esc((item.aggregates || []).join(', ') || '—')}</td>
+                <td>${esc(String(item.vm_count ?? 0))}</td>
+                <td>${esc(String(item.amphora_count ?? 0))}</td>
+                <td>${item.vcpus_used != null && item.vcpus != null ? `${esc(String(item.vcpus_used))} / ${esc(String(item.vcpus))}` : '—'}</td>
+                <td>${item.memory_mb_used != null && item.memory_mb != null ? `${esc(formatReportMemory(item.memory_mb_used))} / ${esc(formatReportMemory(item.memory_mb))}` : '—'}</td>
+                <td>${item.pod_count != null && item.pods_allocatable != null ? `${esc(String(item.pod_count))} / ${esc(String(item.pods_allocatable))}` : '—'}</td>
+                <td><span class="report-tag ${reportCapacityMaintenanceClass(item.maintenance_status)}">${esc(item.maintenance_status || '')}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function renderReportsView() {
   const wrap = document.getElementById('reports-wrap');
   if (!wrap) return;
@@ -77,117 +290,9 @@ function renderReportsView() {
   } else if (reportState.error) {
     content = `<div class="err-block" style="margin:0">${esc(reportState.error)}</div>`;
   } else if (report) {
-    const summary = report.summary || {};
-    const findings = report.findings || [];
-    const items = report.items || [];
-    const totalNodes = Number(report.scope?.nodes ?? items.length) || 0;
-    content = `
-      <section class="report-header-card">
-        <div class="report-head-top">
-          <div>
-            <div class="report-title">${esc(report.title || activeMeta.label)}</div>
-            <div class="report-subtitle">${esc(report.subtitle || '')}</div>
-          </div>
-          <div class="report-head-actions">
-            <button class="btn" onclick="refreshActiveReport()">↻ Refresh</button>
-            <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
-            <button class="btn primary" onclick="window.print()">PDF</button>
-          </div>
-        </div>
-        <div class="report-meta-row">
-          <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
-          <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
-          <span class="meta-pill">Scope: ${esc(String(report.scope?.nodes ?? items.length))} nodes</span>
-          <span class="meta-pill">Mode: Live snapshot only</span>
-        </div>
-      </section>
-
-      <section class="report-hero-grid">
-        <div class="report-hero-card">
-          <div class="report-hero-label">Ready Now</div>
-          <div class="report-hero-value">${summary.ready_now ?? 0}</div>
-          <div class="report-hero-foot good">No immediate blockers</div>
-        </div>
-        <div class="report-hero-card">
-          <div class="report-hero-label">Blocked</div>
-          <div class="report-hero-value">${summary.blocked ?? 0}</div>
-          <div class="report-hero-foot bad">Requires operator intervention</div>
-        </div>
-        <div class="report-hero-card">
-          <div class="report-hero-label">Review</div>
-          <div class="report-hero-value">${summary.review ?? 0}</div>
-          <div class="report-hero-foot warn">Operational caution advised</div>
-        </div>
-        <div class="report-hero-card">
-          <div class="report-hero-label">Reboot Required</div>
-          <div class="report-hero-value">${summary.reboot_required ?? 0}</div>
-          <div class="report-hero-foot warn">Pending reboot or kernel drift</div>
-        </div>
-      </section>
-
-      <section class="report-grid-two">
-        <div class="card">
-          <div class="card-title"><span>Highest-Risk Findings</span></div>
-          <div class="card-body report-findings">
-            ${findings.length ? findings.map(item => `
-              <div class="report-finding-row">
-                <div><span class="report-severity ${esc(item.severity || 'medium')}">${esc(item.severity || 'medium')}</span></div>
-                <div class="report-finding-text"><span class="mono">${esc(item.node || '')}</span> ${esc(item.message || '')}</div>
-              </div>
-            `).join('') : `<div class="card-note">No elevated findings in the current snapshot.</div>`}
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title"><span>Readiness Breakdown</span></div>
-          <div class="card-body report-chart-strip">
-            ${renderReportBreakdownBar('Ready nodes', summary.ready_now ?? 0, totalNodes, 'good')}
-            ${renderReportBreakdownBar('Blocked nodes', summary.blocked ?? 0, totalNodes, 'bad')}
-            ${renderReportBreakdownBar('Review nodes', summary.review ?? 0, totalNodes, 'warn')}
-            ${renderReportBreakdownBar('No-agent nodes', summary.no_agent ?? 0, totalNodes, 'bad')}
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card-title"><span>Node Maintenance Grid</span></div>
-        <div class="card-body" style="padding:0">
-          <table class="data-table report-table">
-            <thead>
-              <tr>
-                <th>Node</th>
-                <th>AZ</th>
-                <th>Role</th>
-                <th>Nova</th>
-                <th>K8s</th>
-                <th>VMs</th>
-                <th>Pods</th>
-                <th>Reboot</th>
-                <th>Agent</th>
-                <th>Verdict</th>
-                <th>Blocking Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(item => `
-                <tr>
-                  <td class="mono">${esc(item.node || '')}</td>
-                  <td>${esc(item.availability_zone || '—')}</td>
-                  <td>${(item.roles || []).map(role => `<span class="report-tag ${reportRoleTagClass(role)}">${esc(role)}</span>`).join('')}</td>
-                  <td>${renderReportStatus(item.nova_status)}</td>
-                  <td>${renderReportStatus(item.k8s_status)}</td>
-                  <td>${esc(String(item.vm_count ?? 0))}</td>
-                  <td>${item.pod_count != null ? esc(String(item.pod_count)) : '—'}</td>
-                  <td>${item.reboot_required ? '<span class="report-tag yellow">needed</span>' : '<span class="report-tag blue">clear</span>'}</td>
-                  <td>${item.node_agent_ready ? '<span class="report-status good" title="Node agent ready"><span class="report-dot good"></span></span>' : '<span class="report-status bad" title="Node agent unavailable"><span class="report-dot bad"></span></span>'}</td>
-                  <td><span class="report-tag ${reportVerdictTagClass(item.verdict)}">${esc(item.verdict || '')}</span></td>
-                  <td>${esc(item.blocking_reason || '')}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    `;
+    content = reportState.active === 'capacity-headroom'
+      ? renderCapacityReport(activeMeta, report, nowLabel)
+      : renderMaintenanceReport(activeMeta, report, nowLabel);
   }
 
   wrap.innerHTML = `
@@ -242,4 +347,17 @@ function reportVerdictTagClass(verdict) {
   if (verdict === 'ready') return 'green';
   if (verdict === 'blocked') return 'red';
   return 'yellow';
+}
+
+function reportCapacityMaintenanceClass(status) {
+  if (status === 'drain-safe') return 'green';
+  if (status === 'blocked') return 'red';
+  return 'yellow';
+}
+
+function formatReportMemory(memoryMb) {
+  const value = Number(memoryMb);
+  if (!Number.isFinite(value)) return '—';
+  const gb = value / 1024;
+  return `${Math.round(gb)} GB`;
 }

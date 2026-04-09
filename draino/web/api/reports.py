@@ -7,7 +7,12 @@ from collections.abc import Callable
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
-from ..report_helpers import build_maintenance_readiness_report, render_maintenance_readiness_csv
+from ..report_helpers import (
+    build_capacity_headroom_report,
+    build_maintenance_readiness_report,
+    render_capacity_headroom_csv,
+    render_maintenance_readiness_csv,
+)
 
 router = APIRouter()
 
@@ -42,4 +47,24 @@ async def api_report_maintenance_readiness_csv(request: Request):
         csv_text,
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="maintenance-readiness.csv"'},
+    )
+
+
+@router.get("/api/reports/capacity-headroom")
+async def api_report_capacity_headroom(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, build_capacity_headroom_report, session.server)
+
+
+@router.get("/api/reports/capacity-headroom.csv")
+async def api_report_capacity_headroom_csv(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, build_capacity_headroom_report, session.server)
+    csv_text = await loop.run_in_executor(None, render_capacity_headroom_csv, report["report"])
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="capacity-headroom.csv"'},
     )

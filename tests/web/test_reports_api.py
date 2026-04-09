@@ -131,3 +131,127 @@ def test_reports_endpoints_return_json_and_csv(monkeypatch):
     assert export.status_code == 200
     assert export.headers["content-disposition"] == 'attachment; filename="maintenance-readiness.csv"'
     assert "cmp-a01" in export.text
+
+
+def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server.node_states = {
+        "cmp-a01": NodeState(
+            k8s_name="cmp-a01",
+            hypervisor="hv-a01",
+            is_compute=True,
+            availability_zone="az-a",
+            aggregates=["general", "ssd"],
+            compute_status="disabled",
+            k8s_cordoned=True,
+            vm_count=14,
+            amphora_count=1,
+            node_agent_ready=True,
+        ),
+        "cmp-c03": NodeState(
+            k8s_name="cmp-c03",
+            hypervisor="hv-c03",
+            is_compute=True,
+            availability_zone="az-c",
+            aggregates=["general"],
+            compute_status="up",
+            vm_count=22,
+            amphora_count=3,
+            hosts_mariadb=True,
+            node_agent_ready=True,
+        ),
+    }
+
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_detail",
+        lambda hypervisor, auth=None: {
+            "hv-a01": {"vcpus": 96, "vcpus_used": 72, "memory_mb": 524288, "memory_mb_used": 430080},
+            "hv-c03": {"vcpus": 128, "vcpus_used": 115, "memory_mb": 524288, "memory_mb_used": 483328},
+        }[hypervisor],
+    )
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_k8s_detail",
+        lambda node_name, auth=None: {
+            "cmp-a01": {"pods_allocatable": "110", "pod_count": 37},
+            "cmp-c03": {"pods_allocatable": "110", "pod_count": 41},
+        }[node_name],
+    )
+
+    payload = web_server._build_capacity_headroom_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["scope"]["computes"] == 2
+    assert payload["report"]["scope"]["instances"] == 36
+    assert payload["report"]["summary"]["drain_safe_hosts"] == 1
+    assert payload["report"]["items"][0]["host"] == "cmp-a01"
+    assert payload["report"]["items"][0]["maintenance_status"] == "drain-safe"
+    assert payload["report"]["items"][1]["maintenance_status"] == "blocked"
+    assert payload["report"]["az_headroom"][1]["availability_zone"] == "az-c"
+    assert payload["report"]["az_headroom"][1]["severity"] == "high"
+
+
+def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_detail",
+        lambda hypervisor, auth=None: {"vcpus": 96, "vcpus_used": 40, "memory_mb": 524288, "memory_mb_used": 200000},
+    )
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_k8s_detail",
+        lambda node_name, auth=None: {"pods_allocatable": "110", "pod_count": 12},
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["cmp-a01"] = NodeState(
+            k8s_name="cmp-a01",
+            hypervisor="hv-a01",
+            is_compute=True,
+            availability_zone="az-a",
+            aggregates=["general"],
+            compute_status="disabled",
+            k8s_cordoned=True,
+            vm_count=14,
+            amphora_count=1,
+            node_agent_ready=True,
+        )
+
+        report = client.get("/api/reports/capacity-headroom")
+        export = client.get("/api/reports/capacity-headroom.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["items"][0]["host"] == "cmp-a01"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="capacity-headroom.csv"'
+    assert "cmp-a01" in export.text
