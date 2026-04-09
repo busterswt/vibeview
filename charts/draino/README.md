@@ -30,6 +30,7 @@ Default behavior:
 
 - creates an `HTTPRoute`
 - attaches that route to an existing `Gateway`
+- supports optional per-rule Gateway API `timeouts`
 
 Typical Genestack deployment:
 
@@ -55,6 +56,24 @@ helm upgrade --install draino ./charts/draino \
   --create-namespace \
   -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
 ```
+
+To increase route timeouts for slow live report generation or similar long-running
+requests, set Gateway API rule timeouts on the `HTTPRoute`:
+
+```yaml
+gateway:
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: 180s
+        backendRequest: 180s
+```
+
+Gateway API defines both fields on `HTTPRoute.rules[].timeouts`. `backendRequest`
+must not be greater than `request`.
 
 If your environment wants this chart to create its own `Gateway`, set:
 

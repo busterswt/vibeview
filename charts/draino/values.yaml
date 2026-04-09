@@ -87,6 +87,7 @@ gateway:
         - path:
             type: PathPrefix
             value: /
+      timeouts: {}
   tls:
     enabled: false
     mode: Terminate
