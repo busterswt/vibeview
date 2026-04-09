@@ -533,9 +533,10 @@ def _project_vm_distribution_risk(item: dict) -> tuple[str, str]:
     host_count = int(item.get("host_count") or 0)
     top_host_pct = float(item.get("top_host_pct") or 0.0)
     top_host_count = int(item.get("top_host_count") or 0)
-    if vm_count >= 5 and (host_count <= 1 or top_host_pct >= 70):
+    dominant_host = bool(item.get("has_dominant_host"))
+    if vm_count >= 5 and (host_count <= 1 or (dominant_host and top_host_pct >= 70)):
         return ("high", f"{top_host_count} of {vm_count} VMs are concentrated on {item.get('top_host') or 'one host'}")
-    if vm_count >= 5 and (host_count <= 2 or top_host_pct >= 50):
+    if vm_count >= 5 and (host_count <= 2 or (dominant_host and top_host_pct >= 50)):
         return ("medium", f"{top_host_count} of {vm_count} VMs are weighted to {item.get('top_host') or 'a small host set'}")
     return ("low", "VM distribution is not heavily concentrated")
 
@@ -577,6 +578,7 @@ def build_project_placement_report(server: DrainoServer) -> dict:
             **item,
             "risk": risk,
             "reason": reason,
+            "top_host_label": item.get("top_host") or "Even spread",
             "top_hosts_label": ", ".join(
                 f"{host['host']} ({host['vm_count']})" for host in item.get("host_counts", [])[:3]
             ) or "—",

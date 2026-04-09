@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from draino.models import NodeState
 from draino.web import server as web_server
+from types import SimpleNamespace
 
 
 def test_build_maintenance_readiness_report_aggregates_live_node_state(monkeypatch, tmp_path):
@@ -338,6 +339,7 @@ def test_build_project_placement_report_flags_concentrated_projects(monkeypatch,
                 "top_host": "cmp-a01",
                 "top_host_count": 6,
                 "top_host_pct": 75.0,
+                "has_dominant_host": True,
                 "host_counts": [{"host": "cmp-a01", "vm_count": 6}, {"host": "cmp-a02", "vm_count": 2}],
             },
             {
@@ -348,6 +350,7 @@ def test_build_project_placement_report_flags_concentrated_projects(monkeypatch,
                 "top_host": "cmp-b01",
                 "top_host_count": 3,
                 "top_host_pct": 50.0,
+                "has_dominant_host": True,
                 "host_counts": [{"host": "cmp-b01", "vm_count": 3}, {"host": "cmp-b02", "vm_count": 2}, {"host": "cmp-b03", "vm_count": 1}],
             },
         ],
@@ -385,6 +388,7 @@ def test_project_placement_reports_endpoints_return_json_and_csv(monkeypatch):
                 "top_host": "cmp-a01",
                 "top_host_count": 6,
                 "top_host_pct": 75.0,
+                "has_dominant_host": True,
                 "host_counts": [{"host": "cmp-a01", "vm_count": 6}, {"host": "cmp-a02", "vm_count": 2}],
             },
         ],
@@ -417,6 +421,52 @@ def test_project_placement_reports_endpoints_return_json_and_csv(monkeypatch):
     assert export.status_code == 200
     assert export.headers["content-disposition"] == 'attachment; filename="project-placement.csv"'
     assert "tenant-a" in export.text
+
+
+def test_get_project_vm_distribution_excludes_error_instances(monkeypatch):
+    class FakeServer:
+        def __init__(self, server_id, project_id, host, status):
+            self.id = server_id
+            self.project_id = project_id
+            self.compute_host = host
+            self.status = status
+
+        def to_dict(self):
+            return {
+                "project_id": self.project_id,
+                "OS-EXT-SRV-ATTR:host": self.compute_host,
+                "status": self.status,
+            }
+
+    class FakeIdentity:
+        @staticmethod
+        def projects():
+            return [SimpleNamespace(id="proj-a", name="tenant-a")]
+
+    class FakeCompute:
+        @staticmethod
+        def servers(all_projects=True):
+            assert all_projects is True
+            return [
+                FakeServer("vm-1", "proj-a", "cmp-a01", "ACTIVE"),
+                FakeServer("vm-2", "proj-a", "cmp-a01", "ERROR"),
+                FakeServer("vm-3", "proj-a", "cmp-a02", "SHUTOFF"),
+            ]
+
+    class FakeConn:
+        identity = FakeIdentity()
+        compute = FakeCompute()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    items = web_server.openstack_ops.get_project_vm_distribution()
+
+    assert len(items) == 1
+    assert items[0]["project_name"] == "tenant-a"
+    assert items[0]["vm_count"] == 2
+    assert items[0]["host_count"] == 2
+    assert items[0]["top_host"] == ""
+    assert items[0]["has_dominant_host"] is False
 
 
 def test_build_placement_risk_report_summarises_control_edge_and_density(monkeypatch, tmp_path):

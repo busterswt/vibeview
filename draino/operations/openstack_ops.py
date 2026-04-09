@@ -201,6 +201,9 @@ def get_project_vm_distribution(auth: OpenStackAuth | None = None) -> list[dict]
 
     projects: dict[str, dict] = {}
     for server in conn.compute.servers(all_projects=True):
+        status = str(getattr(server, "status", None) or (server.to_dict().get("status") if hasattr(server, "to_dict") else "") or "").upper()
+        if status == "ERROR":
+            continue
         host = _server_host(server) or ""
         if not host:
             continue
@@ -219,14 +222,16 @@ def get_project_vm_distribution(auth: OpenStackAuth | None = None) -> list[dict]
         host_counts = sorted(entry["hosts"].items(), key=lambda item: (-item[1], item[0]))
         top_host, top_count = host_counts[0] if host_counts else ("", 0)
         vm_count = entry["vm_count"]
+        dominant = bool(host_counts) and top_count > 1 and sum(1 for _host, count in host_counts if count == top_count) == 1
         result.append({
             "project_id": entry["project_id"],
             "project_name": entry["project_name"],
             "vm_count": vm_count,
             "host_count": len(host_counts),
-            "top_host": top_host,
+            "top_host": top_host if dominant else "",
             "top_host_count": top_count,
-            "top_host_pct": (top_count / vm_count * 100.0) if vm_count else 0.0,
+            "top_host_pct": (top_count / vm_count * 100.0) if vm_count and dominant else 0.0,
+            "has_dominant_host": dominant,
             "host_counts": [{"host": host, "vm_count": count} for host, count in host_counts],
         })
     result.sort(key=lambda item: (-item["vm_count"], item["project_name"]))

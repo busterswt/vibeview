@@ -507,8 +507,8 @@ function renderProjectPlacementReport(activeMeta, report, nowLabel) {
                 <td class="mono">${esc(item.project_id || '')}</td>
                 <td>${esc(String(item.vm_count ?? 0))}</td>
                 <td>${esc(String(item.host_count ?? 0))}</td>
-                <td class="mono">${esc(item.top_host || '—')}</td>
-                <td>${esc(item.top_host_pct != null ? `${Math.round(item.top_host_pct)}%` : '—')}</td>
+                <td class="mono">${esc(item.top_host_label || item.top_host || '—')}</td>
+                <td>${esc(item.has_dominant_host ? `${Math.round(item.top_host_pct || 0)}%` : '—')}</td>
                 <td>${esc(item.top_hosts_label || '—')}</td>
                 <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || '')}</span></td>
                 <td>${esc(item.reason || '')}</td>
