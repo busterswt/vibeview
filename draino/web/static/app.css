@@ -1004,15 +1004,21 @@ body.no-hints .vmware-ref-card { display: none !important; }
   line-height: 1.35;
   margin-top: 1px;
 }
+.stress-profile-item.active .stress-profile-ico,
+.stress-profile-item.active .stress-profile-name {
+  color: var(--blue);
+}
 .stress-content { min-width: 0; overflow: auto; padding: 18px 20px 26px; }
 .stress-content .card { border-radius: 4px; }
 .stress-content .card-title { padding: 11px 14px; }
 .stress-content .card-body { padding: 14px; }
 .stress-content .report-header-card { padding: 14px; border-radius: 4px; }
 .stress-content .two-col { gap: 14px; }
+.stress-content .stress-meta-grid { gap: 14px; }
 .stress-content .report-kv-stack .mrow { padding: 10px 0; }
 .stress-content .table-wrap { padding: 12px; }
 .stress-launch-grid { display: grid; grid-template-columns: minmax(0, .95fr) minmax(300px, 1.05fr); gap: 14px; margin-top: 14px; }
+.stress-meta-grid { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 14px; }
 .stress-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .stress-form-grid .field { min-width: 0; }
 .stress-form-grid .field label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 6px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -1078,19 +1084,6 @@ body.no-hints .vmware-ref-card { display: none !important; }
 }
 .stress-launch-actions { margin-top: 16px; display: flex; gap: 8px; }
 .stress-launch-note { margin-top: 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
-.stress-action-banner {
-  margin-top: 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 999px;
-  background: #eef4f9;
-  border: 1px solid #cdd9e3;
-  color: #26475c;
-  font-size: 12px;
-  font-weight: 700;
-}
 .stress-action-spinner {
   display: inline-block;
   transform-origin: 50% 50%;
@@ -1134,6 +1127,9 @@ body.no-hints .vmware-ref-card { display: none !important; }
   color: var(--dim);
   font-size: 12px;
   line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .summary-table {
   width: 100%;
@@ -1155,6 +1151,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   .stress-shell { grid-template-columns: 1fr; }
   .stress-nav { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--line); }
   .stress-launch-grid { grid-template-columns: 1fr; }
+  .stress-meta-grid { grid-template-columns: 1fr; }
 }
 .report-chart-strip { display: grid; gap: 10px; }
 .report-bar-row {

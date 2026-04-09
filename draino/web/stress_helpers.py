@@ -277,6 +277,7 @@ def build_stress_options(
     *,
     auth: openstack_ops.OpenStackAuth | None,
     compute_count: int,
+    profile_key: str,
 ) -> dict[str, Any]:
     catalog = build_stress_catalog(auth=auth, compute_count=compute_count)
     images = list_stress_images(auth)
@@ -285,6 +286,9 @@ def build_stress_options(
     external_networks = _list_external_networks(auth)
     suggested_cidr = suggest_stress_cidr(auth)
     profiles = list(catalog["profiles"])
+    selected_profile = next((profile for profile in profiles if profile["key"] == profile_key), None)
+    if selected_profile is None:
+        raise ValueError(f"Unknown stress profile: {profile_key}")
 
     default_image_id = images[0]["id"] if images else ""
     compatible_flavors = flavors
@@ -298,15 +302,15 @@ def build_stress_options(
     default_keypair_name = keypairs[0]["name"] if keypairs else STRESS_DEFAULT_KEYPAIR_NAME
 
     return {
-        "profiles": profiles,
+        "selected_profile": selected_profile,
         "images": images,
         "flavors": flavors,
         "keypairs": keypairs,
         "external_networks": external_networks,
         "guardrail": catalog["guardrail"],
         "defaults": {
-            "profile": profiles[0]["key"] if profiles else "",
-            "vm_count": profiles[0]["default_vm_count"] if profiles else max(1, compute_count or 1),
+            "profile": selected_profile["key"],
+            "vm_count": selected_profile["default_vm_count"],
             "image_id": default_image_id,
             "flavor_id": default_flavor_id,
             "keypair_mode": "existing" if keypairs else "auto",
@@ -571,7 +575,11 @@ def launch_stress_stack(
     conn = openstack_ops._conn(auth=auth)
     if _find_active_stress_stack_obj(conn) is not None:
         raise ValueError("An active stress stack already exists; delete it before launching a new one")
-    options = build_stress_options(auth=auth, compute_count=compute_count)
+    options = build_stress_options(
+        auth=auth,
+        compute_count=compute_count,
+        profile_key=str(payload.get("profile") or ""),
+    )
     stack_payload = _build_stack_payload(options=options, payload=payload)
     template = _build_stress_template(stack_payload)
     parameters = {

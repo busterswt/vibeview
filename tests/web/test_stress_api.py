@@ -8,7 +8,7 @@ from draino.web import server as web_server
 from draino.web import stress_helpers
 
 
-def test_stress_options_endpoint_returns_profiles_and_filtered_defaults(monkeypatch):
+def test_stress_options_endpoint_returns_selected_profile_and_filtered_defaults(monkeypatch):
     def fake_start_refresh(self, cached_nodes=None, silent=False):
         self.node_states = {
             "cmp-a": SimpleNamespace(is_compute=True),
@@ -73,12 +73,12 @@ def test_stress_options_endpoint_returns_profiles_and_filtered_defaults(monkeypa
     with TestClient(web_server.fastapi_app) as client:
         login = client.post("/api/session", json=payload)
         assert login.status_code == 200
-        resp = client.get("/api/stress/options")
+        resp = client.get("/api/stress/options?profile=full-host-spread")
 
     body = resp.json()
     assert resp.status_code == 200
     assert body["error"] is None
-    assert body["options"]["profiles"][0]["key"] == "full-host-spread"
+    assert body["options"]["selected_profile"]["key"] == "full-host-spread"
     assert body["options"]["defaults"]["vm_count"] == 2
     assert body["options"]["defaults"]["image_id"] == "img-1"
     assert body["options"]["defaults"]["flavor_id"] == "flavor-ok"
@@ -142,11 +142,12 @@ def test_stress_options_endpoint_reports_active_stack(monkeypatch):
     with TestClient(web_server.fastapi_app) as client:
         login = client.post("/api/session", json=payload)
         assert login.status_code == 200
-        resp = client.get("/api/stress/options")
+        resp = client.get("/api/stress/options?profile=burst")
 
     body = resp.json()
     assert resp.status_code == 200
     assert body["options"]["guardrail"]["active"] is True
+    assert body["options"]["selected_profile"]["key"] == "burst"
     assert body["options"]["guardrail"]["stack"]["stack_name"] == "vibe-stress-20260409-141522"
 
 

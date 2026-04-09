@@ -37,6 +37,7 @@ async def api_stress_options(request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
     compute_count = sum(1 for state in session.server.node_states.values() if state.is_compute)
+    profile_key = str(request.query_params.get("profile") or "")
     try:
         options = await loop.run_in_executor(
             None,
@@ -44,6 +45,7 @@ async def api_stress_options(request: Request):
                 build_stress_options,
                 auth=session.server.openstack_auth,
                 compute_count=compute_count,
+                profile_key=profile_key,
             ),
         )
         return {"options": options, "error": None, "api_issue": None}
