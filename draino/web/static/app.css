@@ -178,7 +178,7 @@ body {
 .k8s-badge.active   { background: #e8f5e9; color: #2e7d32; }
 #net-detail-wrap,
 #router-detail-wrap {
-  width: 460px;
+  width: 560px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--white);
@@ -189,6 +189,7 @@ body {
 #router-detail-wrap.open { display: block; }
 .net-detail-inner { padding: 14px; }
 .net-detail-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.net-detail-inner .data-table td { overflow-wrap: anywhere; word-break: break-word; }
 
 /* ═══════════════════════════════════════════════════════
    SIDEBAR (Infrastructure view only)
