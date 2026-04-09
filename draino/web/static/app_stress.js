@@ -162,6 +162,16 @@ function ensureStressBootstrap() {
   }
 }
 
+function syncStressActiveState() {
+  const hasActiveGuardrail = Boolean(stressState.catalog?.guardrail?.active || stressState.env?.guardrail?.active);
+  if (!hasActiveGuardrail && !stressDeleteInProgress()) {
+    stressState.status = null;
+    if (stressState.actionKind !== 'launch' && stressState.actionKind !== 'delete') {
+      stressState.actionError = null;
+    }
+  }
+}
+
 async function loadStressCatalog(force = false) {
   if (stressState.catalogLoading) return;
   if (stressState.catalog && !force) {
@@ -196,6 +206,7 @@ async function loadStressCatalog(force = false) {
     stressState.catalogError = String(e);
   } finally {
     stressState.catalogLoading = false;
+    syncStressActiveState();
     if (stressNeedsPolling()) startStressStatusPolling();
     renderStressView();
   }
@@ -228,6 +239,7 @@ async function loadStressEnvironment(force = false) {
     stressState.envError = String(e);
   } finally {
     stressState.envLoading = false;
+    syncStressActiveState();
     renderStressView();
   }
 }
@@ -248,9 +260,14 @@ async function loadStressStatus(force = false) {
     if (json.error) throw new Error(json.error);
     stressState.status = json.status;
   } catch (e) {
-    stressState.actionError = String(e);
+    if (stressState.catalog?.guardrail?.active || stressState.env?.guardrail?.active || stressDeleteInProgress()) {
+      stressState.actionError = String(e);
+    } else {
+      stressState.status = null;
+    }
   } finally {
     stressState.statusLoading = false;
+    syncStressActiveState();
     if (stressNeedsPolling()) startStressStatusPolling();
     renderStressView();
   }
@@ -261,6 +278,9 @@ async function refreshStressView() {
   if (stressState.env) await loadStressEnvironment(true);
   if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
     await loadStressStatus(true);
+  } else {
+    syncStressActiveState();
+    renderStressView();
   }
 }
 
@@ -418,6 +438,7 @@ async function deleteStressTest() {
   } finally {
     stressState.actionLoading = false;
     stressState.actionKind = '';
+    syncStressActiveState();
     if (stressNeedsPolling()) startStressStatusPolling();
     else stopStressStatusPolling();
     renderStressView();
