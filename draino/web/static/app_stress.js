@@ -202,6 +202,15 @@ async function refreshStressView() {
   }
 }
 
+async function loadSelectedStressTemplate() {
+  if (stressState.loading || stressState.catalogLoading) return;
+  await loadStressCatalog(true);
+  await loadStressOptions(true);
+  if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
+    await loadStressStatus(true);
+  }
+}
+
 function setStressProfile(profileKey) {
   stressState.profileKey = profileKey;
   localStorage.setItem(STRESS_PROFILE_STORAGE_KEY, profileKey);
@@ -388,6 +397,9 @@ function renderStressLaunchCard() {
     <div class="card">
       <div class="card-title"><span>Launch Parameters</span></div>
       <div class="card-body">
+        <div class="stress-launch-note">
+          ${esc(profile?.label || 'Selected template')} targets ${esc(String(stressState.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(options.limits?.compute_count || 0))} visible compute hosts.
+        </div>
         <div class="stress-form-grid">
           <div class="field">
             <label>VM Count</label>
@@ -490,24 +502,21 @@ function renderStressEmptyState() {
                 <div class="report-launch-kicker">Stress Template</div>
                 <div class="report-launch-title">${esc(profile.label)}</div>
                 <div class="report-launch-subtitle">${esc(profile.description)}</div>
-                <div class="report-launch-text">OpenStack discovery for images, flavors, keypairs, networks, and active Heat stacks is intentionally manual here so the page opens instantly.</div>
+                <div class="report-launch-text">
+                  OpenStack discovery for images, flavors, keypairs, networks, and active Heat stacks is intentionally manual here so the page opens instantly.
+                  Default target: ${esc(String(profile.default_vm_count || 1))} VMs. Full Host Spread expands to your visible compute count after details load.
+                </div>
                 <div class="report-launch-pills">
                   <span class="meta-pill">Template-first landing</span>
                   <span class="meta-pill">Manual discovery</span>
                   <span class="meta-pill">No stored data</span>
                 </div>
                 <div class="report-launch-actions">
-                  <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Load Template Details</button>
+                  <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.loading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.loading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile.label)}`}</button>
                 </div>
               </div>
             </div>
           </section>
-          <div class="card">
-            <div class="card-title"><span>Guardrail</span></div>
-            <div class="card-body note">
-              The page now lands immediately without live discovery. Load the selected template when you want current OpenStack options and active stack state.
-            </div>
-          </div>
         </section>
       </div>
     </div>
@@ -527,7 +536,8 @@ function renderStressTemplateLaunchState() {
           <div class="report-launch-subtitle">${esc(profile?.description || 'Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing.')}</div>
           <div class="report-launch-text">
             Template selection is lightweight. Full launch parameters are loaded only when you explicitly open this template,
-            since image, flavor, keypair, and network discovery can be expensive.
+            since image, flavor, keypair, and network discovery can be expensive. Default target:
+            ${esc(String(profile?.default_vm_count || 1))} VMs across ${esc(String(stressState.catalog?.limits?.compute_count || 0))} visible compute hosts.
           </div>
           <div class="report-launch-pills">
             <span class="meta-pill">Manual details load</span>
@@ -535,9 +545,9 @@ function renderStressTemplateLaunchState() {
             <span class="meta-pill">${guardrail.active ? 'Guardrail active' : 'Ready to configure'}</span>
           </div>
           <div class="report-launch-actions">
-            <button class="report-launch-btn" type="button" onclick="loadStressOptions(true)" ${stressState.loading ? 'disabled' : ''}>${stressState.loading ? 'Loading Template Details…' : `Load ${esc(profile?.label || 'Template')}`}</button>
+            <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.loading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.loading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile?.label || 'Template')}`}</button>
           </div>
-          ${stressState.loading ? `
+          ${stressState.loading || stressState.catalogLoading ? `
             <div class="stress-template-note" aria-live="polite">
               <span class="stress-action-spinner">↻</span>
               <span>Loading image, flavor, keypair, network, and guardrail details for the selected template.</span>
@@ -718,6 +728,7 @@ function renderStressView() {
   const options = stressState.options || {};
   const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || options.profiles?.[0] || {};
   const status = stressState.status;
+  const showLoadedGrids = Boolean(stressState.options || status?.active);
   wrap.innerHTML = `
     <div class="stress-shell">
       <aside class="stress-nav">
@@ -745,28 +756,25 @@ function renderStressView() {
             </span>
           </div>
         </section>
-        <section class="stress-launch-grid">
-          ${stressState.options ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
-          ${renderStressGuardrail()}
-        </section>
-        <section class="stress-meta-grid">
-          <div class="card">
-            <div class="card-title"><span>Selected Profile</span></div>
-            <div class="card-body report-kv-stack">
-              <div class="mrow"><span class="ml">Profile</span><span class="mv">${esc(profile.label || '—')}</span></div>
-              <div class="mrow"><span class="ml">Description</span><span class="mv">${esc(profile.description || '—')}</span></div>
-              <div class="mrow"><span class="ml">Target VMs</span><span class="mv">${esc(String(stressState.vmCount || 0))}</span></div>
-              <div class="mrow"><span class="ml">Compute Hosts</span><span class="mv">${esc(String(options.limits?.compute_count || 0))}</span></div>
+        ${showLoadedGrids ? `
+          <section class="stress-launch-grid">
+            ${stressState.options ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
+            ${renderStressGuardrail()}
+          </section>
+          <section class="stress-meta-grid">
+            <div class="card">
+              <div class="card-title"><span>Notes</span></div>
+              <div class="card-body note">
+                Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
+                Timing and distribution are derived live from Heat resources and Nova server state.
+              </div>
             </div>
-          </div>
-          <div class="card">
-            <div class="card-title"><span>Notes</span></div>
-            <div class="card-body note">
-              Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
-              Timing and distribution are derived live from Heat resources and Nova server state.
-            </div>
-          </div>
-        </section>
+          </section>
+        ` : `
+          <section class="stress-launch-grid">
+            ${renderStressTemplateLaunchState()}
+          </section>
+        `}
         ${status?.active ? renderStressSummarySection(status) : ''}
         ${status?.active ? renderStressResourceTable(status.resources || []) : ''}
         ${status?.active ? renderStressServerTable(status.servers || []) : ''}
