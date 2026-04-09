@@ -606,8 +606,7 @@ def delete_active_stress_stack(auth: openstack_ops.OpenStackAuth | None) -> dict
     stack = _find_active_stress_stack_obj(conn)
     if stack is None:
         return {"deleted": False, "stack_name": "", "message": "No active stress stack detected."}
-    stack_ref = getattr(stack, "id", None) or getattr(stack, "stack_name", None) or getattr(stack, "name", None)
-    conn.orchestration.delete_stack(stack_ref, wait=False)
+    conn.orchestration.delete_stack(stack)
     return {
         "deleted": True,
         "stack_name": getattr(stack, "stack_name", None) or getattr(stack, "name", None) or "",

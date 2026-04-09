@@ -288,8 +288,12 @@ function renderStressActionBanner() {
 }
 
 function renderStressProfileNav() {
-  const profiles = stressState.catalog?.profiles || stressState.options?.profiles || [];
-  return profiles.map(profile => {
+  const sourceProfiles = stressState.catalog?.profiles || stressState.options?.profiles || [
+    { key: 'full-host-spread', label: 'Full Host Spread', description: 'Best-effort one VM per compute host for scheduler and placement validation.', icon: '🧭' },
+    { key: 'burst', label: 'Burst', description: 'High-count VM launch test against shared network plumbing.', icon: '⚡' },
+    { key: 'small-distribution', label: 'Small Distribution', description: 'Quick scheduler sanity test with a small spread set.', icon: '🧪' },
+  ];
+  return sourceProfiles.map(profile => {
     const selected = profile.key === stressState.profileKey ? ' active' : '';
     const icon = profile.icon || STRESS_PROFILE_META[profile.key]?.icon || '🧪';
     return `
@@ -413,21 +417,63 @@ function renderStressLaunchCard() {
 }
 
 function renderStressEmptyState() {
+  const profile = stressProfileByKey(stressState.profileKey) || {
+    key: 'full-host-spread',
+    label: 'Full Host Spread',
+    description: 'Best-effort one VM per compute host for scheduler and placement validation.',
+    icon: '🧭',
+  };
   return `
-    <section class="report-launch-card">
-      <div class="report-launch-shell">
-        <div class="report-launch-icon">🧪</div>
-        <div class="report-launch-copy">
-          <div class="report-launch-kicker">Stress Console</div>
-          <div class="report-launch-title">Heat Stress Test Console</div>
-          <div class="report-launch-subtitle">Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing.</div>
-          <div class="report-launch-text">Load live OpenStack options to configure a test profile, choose an image/flavor/keypair, and review the one-stack guardrail.</div>
-          <div class="report-launch-actions">
-            <button class="report-launch-btn" type="button" onclick="loadStressOptions(true)">Load Stress Options</button>
+    <div class="stress-shell">
+      <aside class="stress-nav">
+        <div class="sidebar-head">Stress Profiles</div>
+        <div class="nav-group">Templates</div>
+        <div class="stress-nav-items">${renderStressProfileNav()}</div>
+      </aside>
+      <div class="stress-content">
+        <section class="report-header-card">
+          <div class="report-head-top">
+            <div>
+              <div class="report-title">Heat Stress Test Console</div>
+              <div class="report-subtitle">Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing. One active test stack is allowed at a time.</div>
+            </div>
           </div>
-        </div>
+          <div class="report-meta-row">
+            <span class="meta-pill">Mode: live orchestration</span>
+            <span class="meta-pill">Stack prefix: vibe-stress-</span>
+            <span class="meta-pill">Guardrail: one active test</span>
+            <span class="meta-pill">Cleanup: Heat stack delete</span>
+          </div>
+        </section>
+        <section class="stress-launch-grid">
+          <section class="report-launch-card stress-landing-card">
+            <div class="report-launch-shell">
+              <div class="report-launch-icon">${esc(profile.icon || '🧪')}</div>
+              <div class="report-launch-copy">
+                <div class="report-launch-kicker">Stress Template</div>
+                <div class="report-launch-title">${esc(profile.label)}</div>
+                <div class="report-launch-subtitle">${esc(profile.description)}</div>
+                <div class="report-launch-text">OpenStack discovery for images, flavors, keypairs, networks, and active Heat stacks is intentionally manual here so the page opens instantly.</div>
+                <div class="report-launch-pills">
+                  <span class="meta-pill">Template-first landing</span>
+                  <span class="meta-pill">Manual discovery</span>
+                  <span class="meta-pill">No stored data</span>
+                </div>
+                <div class="report-launch-actions">
+                  <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Load Template Details</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <div class="card">
+            <div class="card-title"><span>Guardrail</span></div>
+            <div class="card-body note">
+              The page now lands immediately without live discovery. Load the selected template when you want current OpenStack options and active stack state.
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
+    </div>
   `;
 }
 

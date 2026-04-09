@@ -169,8 +169,8 @@ def test_stress_launch_status_and_delete_endpoints(monkeypatch):
             state["create_kwargs"] = kwargs
             return SimpleNamespace(id="stack-1")
 
-        def delete_stack(self, stack_ref, wait=False):
-            state["deleted_ref"] = stack_ref
+        def delete_stack(self, stack_ref):
+            state["deleted_ref"] = getattr(stack_ref, "id", None) or getattr(stack_ref, "stack_name", None) or stack_ref
             state["active"] = False
 
         def stacks(self):
