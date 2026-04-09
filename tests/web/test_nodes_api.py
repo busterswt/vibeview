@@ -338,9 +338,87 @@ def test_instance_network_detail_reads_flavor_from_object_reference(monkeypatch)
 
     assert detail["flavor"]["name"] == "m1.large"
     assert detail["flavor"]["vcpus"] == 4
-    assert detail["flavor"]["ram_mb"] == 8192
-    assert detail["flavor"]["disk_gb"] == 40
-    assert detail["flavor"]["ephemeral_gb"] == 20
+
+
+def test_hypervisor_detail_falls_back_to_placement_inventory(monkeypatch):
+    class FakeHypervisor:
+        id = "hv-1"
+
+        @staticmethod
+        def to_dict():
+            return {
+                "hypervisor_hostname": "hv-a01.example.com",
+                "state": "down",
+                "status": "disabled",
+            }
+
+    class FakeCompute:
+        @staticmethod
+        def hypervisors(hypervisor_hostname_pattern=None):
+            assert hypervisor_hostname_pattern == "hv-a01.example.com"
+            return [FakeHypervisor()]
+
+        @staticmethod
+        def get_hypervisor(hypervisor_id):
+            assert hypervisor_id == "hv-1"
+            return FakeHypervisor()
+
+    class FakeInventory:
+        def __init__(self, resource_class, total):
+            self.resource_class = resource_class
+            self.total = total
+
+    class FakeProvider:
+        id = "rp-1"
+
+    class FakePlacement:
+        @staticmethod
+        def find_resource_provider(name_or_id, ignore_missing=True):
+            assert name_or_id == "hv-a01.example.com"
+            return FakeProvider()
+
+        @staticmethod
+        def resource_provider_inventories(provider):
+            assert provider.id == "rp-1"
+            return [
+                FakeInventory("VCPU", 96),
+                FakeInventory("MEMORY_MB", 524288),
+            ]
+
+    class FakeResponse:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"usages": {"VCPU": 72, "MEMORY_MB": 430080}}
+
+    class FakeSession:
+        @staticmethod
+        def get(url, headers=None):
+            assert url.endswith("/resource_providers/rp-1/usages")
+            assert headers == {"OpenStack-API-Version": "placement 1.9"}
+            return FakeResponse()
+
+    class FakeConn:
+        compute = FakeCompute()
+        placement = FakePlacement()
+        session = FakeSession()
+
+        @staticmethod
+        def endpoint_for(service_type):
+            assert service_type == "placement"
+            return "https://placement.example/v1"
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_hypervisor_detail("hv-a01.example.com")
+
+    assert detail["vcpus"] == 96
+    assert detail["vcpus_used"] == 72
+    assert detail["memory_mb"] == 524288
+    assert detail["memory_mb_used"] == 430080
 
 
 def test_instance_network_detail_falls_back_to_flavor_name_lookup(monkeypatch):

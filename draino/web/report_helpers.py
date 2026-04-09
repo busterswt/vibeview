@@ -10,6 +10,41 @@ from ..operations import k8s_ops, openstack_ops
 from .inventory import DrainoServer
 
 
+def _host_aliases(value: str | None) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    aliases: list[str] = []
+    for candidate in (text, text.lower(), text.split(".", 1)[0], text.split(".", 1)[0].lower()):
+        if candidate and candidate not in aliases:
+            aliases.append(candidate)
+    return aliases
+
+
+def _lookup_host_summary(summaries: dict[str, dict], *candidates: str | None) -> dict:
+    for candidate in candidates:
+        for alias in _host_aliases(candidate):
+            summary = summaries.get(alias)
+            if summary:
+                return summary
+    return {}
+
+
+def _load_hypervisor_detail(server: DrainoServer, *candidates: str | None) -> dict:
+    seen: set[str] = set()
+    last_detail: dict = {}
+    for candidate in candidates:
+        for alias in _host_aliases(candidate):
+            if alias in seen:
+                continue
+            seen.add(alias)
+            detail = openstack_ops.get_hypervisor_detail(alias, auth=server.openstack_auth)
+            if any(detail.get(key) is not None for key in ("vcpus", "vcpus_used", "memory_mb", "memory_mb_used")):
+                return detail
+            last_detail = detail
+    return last_detail
+
+
 def _node_roles(state: NodeState) -> list[str]:
     roles: list[str] = []
     if state.is_compute:
@@ -305,9 +340,9 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
     k8s_detail_ms = 0.0
 
     for state in compute_states:
-        summary = host_summaries.get(state.hypervisor, {})
+        summary = _lookup_host_summary(host_summaries, state.hypervisor, state.k8s_name)
         hv_started = time.perf_counter()
-        hv_detail = openstack_ops.get_hypervisor_detail(state.hypervisor, auth=server.openstack_auth)
+        hv_detail = _load_hypervisor_detail(server, state.hypervisor, state.k8s_name)
         hypervisor_detail_ms += (time.perf_counter() - hv_started) * 1000.0
         k8s_started = time.perf_counter()
         k8s_detail = k8s_ops.get_node_k8s_detail(state.k8s_name, auth=server.k8s_auth)

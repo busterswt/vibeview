@@ -277,3 +277,47 @@ def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
     assert export.status_code == 200
     assert export.headers["content-disposition"] == 'attachment; filename="capacity-headroom.csv"'
     assert "cmp-a01" in export.text
+
+
+def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server.node_states = {
+        "cmp-a01.example.com": NodeState(
+            k8s_name="cmp-a01.example.com",
+            hypervisor="hv-a01.example.com",
+            is_compute=True,
+            compute_status="disabled",
+            k8s_cordoned=True,
+            vm_count=14,
+            node_agent_ready=True,
+        ),
+    }
+
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_all_host_summaries",
+        lambda auth=None, log_cb=None: {
+            "hv-a01": {"availability_zone": "az-a", "aggregates": ["general", "ssd"]},
+        },
+    )
+
+    def fake_hv_detail(hypervisor, auth=None):
+        if hypervisor == "hv-a01":
+            return {"vcpus": 96, "vcpus_used": 72, "memory_mb": 524288, "memory_mb_used": 430080}
+        return {"vcpus": None, "vcpus_used": None, "memory_mb": None, "memory_mb_used": None}
+
+    monkeypatch.setattr(web_server.openstack_ops, "get_hypervisor_detail", fake_hv_detail)
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_k8s_detail",
+        lambda node_name, auth=None: {"pods_allocatable": "110", "pod_count": 37},
+    )
+
+    payload = web_server._build_capacity_headroom_report(server)
+
+    assert payload["error"] is None
+    item = payload["report"]["items"][0]
+    assert item["availability_zone"] == "az-a"
+    assert item["aggregates"] == ["general", "ssd"]
+    assert item["vcpus"] == 96
+    assert item["memory_mb"] == 524288

@@ -21,6 +21,26 @@ _MARIADB_NODE_TTL = float(os.getenv("DRAINO_MARIADB_NODE_TTL", "60"))
 _DEFAULT_GET_MARIADB_NODE_NAMES = k8s_ops.get_mariadb_node_names
 
 
+def _host_aliases(value: str | None) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    aliases: list[str] = []
+    for candidate in (text, text.lower(), text.split(".", 1)[0], text.split(".", 1)[0].lower()):
+        if candidate and candidate not in aliases:
+            aliases.append(candidate)
+    return aliases
+
+
+def _lookup_host_summary(summaries: dict[str, dict], *candidates: str | None) -> dict:
+    for candidate in candidates:
+        for alias in _host_aliases(candidate):
+            summary = summaries.get(alias)
+            if summary:
+                return summary
+    return {}
+
+
 class InventoryRefreshMixin:
     def start_refresh(self, cached_nodes: list[dict] | None = None, silent: bool = False) -> None:
         if not silent:
@@ -166,7 +186,7 @@ class InventoryRefreshMixin:
             for node in nodes:
                 name = node["name"]
                 hostname = node.get("hostname", name)
-                summary = summaries.get(hostname, {})
+                summary = _lookup_host_summary(summaries, hostname, name)
                 state = self.node_states.get(name)
                 if not state:
                     continue

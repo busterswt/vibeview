@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from threading import Lock
 from typing import Callable, Optional
+from urllib.parse import quote
 
 import openstack
 import openstack.connection
@@ -413,6 +414,57 @@ def get_hypervisor_detail(
             result["cpu_info"] = raw_cpu
     except Exception:
         pass
+    try:
+        if any(result.get(key) is None for key in ("vcpus", "memory_mb")):
+            placement = _placement_hypervisor_inventory(conn, hypervisor)
+            if result.get("vcpus") is None:
+                result["vcpus"] = placement.get("vcpus")
+            if result.get("memory_mb") is None:
+                result["memory_mb"] = placement.get("memory_mb")
+            if result.get("vcpus_used") is None:
+                result["vcpus_used"] = placement.get("vcpus_used")
+            if result.get("memory_mb_used") is None:
+                result["memory_mb_used"] = placement.get("memory_mb_used")
+    except Exception:
+        pass
+    return result
+
+
+def _placement_hypervisor_inventory(conn, hypervisor: str) -> dict:
+    """Return Placement-backed inventory and usages for a compute host."""
+    result = {
+        "vcpus": None,
+        "vcpus_used": None,
+        "memory_mb": None,
+        "memory_mb_used": None,
+    }
+    try:
+        provider = conn.placement.find_resource_provider(hypervisor, ignore_missing=True)
+        if provider is None:
+            return result
+        inventories = list(conn.placement.resource_provider_inventories(provider))
+        inventory_by_class = {getattr(item, "resource_class", None): item for item in inventories}
+        vcpu_inventory = inventory_by_class.get("VCPU")
+        mem_inventory = inventory_by_class.get("MEMORY_MB")
+        if vcpu_inventory is not None:
+            result["vcpus"] = getattr(vcpu_inventory, "total", None)
+        if mem_inventory is not None:
+            result["memory_mb"] = getattr(mem_inventory, "total", None)
+
+        endpoint = conn.endpoint_for("placement")
+        if endpoint:
+            provider_id = getattr(provider, "id", None) or getattr(provider, "uuid", None)
+            if provider_id:
+                url = f"{endpoint.rstrip('/')}/resource_providers/{quote(str(provider_id), safe='')}/usages"
+                response = conn.session.get(url, headers={"OpenStack-API-Version": "placement 1.9"})
+                if hasattr(response, "raise_for_status"):
+                    response.raise_for_status()
+                payload = response.json() if hasattr(response, "json") else {}
+                usages = payload.get("usages", {}) if isinstance(payload, dict) else {}
+                result["vcpus_used"] = usages.get("VCPU", result["vcpus_used"])
+                result["memory_mb_used"] = usages.get("MEMORY_MB", result["memory_mb_used"])
+    except Exception:
+        return result
     return result
 
 
