@@ -23,6 +23,7 @@ function guessReportApiIssue(message, status) {
   if (text.includes('neutron')) service = 'Neutron';
   else if (text.includes('nova')) service = 'Nova';
   else if (text.includes('keystone') || (text.includes('auth') && text.includes('token'))) service = 'Keystone';
+  else if ((text.includes('timeout') || text.includes('upstream')) && reportState.active === 'capacity-headroom') service = 'Nova';
   if (!service) return null;
   return {
     service,
@@ -362,6 +363,44 @@ function renderCapacityReport(activeMeta, report, nowLabel) {
   `;
 }
 
+function renderReportError(activeMeta) {
+  const meta = reportState.fetchMeta[reportState.active] || {};
+  const issue = guessReportApiIssue(meta.errorText || reportState.error || '', meta.status);
+  const timeoutHint = String(meta.errorText || reportState.error || '').toLowerCase().includes('timeout')
+    || String(meta.errorText || reportState.error || '').toLowerCase().includes('upstream')
+    ? 'This usually means the gateway or upstream API timed out while the report was gathering live data.'
+    : null;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(activeMeta.subtitle)}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Status: ${esc(meta.status != null ? String(meta.status) : 'error')}</span>
+        <span class="meta-pill">Fetched: ${esc(meta.fetchedAt || '—')}</span>
+        <span class="meta-pill">Duration: ${esc(meta.durationMs != null ? `${meta.durationMs} ms` : '—')}</span>
+        ${issue ? `<span class="meta-pill">${esc(issue.service)} issue suspected</span>` : ''}
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Report Request Failed</span></div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Report</span><span class="mv">${esc(activeMeta.label)}</span></div>
+        <div class="mrow"><span class="ml">Likely Upstream</span><span class="mv">${esc(issue?.service || 'Unknown')}</span></div>
+        <div class="mrow"><span class="ml">HTTP Status</span><span class="mv">${esc(meta.status != null ? String(meta.status) : '—')}</span></div>
+        <div class="mrow"><span class="ml">Content-Type</span><span class="mv">${esc(meta.contentType || '—')}</span></div>
+        <div class="mrow"><span class="ml">Failure Detail</span><span class="mv report-debug-error">${esc(meta.errorText || reportState.error || 'Unknown error')}</span></div>
+        ${timeoutHint ? `<div class="err-block" style="margin:14px 0 0">${esc(timeoutHint)}</div>` : ''}
+      </div>
+    </section>
+  `;
+}
+
 function renderReportsView() {
   const wrap = document.getElementById('reports-wrap');
   if (!wrap) return;
@@ -381,7 +420,7 @@ function renderReportsView() {
   if (reportState.loading && !report) {
     content = `<div class="report-empty"><span class="spinner">⟳</span> Loading live report…</div>`;
   } else if (reportState.error) {
-    content = `<div class="err-block" style="margin:0">${esc(reportState.error)}</div>`;
+    content = renderReportError(activeMeta);
   } else if (report) {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
