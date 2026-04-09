@@ -19,6 +19,16 @@ def test_build_maintenance_readiness_report_aggregates_live_node_state(monkeypat
             reboot_required=True,
             node_agent_ready=True,
         ),
+        "cmp-a02": NodeState(
+            k8s_name="cmp-a02",
+            hypervisor="hv-a02",
+            is_compute=True,
+            availability_zone="az-a",
+            compute_status="disabled",
+            k8s_cordoned=True,
+            vm_count=0,
+            node_agent_ready=True,
+        ),
         "mgmt-b02": NodeState(
             k8s_name="mgmt-b02",
             hypervisor="mgmt-b02",
@@ -32,20 +42,21 @@ def test_build_maintenance_readiness_report_aggregates_live_node_state(monkeypat
     monkeypatch.setattr(
         web_server.k8s_ops,
         "get_node_k8s_detail",
-        lambda node_name, auth=None: {"pod_count": {"cmp-a01": 37, "mgmt-b02": 8}[node_name]},
+        lambda node_name, auth=None: {"pod_count": {"cmp-a01": 37, "cmp-a02": 0, "mgmt-b02": 8}[node_name]},
     )
 
     payload = web_server._build_maintenance_readiness_report(server)
 
     assert payload["error"] is None
-    assert payload["report"]["summary"]["ready_now"] == 0
+    assert payload["report"]["summary"]["ready_now"] == 1
     assert payload["report"]["summary"]["blocked"] == 1
     assert payload["report"]["summary"]["review"] == 1
     assert payload["report"]["summary"]["reboot_required"] == 1
     assert payload["report"]["items"][0]["node"] == "cmp-a01"
     assert payload["report"]["items"][0]["pod_count"] == 37
     assert payload["report"]["items"][0]["verdict"] == "review"
-    assert payload["report"]["items"][1]["verdict"] == "blocked"
+    assert payload["report"]["items"][1]["verdict"] == "ready"
+    assert payload["report"]["items"][2]["verdict"] == "blocked"
 
 
 def test_reports_endpoints_return_json_and_csv(monkeypatch):

@@ -41,12 +41,12 @@ def _node_blockers(state: NodeState) -> list[str]:
 
 def _node_reviews(state: NodeState) -> list[str]:
     reviews: list[str] = []
-    if state.k8s_cordoned:
-        reviews.append("node is already cordoned")
+    if not state.k8s_cordoned:
+        reviews.append("kubernetes node is not cordoned")
     if any((taint.get("effect") or "") == "NoSchedule" for taint in (state.k8s_taints or [])):
         reviews.append("NoSchedule taint is present")
-    if state.compute_status == "disabled":
-        reviews.append("nova compute service is disabled")
+    if state.is_compute and state.compute_status != "disabled":
+        reviews.append("nova compute service is not disabled")
     if state.reboot_required:
         reviews.append("reboot is required")
     if state.hosts_mariadb:
@@ -54,6 +54,14 @@ def _node_reviews(state: NodeState) -> list[str]:
     if state.is_edge:
         reviews.append("hosts OVN edge/gateway responsibilities")
     return reviews
+
+
+def _in_maintenance_posture(state: NodeState) -> bool:
+    if not state.k8s_cordoned:
+        return False
+    if state.is_compute and state.compute_status != "disabled":
+        return False
+    return True
 
 
 def _k8s_status_label(state: NodeState) -> str:
@@ -81,14 +89,14 @@ def build_maintenance_readiness_report(server: DrainoServer) -> dict:
         reviews = _node_reviews(state)
         if blockers:
             verdict = "blocked"
-        elif reviews:
-            verdict = "review"
-        else:
+        elif _in_maintenance_posture(state):
             verdict = "ready"
+        else:
+            verdict = "review"
 
         if blockers:
             reason = "; ".join(blockers)
-        elif reviews:
+        elif verdict == "review" and reviews:
             reason = "; ".join(reviews)
         else:
             reason = "none"

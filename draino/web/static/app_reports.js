@@ -164,7 +164,7 @@ function renderReportsView() {
                   <td>${esc(String(item.vm_count ?? 0))}</td>
                   <td>${item.pod_count != null ? esc(String(item.pod_count)) : '—'}</td>
                   <td>${item.reboot_required ? '<span class="report-tag yellow">needed</span>' : '<span class="report-tag blue">clear</span>'}</td>
-                  <td>${item.node_agent_ready ? '<span class="report-status good"><span class="report-dot good"></span>ready</span>' : '<span class="report-status bad"><span class="report-dot bad"></span>missing</span>'}</td>
+                  <td>${item.node_agent_ready ? '<span class="report-status good" title="Node agent ready"><span class="report-dot good"></span></span>' : '<span class="report-status bad" title="Node agent unavailable"><span class="report-dot bad"></span></span>'}</td>
                   <td><span class="report-tag ${reportVerdictTagClass(item.verdict)}">${esc(item.verdict || '')}</span></td>
                   <td>${esc(item.blocking_reason || '')}</td>
                 </tr>

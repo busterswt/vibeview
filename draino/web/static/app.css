@@ -677,7 +677,13 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .st-inuse     { color: var(--blue); font-weight: 600; }
 .data-table tbody tr.selected td { background: var(--sel); }
 
-.reports-shell { display: flex; min-height: 100%; }
+#reports-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.reports-shell { display: flex; flex: 1; min-height: 0; }
 .reports-nav {
   width: 280px;
   min-width: 240px;
@@ -685,6 +691,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .reports-nav-head {
   background: var(--white);
@@ -718,7 +725,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .reports-nav-item .ico { font-size: 14px; flex-shrink: 0; }
 .reports-nav-item .name { font-size: 12px; font-weight: 500; }
 .reports-nav-item .sub { font-size: 10px; color: var(--dim); margin-top: 1px; }
-.reports-content { flex: 1; overflow-y: auto; padding: 18px 20px 24px; }
+.reports-content { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 24px; }
 .report-empty {
   background: var(--white);
   border: 1px solid var(--border);
