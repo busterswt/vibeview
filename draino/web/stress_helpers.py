@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import random
 import time
 from datetime import datetime, timezone
 from ipaddress import ip_network
@@ -254,42 +255,26 @@ def find_active_stress_stack(auth: openstack_ops.OpenStackAuth | None) -> dict[s
     return _stack_summary(stack) if stack is not None else None
 
 
-def suggest_stress_cidr(auth: openstack_ops.OpenStackAuth | None) -> str:
-    conn = openstack_ops._conn(auth=auth)
-    used: set[str] = set()
-    network_api = getattr(conn, "network", None)
-    if network_api is not None:
-        try:
-            for subnet in network_api.subnets():
-                cidr = getattr(subnet, "cidr", None)
-                if cidr:
-                    used.add(str(ip_network(cidr, strict=False)))
-        except Exception:
-            pass
-    for third_octet in range(70, 255):
-        candidate = f"10.77.{third_octet}.0/24"
-        if str(ip_network(candidate, strict=False)) not in used:
-            return candidate
-    return "10.250.0.0/24"
+def suggest_stress_cidr() -> str:
+    pools = (
+        (10, random.randint(64, 223), random.randint(0, 255)),
+        (172, random.randint(16, 31), random.randint(0, 255)),
+        (192, 168, random.randint(0, 255)),
+    )
+    first, second, third = random.choice(pools)
+    return f"{first}.{second}.{third}.0/24"
 
 
-def build_stress_options(
+def build_stress_environment(
     *,
     auth: openstack_ops.OpenStackAuth | None,
     compute_count: int,
-    profile_key: str,
 ) -> dict[str, Any]:
     catalog = build_stress_catalog(auth=auth, compute_count=compute_count)
     images = list_stress_images(auth)
     flavors = list_stress_flavors(auth)
     keypairs = list_stress_keypairs(auth)
     external_networks = _list_external_networks(auth)
-    suggested_cidr = suggest_stress_cidr(auth)
-    profiles = list(catalog["profiles"])
-    selected_profile = next((profile for profile in profiles if profile["key"] == profile_key), None)
-    if selected_profile is None:
-        raise ValueError(f"Unknown stress profile: {profile_key}")
-
     default_image_id = images[0]["id"] if images else ""
     compatible_flavors = flavors
     if images:
@@ -300,29 +285,61 @@ def build_stress_options(
         ] or flavors
     default_flavor_id = compatible_flavors[0]["id"] if compatible_flavors else (flavors[0]["id"] if flavors else "")
     default_keypair_name = keypairs[0]["name"] if keypairs else STRESS_DEFAULT_KEYPAIR_NAME
-
     return {
-        "selected_profile": selected_profile,
         "images": images,
         "flavors": flavors,
         "keypairs": keypairs,
         "external_networks": external_networks,
         "guardrail": catalog["guardrail"],
         "defaults": {
-            "profile": selected_profile["key"],
-            "vm_count": selected_profile["default_vm_count"],
             "image_id": default_image_id,
             "flavor_id": default_flavor_id,
             "keypair_mode": "existing" if keypairs else "auto",
             "keypair_name": default_keypair_name,
             "generated_keypair_name": STRESS_DEFAULT_KEYPAIR_NAME,
             "cidr_mode": "auto",
-            "cidr": suggested_cidr,
+            "cidr": suggest_stress_cidr(),
             "external_network_id": external_networks[0]["id"] if external_networks else "",
         },
         "limits": {
             "compute_count": compute_count,
         },
+    }
+
+
+def build_stress_options(
+    *,
+    auth: openstack_ops.OpenStackAuth | None,
+    compute_count: int,
+    profile_key: str,
+) -> dict[str, Any]:
+    catalog = build_stress_catalog(auth=auth, compute_count=compute_count)
+    environment = build_stress_environment(auth=auth, compute_count=compute_count)
+    profiles = list(catalog["profiles"])
+    selected_profile = next((profile for profile in profiles if profile["key"] == profile_key), None)
+    if selected_profile is None:
+        raise ValueError(f"Unknown stress profile: {profile_key}")
+
+    return {
+        "selected_profile": selected_profile,
+        "images": environment["images"],
+        "flavors": environment["flavors"],
+        "keypairs": environment["keypairs"],
+        "external_networks": environment["external_networks"],
+        "guardrail": environment["guardrail"],
+        "defaults": {
+            "profile": selected_profile["key"],
+            "vm_count": selected_profile["default_vm_count"],
+            "image_id": environment["defaults"]["image_id"],
+            "flavor_id": environment["defaults"]["flavor_id"],
+            "keypair_mode": environment["defaults"]["keypair_mode"],
+            "keypair_name": environment["defaults"]["keypair_name"],
+            "generated_keypair_name": environment["defaults"]["generated_keypair_name"],
+            "cidr_mode": environment["defaults"]["cidr_mode"],
+            "cidr": environment["defaults"]["cidr"],
+            "external_network_id": environment["defaults"]["external_network_id"],
+        },
+        "limits": environment["limits"],
     }
 
 

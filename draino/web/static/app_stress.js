@@ -13,16 +13,56 @@ const STRESS_FALLBACK_PROFILES = [
 ];
 
 function stressProfiles() {
-  return stressState.catalog?.profiles || stressState.options?.profiles || STRESS_FALLBACK_PROFILES;
+  return stressState.catalog?.profiles || STRESS_FALLBACK_PROFILES;
 }
 
 function stressProfileByKey(key) {
-  if (stressState.options?.selected_profile?.key === key) return stressState.options.selected_profile;
   return stressProfiles().find(profile => profile.key === key) || null;
 }
 
+function stressDraft(profileKey = stressState.profileKey) {
+  if (!profileKey) return null;
+  const profile = stressProfileByKey(profileKey);
+  if (!stressState.drafts[profileKey]) {
+    stressState.drafts[profileKey] = {
+      loaded: false,
+      error: null,
+      imageId: '',
+      flavorId: '',
+      externalNetworkId: '',
+      keypairMode: 'existing',
+      keypairName: '',
+      cidrMode: 'auto',
+      cidr: '',
+      vmCount: profile?.default_vm_count || 1,
+    };
+  }
+  return stressState.drafts[profileKey];
+}
+
+function syncStressDraft(profileKey = stressState.profileKey) {
+  const draft = stressDraft(profileKey);
+  const env = stressState.env;
+  const profile = stressProfileByKey(profileKey);
+  if (!draft || !env) return draft;
+  draft.vmCount = draft.vmCount || profile?.default_vm_count || 1;
+  draft.imageId = draft.imageId || env.defaults?.image_id || env.images?.[0]?.id || '';
+  draft.externalNetworkId = draft.externalNetworkId || env.defaults?.external_network_id || env.external_networks?.[0]?.id || '';
+  draft.keypairMode = draft.keypairMode || env.defaults?.keypair_mode || 'existing';
+  draft.keypairName = draft.keypairName || env.defaults?.keypair_name || env.defaults?.generated_keypair_name || '';
+  draft.cidrMode = draft.cidrMode || env.defaults?.cidr_mode || 'auto';
+  draft.cidr = draft.cidr || env.defaults?.cidr || '';
+  const compatible = getCompatibleStressFlavors(profileKey);
+  if (!compatible.some(flavor => flavor.id === draft.flavorId)) {
+    draft.flavorId = env.defaults?.flavor_id && compatible.some(flavor => flavor.id === env.defaults.flavor_id)
+      ? env.defaults.flavor_id
+      : (compatible[0]?.id || '');
+  }
+  return draft;
+}
+
 function stressImageById(imageId) {
-  return (stressState.options?.images || []).find(image => image.id === imageId) || null;
+  return (stressState.env?.images || []).find(image => image.id === imageId) || null;
 }
 
 function stressStatusTagClass(status) {
@@ -33,9 +73,10 @@ function stressStatusTagClass(status) {
   return 'blue';
 }
 
-function getCompatibleStressFlavors() {
-  const image = stressImageById(stressState.imageId);
-  const flavors = stressState.options?.flavors || [];
+function getCompatibleStressFlavors(profileKey = stressState.profileKey) {
+  const draft = stressDraft(profileKey);
+  const image = stressImageById(draft?.imageId);
+  const flavors = stressState.env?.flavors || [];
   if (!image) return flavors;
   const compatible = flavors.filter(flavor => flavor.disk_gb >= image.min_disk_gb && flavor.ram_mb >= image.min_ram_mb);
   return compatible.length ? compatible : flavors;
@@ -43,26 +84,6 @@ function getCompatibleStressFlavors() {
 
 function stressFlavorLabel(flavor) {
   return `${flavor.name} - ${flavor.vcpus} vCPU - ${Math.round((flavor.ram_mb || 0) / 1024)} GB - ${flavor.disk_gb} GB`;
-}
-
-function syncStressDefaults(options) {
-  const defaults = options.defaults || {};
-  stressState.profileKey = stressState.profileKey || defaults.profile || options.selected_profile?.key || stressState.catalog?.profiles?.[0]?.key || '';
-  stressState.imageId = stressState.imageId || defaults.image_id || options.images?.[0]?.id || '';
-  stressState.externalNetworkId = stressState.externalNetworkId || defaults.external_network_id || options.external_networks?.[0]?.id || '';
-  const compatible = getCompatibleStressFlavors();
-  if (!compatible.some(flavor => flavor.id === stressState.flavorId)) {
-    stressState.flavorId = defaults.flavor_id && compatible.some(flavor => flavor.id === defaults.flavor_id)
-      ? defaults.flavor_id
-      : (compatible[0]?.id || '');
-  }
-  stressState.keypairMode = stressState.keypairMode || defaults.keypair_mode || 'existing';
-  stressState.keypairName = stressState.keypairName || defaults.keypair_name || defaults.generated_keypair_name || '';
-  stressState.cidrMode = stressState.cidrMode || defaults.cidr_mode || 'auto';
-  stressState.cidr = stressState.cidr || defaults.cidr || '';
-  if (!stressState.vmCount || stressState.vmCount < 1) {
-    stressState.vmCount = defaults.vm_count || 1;
-  }
 }
 
 function stressNeedsPolling() {
@@ -136,35 +157,34 @@ async function loadStressCatalog(force = false) {
   }
 }
 
-async function loadStressOptions(force = false) {
-  if (stressState.loading) return;
-  if (stressState.options && !force) {
+async function loadStressEnvironment(force = false) {
+  if (stressState.envLoading) return;
+  if (stressState.env && !force) {
     renderStressView();
     return;
   }
-  stressState.loading = true;
-  stressState.error = null;
+  stressState.envLoading = true;
+  stressState.envError = null;
   stressState.actionError = null;
   renderStressView();
   try {
-    const profileKey = encodeURIComponent(stressState.profileKey || '');
-    const resp = await fetch(`/api/stress/options?profile=${profileKey}`);
+    const resp = await fetch('/api/stress/environment');
     const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
-    stressState.options = json.options;
+    stressState.env = json.environment;
     stressState.catalog = {
       profiles: stressState.catalog?.profiles || [],
-      guardrail: json.options?.guardrail || stressState.catalog?.guardrail || null,
-      limits: json.options?.limits || stressState.catalog?.limits || null,
+      guardrail: json.environment?.guardrail || stressState.catalog?.guardrail || null,
+      limits: json.environment?.limits || stressState.catalog?.limits || null,
     };
-    syncStressDefaults(json.options || {});
-    if (json.options?.guardrail?.active) await loadStressStatus(true);
+    syncStressDraft();
+    if (json.environment?.guardrail?.active) await loadStressStatus(true);
   } catch (e) {
-    stressState.error = String(e);
+    stressState.envError = String(e);
   } finally {
-    stressState.loading = false;
+    stressState.envLoading = false;
     renderStressView();
   }
 }
@@ -196,82 +216,102 @@ async function loadStressStatus(force = false) {
 
 async function refreshStressView() {
   await loadStressCatalog(true);
-  if (stressState.options) await loadStressOptions(true);
+  if (stressState.env) await loadStressEnvironment(true);
   if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
     await loadStressStatus(true);
   }
 }
 
 async function loadSelectedStressTemplate() {
-  if (stressState.loading || stressState.catalogLoading) return;
+  if (stressState.envLoading || stressState.catalogLoading) return;
   await loadStressCatalog(true);
-  await loadStressOptions(true);
+  await loadStressEnvironment(true);
+  const draft = syncStressDraft();
+  if (draft) {
+    draft.loaded = true;
+    draft.error = null;
+  }
   if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
     await loadStressStatus(true);
   }
+  renderStressView();
 }
 
 function setStressProfile(profileKey) {
   stressState.profileKey = profileKey;
   localStorage.setItem(STRESS_PROFILE_STORAGE_KEY, profileKey);
   const profile = stressProfileByKey(profileKey);
-  if (profile) stressState.vmCount = profile.default_vm_count || 1;
-  stressState.options = null;
-  stressState.error = null;
+  const draft = stressDraft(profileKey);
+  if (profile && draft && !draft.vmCount) draft.vmCount = profile.default_vm_count || 1;
   renderStressView();
 }
 
 function setStressImage(imageId) {
-  stressState.imageId = imageId;
+  const draft = stressDraft();
+  if (!draft) return;
+  draft.imageId = imageId;
   const compatible = getCompatibleStressFlavors();
-  if (!compatible.some(flavor => flavor.id === stressState.flavorId)) {
-    stressState.flavorId = compatible[0]?.id || '';
+  if (!compatible.some(flavor => flavor.id === draft.flavorId)) {
+    draft.flavorId = compatible[0]?.id || '';
   }
   renderStressView();
 }
 
 function setStressFlavor(flavorId) {
-  stressState.flavorId = flavorId;
+  const draft = stressDraft();
+  if (!draft) return;
+  draft.flavorId = flavorId;
   renderStressView();
 }
 
 function setStressKeypairMode(mode) {
-  stressState.keypairMode = mode;
+  const draft = stressDraft();
+  if (!draft) return;
+  draft.keypairMode = mode;
   if (mode === 'auto') {
-    stressState.keypairName = stressState.options?.defaults?.generated_keypair_name || 'vibe-stress-key';
-  } else if (!stressState.keypairName) {
-    stressState.keypairName = stressState.options?.keypairs?.[0]?.name || '';
+    draft.keypairName = stressState.env?.defaults?.generated_keypair_name || 'vibe-stress-key';
+  } else if (!draft.keypairName) {
+    draft.keypairName = stressState.env?.keypairs?.[0]?.name || '';
   }
   renderStressView();
 }
 
 function setStressKeypairName(name) {
-  stressState.keypairName = name;
+  const draft = stressDraft();
+  if (draft) draft.keypairName = name;
 }
 
 function setStressCidrMode(mode) {
-  stressState.cidrMode = mode;
+  const draft = stressDraft();
+  if (!draft) return;
+  draft.cidrMode = mode;
   if (mode === 'auto') {
-    stressState.cidr = stressState.options?.defaults?.cidr || '';
+    draft.cidr = stressState.env?.defaults?.cidr || '';
   }
   renderStressView();
 }
 
 function setStressCidr(value) {
-  stressState.cidr = value;
+  const draft = stressDraft();
+  if (draft) draft.cidr = value;
 }
 
 function setStressVmCount(value) {
+  const draft = stressDraft();
+  if (!draft) return;
   const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric >= 1) stressState.vmCount = Math.round(numeric);
+  if (Number.isFinite(numeric) && numeric >= 1) draft.vmCount = Math.round(numeric);
 }
 
 function setStressExternalNetwork(value) {
-  stressState.externalNetworkId = value;
+  const draft = stressDraft();
+  if (draft) draft.externalNetworkId = value;
 }
 
 async function launchStressTest() {
   if (stressState.actionLoading) return;
+  const draft = syncStressDraft();
+  if (!draft) return;
   stressState.actionLoading = true;
   stressState.actionKind = 'launch';
   stressState.actionError = null;
@@ -282,14 +322,14 @@ async function launchStressTest() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         profile: stressState.profileKey,
-        vm_count: stressState.vmCount,
-        image_id: stressState.imageId,
-        flavor_id: stressState.flavorId,
-        keypair_mode: stressState.keypairMode,
-        keypair_name: stressState.keypairName,
-        cidr_mode: stressState.cidrMode,
-        cidr: stressState.cidr,
-        external_network_id: stressState.externalNetworkId,
+        vm_count: draft.vmCount,
+        image_id: draft.imageId,
+        flavor_id: draft.flavorId,
+        keypair_mode: draft.keypairMode,
+        keypair_name: draft.keypairName,
+        cidr_mode: draft.cidrMode,
+        cidr: draft.cidr,
+        external_network_id: draft.externalNetworkId,
       }),
     });
     const json = await resp.json();
@@ -355,10 +395,10 @@ function renderStressProfileNav() {
 }
 
 function renderStressGuardrail() {
-  const guardrail = stressState.catalog?.guardrail || stressState.options?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
+  const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
   const stack = guardrail.stack;
   return `
-    <div class="card">
+    <section class="card">
       <div class="card-title"><span>Guardrail</span></div>
       <div class="card-body">
         <div class="stress-guard${guardrail.active ? ' active' : ''}">
@@ -378,38 +418,39 @@ function renderStressGuardrail() {
           ` : ''}
         </div>
       </div>
-    </div>
+    </section>
   `;
 }
 
 function renderStressLaunchCard() {
-  const options = stressState.options;
+  const env = stressState.env || {};
+  const draft = syncStressDraft();
   const profile = stressProfileByKey(stressState.profileKey);
   const compatibleFlavors = getCompatibleStressFlavors();
-  const image = stressImageById(stressState.imageId);
-  const externalNetworks = options?.external_networks || [];
+  const image = stressImageById(draft?.imageId);
+  const externalNetworks = env.external_networks || [];
   const flavorHint = image
     ? `Showing flavors with at least ${image.min_disk_gb} GB disk and ${Math.round((image.min_ram_mb || 0) / 1024)} GB RAM.`
     : 'Select an image to filter flavors.';
-  const autoKeyName = options?.defaults?.generated_keypair_name || 'vibe-stress-key';
-  const launchBlocked = Boolean(options?.guardrail?.active) || stressState.actionLoading;
+  const autoKeyName = env.defaults?.generated_keypair_name || 'vibe-stress-key';
+  const launchBlocked = Boolean(env.guardrail?.active) || stressState.actionLoading;
   return `
     <div class="card">
       <div class="card-title"><span>Launch Parameters</span></div>
       <div class="card-body">
         <div class="stress-launch-note">
-          ${esc(profile?.label || 'Selected template')} targets ${esc(String(stressState.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(options.limits?.compute_count || 0))} visible compute hosts.
+          ${esc(profile?.label || 'Selected template')} targets ${esc(String(draft?.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(env.limits?.compute_count || 0))} visible compute hosts.
         </div>
         <div class="stress-form-grid">
           <div class="field">
             <label>VM Count</label>
-            <input type="number" min="1" value="${esc(String(stressState.vmCount || profile?.default_vm_count || 1))}" oninput="setStressVmCount(this.value)">
+            <input type="number" min="1" value="${esc(String(draft?.vmCount || profile?.default_vm_count || 1))}" oninput="setStressVmCount(this.value)">
           </div>
           <div class="field">
             <label>Image</label>
             <select onchange="setStressImage(this.value)">
-              ${(options?.images || []).map(item => `
-                <option value="${escAttr(item.id)}"${item.id === stressState.imageId ? ' selected' : ''}>${esc(item.name)}</option>
+              ${(env.images || []).map(item => `
+                <option value="${escAttr(item.id)}"${item.id === draft?.imageId ? ' selected' : ''}>${esc(item.name)}</option>
               `).join('')}
             </select>
           </div>
@@ -417,7 +458,7 @@ function renderStressLaunchCard() {
             <label>Flavor</label>
             <select onchange="setStressFlavor(this.value)">
               ${compatibleFlavors.map(item => `
-                <option value="${escAttr(item.id)}"${item.id === stressState.flavorId ? ' selected' : ''}>${esc(stressFlavorLabel(item))}</option>
+                <option value="${escAttr(item.id)}"${item.id === draft?.flavorId ? ' selected' : ''}>${esc(stressFlavorLabel(item))}</option>
               `).join('')}
             </select>
             <div class="stress-field-note">${esc(flavorHint)}</div>
@@ -426,20 +467,20 @@ function renderStressLaunchCard() {
             <label>External Network</label>
             <select onchange="setStressExternalNetwork(this.value)">
               ${externalNetworks.map(item => `
-                <option value="${escAttr(item.id)}"${item.id === stressState.externalNetworkId ? ' selected' : ''}>${esc(item.name)}</option>
+                <option value="${escAttr(item.id)}"${item.id === draft?.externalNetworkId ? ' selected' : ''}>${esc(item.name)}</option>
               `).join('')}
             </select>
           </div>
           <div class="field">
             <label>Keypair</label>
             <div class="stress-inline-toggle">
-              <button type="button" class="${stressState.keypairMode === 'existing' ? 'active' : ''}" onclick="setStressKeypairMode('existing')">Existing</button>
-              <button type="button" class="${stressState.keypairMode === 'auto' ? 'active' : ''}" onclick="setStressKeypairMode('auto')">Auto-generate</button>
+              <button type="button" class="${draft?.keypairMode === 'existing' ? 'active' : ''}" onclick="setStressKeypairMode('existing')">Existing</button>
+              <button type="button" class="${draft?.keypairMode === 'auto' ? 'active' : ''}" onclick="setStressKeypairMode('auto')">Auto-generate</button>
             </div>
-            ${stressState.keypairMode === 'existing' ? `
+            ${draft?.keypairMode === 'existing' ? `
               <select onchange="setStressKeypairName(this.value)">
-                ${(options?.keypairs || []).map(item => `
-                  <option value="${escAttr(item.name)}"${item.name === stressState.keypairName ? ' selected' : ''}>${esc(item.name)}</option>
+                ${(env.keypairs || []).map(item => `
+                  <option value="${escAttr(item.name)}"${item.name === draft?.keypairName ? ' selected' : ''}>${esc(item.name)}</option>
                 `).join('')}
               </select>
             ` : `
@@ -449,10 +490,10 @@ function renderStressLaunchCard() {
           <div class="field">
             <label>CIDR</label>
             <div class="stress-inline-toggle">
-              <button type="button" class="${stressState.cidrMode === 'auto' ? 'active' : ''}" onclick="setStressCidrMode('auto')">Auto</button>
-              <button type="button" class="${stressState.cidrMode === 'manual' ? 'active' : ''}" onclick="setStressCidrMode('manual')">Custom</button>
+              <button type="button" class="${draft?.cidrMode === 'auto' ? 'active' : ''}" onclick="setStressCidrMode('auto')">Auto</button>
+              <button type="button" class="${draft?.cidrMode === 'manual' ? 'active' : ''}" onclick="setStressCidrMode('manual')">Custom</button>
             </div>
-            <input type="text" value="${esc(stressState.cidr || '')}" ${stressState.cidrMode === 'auto' ? 'readonly' : ''} oninput="setStressCidr(this.value)">
+            <input type="text" value="${esc(draft?.cidr || '')}" ${draft?.cidrMode === 'auto' ? 'readonly' : ''} oninput="setStressCidr(this.value)">
           </div>
         </div>
         <div class="stress-launch-actions">
@@ -466,12 +507,7 @@ function renderStressLaunchCard() {
 }
 
 function renderStressEmptyState() {
-  const profile = stressProfileByKey(stressState.profileKey) || {
-    key: 'full-host-spread',
-    label: 'Full Host Spread',
-    description: 'Best-effort one VM per compute host for scheduler and placement validation.',
-    icon: '🧭',
-  };
+  const profile = stressProfileByKey(stressState.profileKey) || STRESS_FALLBACK_PROFILES[0];
   return `
     <div class="stress-shell">
       <aside class="stress-nav">
@@ -503,7 +539,7 @@ function renderStressEmptyState() {
                 <div class="report-launch-title">${esc(profile.label)}</div>
                 <div class="report-launch-subtitle">${esc(profile.description)}</div>
                 <div class="report-launch-text">
-                  OpenStack discovery for images, flavors, keypairs, networks, and active Heat stacks is intentionally manual here so the page opens instantly.
+                  OpenStack discovery for images, flavors, keypairs, and networks is intentionally manual here so the page opens instantly.
                   Default target: ${esc(String(profile.default_vm_count || 1))} VMs. Full Host Spread expands to your visible compute count after details load.
                 </div>
                 <div class="report-launch-pills">
@@ -512,7 +548,7 @@ function renderStressEmptyState() {
                   <span class="meta-pill">No stored data</span>
                 </div>
                 <div class="report-launch-actions">
-                  <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.loading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.loading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile.label)}`}</button>
+                  <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile.label)}`}</button>
                 </div>
               </div>
             </div>
@@ -525,7 +561,7 @@ function renderStressEmptyState() {
 
 function renderStressTemplateLaunchState() {
   const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || null;
-  const guardrail = stressState.catalog?.guardrail || { active: false };
+  const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false };
   return `
     <section class="report-launch-card">
       <div class="report-launch-shell">
@@ -545,12 +581,12 @@ function renderStressTemplateLaunchState() {
             <span class="meta-pill">${guardrail.active ? 'Guardrail active' : 'Ready to configure'}</span>
           </div>
           <div class="report-launch-actions">
-            <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.loading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.loading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile?.label || 'Template')}`}</button>
+            <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile?.label || 'Template')}`}</button>
           </div>
-          ${stressState.loading || stressState.catalogLoading ? `
+          ${stressState.envLoading || stressState.catalogLoading ? `
             <div class="stress-template-note" aria-live="polite">
               <span class="stress-action-spinner">↻</span>
-              <span>Loading image, flavor, keypair, network, and guardrail details for the selected template.</span>
+              <span>Loading shared cloud options and guardrail details for the selected template.</span>
             </div>
           ` : ''}
           ${guardrail.active ? `
@@ -558,7 +594,7 @@ function renderStressTemplateLaunchState() {
               An active Heat stack already exists. Stack details and delete controls can be loaded from the live environment without re-running discovery.
             </div>
           ` : ''}
-          ${stressState.error ? `<div class="stress-action-error">${esc(stressState.error)}</div>` : ''}
+          ${stressState.envError ? `<div class="stress-action-error">${esc(stressState.envError)}</div>` : ''}
         </div>
       </div>
     </section>
@@ -725,10 +761,11 @@ function renderStressView() {
     `;
     return;
   }
-  const options = stressState.options || {};
-  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || options.profiles?.[0] || {};
+  const env = stressState.env || {};
+  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || STRESS_FALLBACK_PROFILES[0];
+  const draft = stressDraft();
   const status = stressState.status;
-  const showLoadedGrids = Boolean(stressState.options || status?.active);
+  const showLoadedGrids = Boolean(draft?.loaded || status?.active);
   wrap.innerHTML = `
     <div class="stress-shell">
       <aside class="stress-nav">
@@ -746,28 +783,26 @@ function renderStressView() {
           </div>
           <div class="report-meta-row">
             <span class="meta-pill">Mode: live orchestration</span>
-            <span class="meta-pill">Stack prefix: ${esc(stressState.catalog?.guardrail?.stack_prefix || options.guardrail?.stack_prefix || 'vibe-stress-')}</span>
+            <span class="meta-pill">Stack prefix: ${esc(stressState.catalog?.guardrail?.stack_prefix || env.guardrail?.stack_prefix || 'vibe-stress-')}</span>
             <span class="meta-pill">Guardrail: one active test</span>
             <span class="meta-pill">Cleanup: Heat stack delete</span>
             <span class="report-action-pills">
-              <button class="report-action-pill${stressState.catalogLoading || stressState.loading || stressState.statusLoading ? ' active' : ''}" type="button" onclick="refreshStressView()" title="Refresh stress view">
-                <span class="report-refresh-icon${stressState.catalogLoading || stressState.loading || stressState.statusLoading ? ' active' : ''}">↻</span>
+              <button class="report-action-pill${stressState.catalogLoading || stressState.envLoading || stressState.statusLoading ? ' active' : ''}" type="button" onclick="refreshStressView()" title="Refresh stress view">
+                <span class="report-refresh-icon${stressState.catalogLoading || stressState.envLoading || stressState.statusLoading ? ' active' : ''}">↻</span>
               </button>
             </span>
           </div>
         </section>
+        ${renderStressGuardrail()}
         ${showLoadedGrids ? `
           <section class="stress-launch-grid">
-            ${stressState.options ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
-            ${renderStressGuardrail()}
+            ${draft?.loaded ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
           </section>
-          <section class="stress-meta-grid">
-            <div class="card">
-              <div class="card-title"><span>Notes</span></div>
-              <div class="card-body note">
-                Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
-                Timing and distribution are derived live from Heat resources and Nova server state.
-              </div>
+          <section class="card">
+            <div class="card-title"><span>Notes</span></div>
+            <div class="card-body note">
+              Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
+              Timing and distribution are derived live from Heat resources and Nova server state.
             </div>
           </section>
         ` : `

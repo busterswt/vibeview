@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request
 from .api_issues import build_api_issue
 from ..stress_helpers import (
     build_stress_catalog,
+    build_stress_environment,
     build_stress_options,
     delete_active_stress_stack,
     get_stress_status,
@@ -30,6 +31,29 @@ def _require_session_record() -> Callable[[Request], object]:
     if _get_session_record_getter is None:
         raise RuntimeError("stress routes are not configured")
     return _get_session_record_getter()
+
+
+@router.get("/api/stress/environment")
+async def api_stress_environment(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    compute_count = sum(1 for state in session.server.node_states.values() if state.is_compute)
+    try:
+        environment = await loop.run_in_executor(
+            None,
+            partial(
+                build_stress_environment,
+                auth=session.server.openstack_auth,
+                compute_count=compute_count,
+            ),
+        )
+        return {"environment": environment, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {
+            "environment": None,
+            "error": str(exc),
+            "api_issue": build_api_issue("Nova", "GET /api/stress/environment", exc),
+        }
 
 
 @router.get("/api/stress/options")

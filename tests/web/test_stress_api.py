@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ipaddress import ip_network
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -49,7 +50,7 @@ def test_stress_options_endpoint_returns_selected_profile_and_filtered_defaults(
         class network:
             @staticmethod
             def subnets():
-                return [SimpleNamespace(cidr="10.77.70.0/24")]
+                return []
 
             @staticmethod
             def networks():
@@ -83,7 +84,70 @@ def test_stress_options_endpoint_returns_selected_profile_and_filtered_defaults(
     assert body["options"]["defaults"]["image_id"] == "img-1"
     assert body["options"]["defaults"]["flavor_id"] == "flavor-ok"
     assert body["options"]["defaults"]["keypair_name"] == "ops-key"
-    assert body["options"]["defaults"]["cidr"] == "10.77.71.0/24"
+    cidr = ip_network(body["options"]["defaults"]["cidr"], strict=False)
+    assert cidr.prefixlen == 24
+    assert cidr.is_private
+
+
+def test_stress_environment_endpoint_returns_shared_cloud_options(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+        class image:
+            @staticmethod
+            def images():
+                return [SimpleNamespace(id="img-1", name="ubuntu-24.04", status="active", min_disk=10, min_ram=1024, disk_format="qcow2", visibility="public", properties={})]
+
+        class compute:
+            @staticmethod
+            def flavors():
+                return [SimpleNamespace(id="flavor-ok", name="m1.small", vcpus=2, ram=2048, disk=20, ephemeral=0, swap=0, is_public=True)]
+
+            @staticmethod
+            def keypairs():
+                return [SimpleNamespace(name="ops-key", fingerprint="fp-1", type="ssh")]
+
+        class orchestration:
+            @staticmethod
+            def stacks():
+                return []
+
+        class network:
+            @staticmethod
+            def networks():
+                return [SimpleNamespace(id="ext-net-1", name="public", is_router_external=True, to_dict=lambda: {"router:external": True})]
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/stress/environment")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["error"] is None
+    assert body["environment"]["defaults"]["image_id"] == "img-1"
+    assert body["environment"]["defaults"]["flavor_id"] == "flavor-ok"
+    assert body["environment"]["defaults"]["keypair_name"] == "ops-key"
+    assert body["environment"]["external_networks"][0]["id"] == "ext-net-1"
 
 
 def test_stress_options_endpoint_reports_active_stack(monkeypatch):
