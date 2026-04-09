@@ -689,6 +689,60 @@ def _stack_resources(conn, stack: Any) -> list[Any]:
     return []
 
 
+def _stack_events(conn, stack: Any) -> list[Any]:
+    orchestration = getattr(conn, "orchestration", None)
+    if orchestration is None:
+        return []
+    stack_ref = getattr(stack, "id", None) or getattr(stack, "stack_name", None) or getattr(stack, "name", None)
+    for attr in ("events", "stack_events"):
+        method = getattr(orchestration, attr, None)
+        if method is None:
+            continue
+        try:
+            return list(method(stack_ref))
+        except TypeError:
+            try:
+                return list(method(stack=stack_ref))
+            except TypeError:
+                continue
+    return []
+
+
+def _event_resource_name(event: Any) -> str:
+    return (
+        getattr(event, "logical_resource_id", None)
+        or getattr(event, "resource_name", None)
+        or ""
+    )
+
+
+def _event_status(event: Any) -> str:
+    return str(getattr(event, "resource_status", None) or getattr(event, "status", None) or "")
+
+
+def _event_time_value(event: Any) -> Any:
+    return getattr(event, "event_time", None) or getattr(event, "created_at", None) or getattr(event, "updated_at", None)
+
+
+def _event_elapsed_by_resource(events: list[Any]) -> dict[str, int]:
+    starts: dict[str, Any] = {}
+    elapsed: dict[str, int] = {}
+    for event in sorted(events, key=lambda item: _parse_time(_event_time_value(item)) or datetime.max.replace(tzinfo=timezone.utc)):
+        name = _event_resource_name(event)
+        if not name:
+            continue
+        status = _event_status(event).upper()
+        event_time = _event_time_value(event)
+        if status == "CREATE_IN_PROGRESS" and name not in starts:
+            starts[name] = event_time
+            continue
+        if status in {"CREATE_COMPLETE", "CREATE_FAILED"} and name in starts and name not in elapsed:
+            duration = _elapsed_seconds(starts[name], event_time)
+            if duration is not None:
+                elapsed[name] = duration
+    return elapsed
+
+
 def _resource_note(resource: dict[str, Any], server_info: dict[str, Any] | None = None) -> str:
     resource_type = resource["type"]
     if resource_type == "OS::Neutron::Subnet":
@@ -744,6 +798,7 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
     parameters = stack_data.get("parameters") or {}
     requested_vms = _coerce_int(parameters.get("vm_count")) or 0
     resources_raw = _stack_resources(conn, stack)
+    event_elapsed = _event_elapsed_by_resource(_stack_events(conn, stack))
     resources: list[dict[str, Any]] = []
     for resource in resources_raw:
         resources.append({
@@ -763,7 +818,9 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
     plumbing_elapsed_values: list[int] = []
 
     for item in resources:
-        elapsed_s = _elapsed_seconds(item["created_at"], item["updated_at"])
+        elapsed_s = event_elapsed.get(item["logical_name"])
+        if elapsed_s is None:
+            elapsed_s = _elapsed_seconds(item["created_at"], item["updated_at"])
         server_info = None
         if item["type"] == "OS::Nova::Server":
             server_info = server_map.get(item["physical_id"])

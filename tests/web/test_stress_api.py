@@ -395,3 +395,71 @@ def test_stress_catalog_returns_action_trace(monkeypatch):
     assert resp.status_code == 200
     assert body["catalog"]["trace"][0]["stage"] == "calling_heat"
     assert body["catalog"]["trace"][1]["stage"] == "request_received"
+
+
+def test_stress_status_uses_heat_events_for_timing(monkeypatch):
+    class FakeOrchestration:
+        @staticmethod
+        def stacks():
+            return [
+                SimpleNamespace(
+                    id="stack-1",
+                    stack_name="vibe-stress-20260409-193659",
+                    status="CREATE_COMPLETE",
+                    creation_time="2026-04-09T19:37:03Z",
+                    updated_time="2026-04-09T19:37:26Z",
+                    description="stress",
+                    parameters={"vm_count": 1, "profile": "small-distribution", "test_id": "20260409-193659"},
+                    outputs=[],
+                )
+            ]
+
+        @staticmethod
+        def resources(stack_ref):
+            assert stack_ref == "stack-1"
+            return [
+                SimpleNamespace(resource_name="stress_vm_01", resource_type="OS::Nova::Server", physical_resource_id="server-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_port_01", resource_type="OS::Neutron::Port", physical_resource_id="port-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_secgroup", resource_type="OS::Neutron::SecurityGroup", physical_resource_id="secgroup-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_router_interface", resource_type="OS::Neutron::RouterInterface", physical_resource_id="iface-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_subnet", resource_type="OS::Neutron::Subnet", physical_resource_id="subnet-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_net", resource_type="OS::Neutron::Net", physical_resource_id="net-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(resource_name="stress_router", resource_type="OS::Neutron::Router", physical_resource_id="router-1", resource_status="CREATE_COMPLETE", updated_time="2026-04-09T19:37:03Z"),
+            ]
+
+        @staticmethod
+        def events(stack_ref):
+            assert stack_ref == "stack-1"
+            return [
+                SimpleNamespace(logical_resource_id="stress_secgroup", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:03Z"),
+                SimpleNamespace(logical_resource_id="stress_secgroup", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:04Z"),
+                SimpleNamespace(logical_resource_id="stress_net", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:04Z"),
+                SimpleNamespace(logical_resource_id="stress_net", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:06Z"),
+                SimpleNamespace(logical_resource_id="stress_subnet", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:06Z"),
+                SimpleNamespace(logical_resource_id="stress_subnet", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:07Z"),
+                SimpleNamespace(logical_resource_id="stress_port_01", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:07Z"),
+                SimpleNamespace(logical_resource_id="stress_port_01", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:08Z"),
+                SimpleNamespace(logical_resource_id="stress_router", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:05Z"),
+                SimpleNamespace(logical_resource_id="stress_router", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:08Z"),
+                SimpleNamespace(logical_resource_id="stress_router_interface", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:08Z"),
+                SimpleNamespace(logical_resource_id="stress_router_interface", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:12Z"),
+                SimpleNamespace(logical_resource_id="stress_vm_01", resource_status="CREATE_IN_PROGRESS", event_time="2026-04-09T19:37:08Z"),
+                SimpleNamespace(logical_resource_id="stress_vm_01", resource_status="CREATE_COMPLETE", event_time="2026-04-09T19:37:26Z"),
+            ]
+
+    class FakeConn:
+        orchestration = FakeOrchestration()
+
+        class compute:
+            @staticmethod
+            def get_server(server_id):
+                assert server_id == "server-1"
+                return SimpleNamespace(id="server-1", name="stress-vm-01", status="ACTIVE", compute_host="cmp-a.example.com", addresses={}, to_dict=lambda: {"addresses": {}})
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    status = stress_helpers.get_stress_status(auth=None)
+
+    assert status["summary"]["plumbing_elapsed"] == "12s"
+    assert status["summary"]["avg_vm_build"] == "18s"
+    assert status["summary"]["p95_vm_build"] == "18s"
