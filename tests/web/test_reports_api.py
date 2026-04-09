@@ -183,11 +183,11 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
     )
     monkeypatch.setattr(
         web_server.k8s_ops,
-        "get_node_k8s_detail",
-        lambda node_name, auth=None: {
+        "get_node_pod_capacity_summary",
+        lambda auth=None: {
             "cmp-a01": {"pods_allocatable": "110", "pod_count": 37},
             "cmp-c03": {"pods_allocatable": "110", "pod_count": 41},
-        }[node_name],
+        },
     )
 
     payload = web_server._build_capacity_headroom_report(server)
@@ -204,6 +204,7 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
     assert payload["report"]["az_headroom"][1]["severity"] == "high"
     assert payload["report"]["debug"]["counts"]["computes"] == 2
     assert payload["report"]["debug"]["counts"]["hypervisor_detail_calls"] == 2
+    assert payload["report"]["debug"]["counts"]["k8s_detail_calls"] == 1
     assert payload["report"]["debug"]["timing_ms"]["total"] >= 0
 
 
@@ -231,8 +232,8 @@ def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
     )
     monkeypatch.setattr(
         web_server.k8s_ops,
-        "get_node_k8s_detail",
-        lambda node_name, auth=None: {"pods_allocatable": "110", "pod_count": 12},
+        "get_node_pod_capacity_summary",
+        lambda auth=None: {"cmp-a01": {"pods_allocatable": "110", "pod_count": 12}},
     )
 
     payload = {
@@ -309,8 +310,8 @@ def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch,
     monkeypatch.setattr(web_server.openstack_ops, "get_hypervisor_detail", fake_hv_detail)
     monkeypatch.setattr(
         web_server.k8s_ops,
-        "get_node_k8s_detail",
-        lambda node_name, auth=None: {"pods_allocatable": "110", "pod_count": 37},
+        "get_node_pod_capacity_summary",
+        lambda auth=None: {"cmp-a01.example.com": {"pods_allocatable": "110", "pod_count": 37}},
     )
 
     payload = web_server._build_capacity_headroom_report(server)

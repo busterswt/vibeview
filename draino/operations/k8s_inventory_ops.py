@@ -132,6 +132,39 @@ def get_node_k8s_detail(node_name: str, auth: K8sAuth | None = None) -> dict:
     return result
 
 
+def get_node_pod_capacity_summary(auth: K8sAuth | None = None) -> dict[str, dict]:
+    """Return per-node pod allocatable/count data using bulk K8s queries."""
+    v1 = client.CoreV1Api(_api_client(auth))
+    result: dict[str, dict] = {}
+
+    try:
+        raw_nodes = v1.list_node()
+        for node in raw_nodes.items:
+            name = node.metadata.name
+            allocatable = node.status.allocatable or {}
+            result[name] = {
+                "pods_allocatable": allocatable.get("pods"),
+                "pod_count": 0,
+            }
+    except Exception:
+        return result
+
+    try:
+        raw_pods = v1.list_pod_for_all_namespaces()
+        for pod in raw_pods.items:
+            if pod.status.phase in ("Succeeded", "Failed"):
+                continue
+            node_name = pod.spec.node_name if pod.spec else None
+            if not node_name:
+                continue
+            entry = result.setdefault(node_name, {"pods_allocatable": None, "pod_count": 0})
+            entry["pod_count"] += 1
+    except Exception:
+        pass
+
+    return result
+
+
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role."""
     v1 = client.CoreV1Api(_api_client(auth))

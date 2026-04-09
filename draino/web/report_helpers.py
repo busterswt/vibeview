@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
@@ -336,17 +337,26 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
     host_summary_started = time.perf_counter()
     host_summaries = openstack_ops.get_all_host_summaries(auth=server.openstack_auth)
     host_summary_ms = (time.perf_counter() - host_summary_started) * 1000.0
-    hypervisor_detail_ms = 0.0
-    k8s_detail_ms = 0.0
+    k8s_started = time.perf_counter()
+    pod_capacity = k8s_ops.get_node_pod_capacity_summary(auth=server.k8s_auth)
+    k8s_detail_ms = (time.perf_counter() - k8s_started) * 1000.0
+
+    hv_details: dict[str, dict] = {}
+    hypervisor_detail_started = time.perf_counter()
+    max_workers = min(8, max(1, len(compute_states)))
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {
+            pool.submit(_load_hypervisor_detail, server, state.hypervisor, state.k8s_name): state.k8s_name
+            for state in compute_states
+        }
+        for future in as_completed(future_map):
+            hv_details[future_map[future]] = future.result()
+    hypervisor_detail_ms = (time.perf_counter() - hypervisor_detail_started) * 1000.0
 
     for state in compute_states:
         summary = _lookup_host_summary(host_summaries, state.hypervisor, state.k8s_name)
-        hv_started = time.perf_counter()
-        hv_detail = _load_hypervisor_detail(server, state.hypervisor, state.k8s_name)
-        hypervisor_detail_ms += (time.perf_counter() - hv_started) * 1000.0
-        k8s_started = time.perf_counter()
-        k8s_detail = k8s_ops.get_node_k8s_detail(state.k8s_name, auth=server.k8s_auth)
-        k8s_detail_ms += (time.perf_counter() - k8s_started) * 1000.0
+        hv_detail = hv_details.get(state.k8s_name, {})
+        k8s_detail = pod_capacity.get(state.k8s_name, {})
 
         vcpus = _as_int(hv_detail.get("vcpus"))
         vcpus_used = _as_int(hv_detail.get("vcpus_used"))
@@ -473,7 +483,7 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
                 "counts": {
                     "computes": len(items),
                     "hypervisor_detail_calls": len(compute_states),
-                    "k8s_detail_calls": len(compute_states),
+                    "k8s_detail_calls": 1,
                 },
             },
         },

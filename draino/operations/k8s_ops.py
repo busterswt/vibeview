@@ -154,6 +154,7 @@ from .k8s_inventory_ops import (
     get_etcd_node_names,
     get_mariadb_node_names,
     get_node_k8s_detail,
+    get_node_pod_capacity_summary,
     get_nodes,
     get_pods_on_node,
     list_k8s_crds,
