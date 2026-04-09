@@ -173,6 +173,74 @@ def test_get_router_detail_includes_connected_subnets_and_gateway(monkeypatch):
     assert item["routes"][0]["destination"] == "10.2.0.0/24"
 
 
+def test_get_network_detail_includes_metadata_port_for_matching_subnet(monkeypatch):
+    class FakeSubnet:
+        def __init__(self, subnet_id, name, cidr):
+            self.id = subnet_id
+            self.name = name
+            self.cidr = cidr
+            self.ip_version = 4
+            self.gateway_ip = "10.0.0.1"
+            self.is_dhcp_enabled = True
+            self.allocation_pools = []
+            self.dns_nameservers = []
+            self.host_routes = []
+
+    class FakePort:
+        id = "12345678-aaaa-bbbb-cccc-1234567890ab"
+        device_owner = "network:distributed"
+        device_id = "ovnmeta-net-1"
+        fixed_ips = [{"subnet_id": "subnet-1", "ip_address": "10.0.0.2"}]
+
+        def to_dict(self):
+            return {}
+
+    class FakeNetwork:
+        id = "net-1"
+        subnet_ids = ["subnet-1", "subnet-2"]
+
+        def to_dict(self):
+            return {}
+
+    class FakeSegmentAPI:
+        @staticmethod
+        def __call__(*args, **kwargs):
+            return []
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return FakeNetwork()
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            if subnet_id == "subnet-1":
+                return FakeSubnet("subnet-1", "tenant-a", "10.0.0.0/24")
+            return FakeSubnet("subnet-2", "tenant-b", "10.0.1.0/24")
+
+        @staticmethod
+        def ports(network_id=None):
+            assert network_id == "net-1"
+            return [FakePort()]
+
+        @staticmethod
+        def segments(network_id=None):
+            return []
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    item = web_server._get_network_detail("net-1", auth=None)
+
+    assert item["subnets"][0]["metadata_port"]["status"] == "ok"
+    assert item["subnets"][0]["metadata_port"]["port_id"] == "12345678-aaaa-bbbb-cccc-1234567890ab"
+    assert item["subnets"][0]["metadata_port"]["ip_address"] == "10.0.0.2"
+    assert item["subnets"][1]["metadata_port"]["status"] == "missing"
+
+
 def test_serialise_includes_k8s_taints():
     state = NodeState(k8s_name="node-1", hypervisor="hv-1")
     state.k8s_taints = [{"key": "key", "value": "value", "effect": "NoSchedule"}]

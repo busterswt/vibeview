@@ -44,6 +44,31 @@ def get_network_detail(network_id: str, auth: openstack_ops.OpenStackAuth | None
     conn = openstack_ops._conn(auth=auth)
     network = conn.network.get_network(network_id)
     network_data = network.to_dict() if hasattr(network, "to_dict") else {}
+    metadata_ports_by_subnet: dict[str, dict] = {}
+
+    try:
+        for port in conn.network.ports(network_id=network_id):
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            device_owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+            device_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+            if device_owner != "network:distributed":
+                continue
+            if not str(device_id).startswith("ovnmeta"):
+                continue
+            if not str(device_id).endswith(network_id):
+                continue
+            fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+            for fixed_ip in fixed_ips:
+                subnet_id = fixed_ip.get("subnet_id") or ""
+                if not subnet_id or subnet_id in metadata_ports_by_subnet:
+                    continue
+                metadata_ports_by_subnet[subnet_id] = {
+                    "port_id": getattr(port, "id", None) or port_data.get("id") or "",
+                    "ip_address": fixed_ip.get("ip_address", "") or "",
+                    "status": "ok",
+                }
+    except Exception:
+        pass
 
     subnets = []
     for subnet_id in (network.subnet_ids or []):
@@ -59,6 +84,7 @@ def get_network_detail(network_id: str, auth: openstack_ops.OpenStackAuth | None
                 "allocation_pools": getattr(subnet, "allocation_pools", []) or [],
                 "dns_nameservers": getattr(subnet, "dns_nameservers", []) or [],
                 "host_routes": getattr(subnet, "host_routes", []) or [],
+                "metadata_port": metadata_ports_by_subnet.get(subnet_id, {"port_id": "", "ip_address": "", "status": "missing"}),
             })
         except Exception:
             pass

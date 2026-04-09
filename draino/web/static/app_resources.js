@@ -313,6 +313,22 @@ function selectSubnet(id) {
 }
 
 function renderSubnetDetail(sub) {
+  const metadataPort = sub.metadata_port || { status: 'missing', port_id: '', ip_address: '' };
+  const metadataLabel = metadataPort.status === 'ok'
+    ? `<span class="mv green">OK</span>`
+    : `<span class="mv red">NotFound</span> <span title="Metadata port not found and must be recreated." style="cursor:help">?</span>`;
+  const metadataParts = [];
+  if (metadataPort.port_id) {
+    const networkId = String(selectedNetwork || '');
+    const hoverText = networkId
+      ? `${metadataPort.port_id}\novnmeta-${networkId}`
+      : metadataPort.port_id;
+    metadataParts.push(`<span class="uuid-short" title="${escAttr(hoverText)}">${esc(metadataPort.port_id.slice(0, 8))}</span>`);
+  }
+  if (metadataPort.ip_address) {
+    metadataParts.push(`<span style="font-family:monospace">${esc(metadataPort.ip_address)}</span>`);
+  }
+  metadataParts.push(metadataLabel);
   let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
     <div class="card-title" style="color:var(--blue)">Subnet: ${esc(sub.name || sub.cidr)}</div>
     <div class="card-body">
@@ -320,6 +336,7 @@ function renderSubnetDetail(sub) {
       <div class="mrow"><span class="ml">IP version</span><span class="mv">IPv${sub.ip_version}</span></div>
       <div class="mrow"><span class="ml">Gateway</span><span class="mv" style="font-family:monospace">${esc(sub.gateway_ip) || '—'}</span></div>
       <div class="mrow"><span class="ml">DHCP</span><span class="mv ${sub.enable_dhcp ? 'green' : ''}">${sub.enable_dhcp ? 'Enabled' : 'Disabled'}</span></div>`;
+  h += `<div class="mrow"><span class="ml">Metadata Port</span><span class="mv">${metadataParts.join(' · ')}</span></div>`;
   if (sub.allocation_pools?.length) {
     const pools = sub.allocation_pools.map(p => `${p.start}–${p.end}`).join(', ');
     h += `<div class="mrow"><span class="ml">Alloc pools</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(pools)}</span></div>`;
