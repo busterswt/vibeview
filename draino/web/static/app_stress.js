@@ -702,10 +702,17 @@ function renderStressSummarySection(status) {
 
 function renderStressResourceTable(resources) {
   const open = Boolean(stressState.detailSections.resources);
+  const loading = open && stressState.detailsLoading && !stressState.status?.details_included;
   return `
     <section class="card">
-      <div class="card-title"><span>Resource Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('resources')">${open ? 'Collapse' : 'Expand'}</button></div>
-      ${open ? `
+      <div class="card-title"><span>Resource Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('resources')" ${stressState.detailsLoading ? 'disabled' : ''}>${loading ? 'Loading…' : open ? 'Collapse' : 'Expand'}</button></div>
+      ${open ? (
+        loading ? `
+      <div class="card-body note">
+        <span class="stress-action-spinner">↻</span>
+        <span>Gathering Heat resource timing details.</span>
+      </div>
+      ` : `
       <div class="card-body report-table-wrap">
         <table class="report-table">
           <thead>
@@ -732,7 +739,8 @@ function renderStressResourceTable(resources) {
           </tbody>
         </table>
       </div>
-      ` : `
+      `
+      ) : `
       <div class="card-body note">Expand this panel to load Heat resource timing details.</div>
       `}
     </section>
@@ -741,10 +749,17 @@ function renderStressResourceTable(resources) {
 
 function renderStressServerTable(servers) {
   const open = Boolean(stressState.detailSections.servers);
+  const loading = open && stressState.detailsLoading && !stressState.status?.details_included;
   return `
     <section class="card">
-      <div class="card-title"><span>VM Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('servers')">${open ? 'Collapse' : 'Expand'}</button></div>
-      ${open ? `
+      <div class="card-title"><span>VM Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('servers')" ${stressState.detailsLoading ? 'disabled' : ''}>${loading ? 'Loading…' : open ? 'Collapse' : 'Expand'}</button></div>
+      ${open ? (
+        loading ? `
+      <div class="card-body note">
+        <span class="stress-action-spinner">↻</span>
+        <span>Gathering per-VM timing and host placement details.</span>
+      </div>
+      ` : `
       <div class="card-body report-table-wrap">
         <table class="report-table">
           <thead>
@@ -771,7 +786,8 @@ function renderStressServerTable(servers) {
           </tbody>
         </table>
       </div>
-      ` : `
+      `
+      ) : `
       <div class="card-body note">Expand this panel to load per-VM timing and host placement details.</div>
       `}
     </section>
