@@ -113,7 +113,7 @@ function renderReportsView() {
 
       <section class="report-grid-two">
         <div class="card">
-          <div class="card-title"><span>Highest-Risk Findings</span><span class="card-note">Live summary</span></div>
+          <div class="card-title"><span>Highest-Risk Findings</span></div>
           <div class="card-body report-findings">
             ${findings.length ? findings.map(item => `
               <div class="report-finding-row">
@@ -124,7 +124,7 @@ function renderReportsView() {
           </div>
         </div>
         <div class="card">
-          <div class="card-title"><span>Readiness Breakdown</span><span class="card-note">Current posture</span></div>
+          <div class="card-title"><span>Readiness Breakdown</span></div>
           <div class="card-body report-kv-stack">
             <div class="mrow"><span class="ml">Ready nodes</span><span class="mv">${summary.ready_now ?? 0}</span></div>
             <div class="mrow"><span class="ml">Blocked nodes</span><span class="mv">${summary.blocked ?? 0}</span></div>
@@ -205,6 +205,9 @@ function selectReport(key) {
 
 function renderReportStatus(value) {
   const normalized = String(value || '').toLowerCase();
+  if (normalized === '-') {
+    return '<span class="report-status na">-</span>';
+  }
   const cls = normalized.includes('down') || normalized.includes('not-ready')
     ? 'bad'
     : normalized.includes('cordon') || normalized.includes('disabled') || normalized.includes('unknown')

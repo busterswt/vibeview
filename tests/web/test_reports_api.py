@@ -37,26 +37,42 @@ def test_build_maintenance_readiness_report_aggregates_live_node_state(monkeypat
             node_agent_ready=True,
             etcd_healthy=False,
         ),
+        "db-c03": NodeState(
+            k8s_name="db-c03",
+            hypervisor="db-c03",
+            availability_zone="az-c",
+            node_agent_ready=True,
+            hosts_mariadb=True,
+        ),
     }
 
     monkeypatch.setattr(
         web_server.k8s_ops,
         "get_node_k8s_detail",
-        lambda node_name, auth=None: {"pod_count": {"cmp-a01": 37, "cmp-a02": 0, "mgmt-b02": 8}[node_name]},
+        lambda node_name, auth=None: {"pod_count": {"cmp-a01": 37, "cmp-a02": 0, "db-c03": 5, "mgmt-b02": 8}[node_name]},
     )
 
     payload = web_server._build_maintenance_readiness_report(server)
 
     assert payload["error"] is None
     assert payload["report"]["summary"]["ready_now"] == 1
-    assert payload["report"]["summary"]["blocked"] == 1
+    assert payload["report"]["summary"]["blocked"] == 2
     assert payload["report"]["summary"]["review"] == 1
     assert payload["report"]["summary"]["reboot_required"] == 1
     assert payload["report"]["items"][0]["node"] == "cmp-a01"
     assert payload["report"]["items"][0]["pod_count"] == 37
     assert payload["report"]["items"][0]["verdict"] == "review"
     assert payload["report"]["items"][1]["verdict"] == "ready"
+    assert payload["report"]["items"][2]["nova_status"] == "-"
     assert payload["report"]["items"][2]["verdict"] == "blocked"
+    assert payload["report"]["items"][2]["blocking_reason"] == "mariadb requires staggered reboots"
+    assert payload["report"]["items"][3]["verdict"] == "blocked"
+    assert "etcd requires staggered reboots" in payload["report"]["items"][3]["blocking_reason"]
+    findings = payload["report"]["findings"]
+    assert findings[0]["severity"] == "high"
+    assert findings[0]["message"] == "mariadb requires staggered reboots"
+    assert findings[1]["severity"] == "high"
+    assert "etcd requires staggered reboots" in findings[1]["message"]
 
 
 def test_reports_endpoints_return_json_and_csv(monkeypatch):

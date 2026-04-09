@@ -34,6 +34,10 @@ def _node_blockers(state: NodeState) -> list[str]:
         blockers.append("nova compute service is down")
     if state.node_agent_ready is False:
         blockers.append("node-agent is unavailable")
+    if state.is_etcd:
+        blockers.append("etcd requires staggered reboots")
+    if state.hosts_mariadb:
+        blockers.append("mariadb requires staggered reboots")
     if state.is_etcd and state.etcd_healthy is not True:
         blockers.append("etcd health requires review")
     return blockers
@@ -74,8 +78,21 @@ def _k8s_status_label(state: NodeState) -> str:
 
 def _nova_status_label(state: NodeState) -> str:
     if not state.is_compute:
-        return "n/a"
+        return "-"
     return state.compute_status or "unknown"
+
+
+def _finding_priority(item: dict) -> tuple[int, int, str]:
+    message = (item.get("message") or "").lower()
+    severity = item.get("severity")
+    severity_rank = 0 if severity == "high" else 1
+    if "mariadb requires staggered reboots" in message:
+        detail_rank = 0
+    elif "etcd requires staggered reboots" in message:
+        detail_rank = 1
+    else:
+        detail_rank = 2
+    return (severity_rank, detail_rank, item.get("node") or "")
 
 
 def build_maintenance_readiness_report(server: DrainoServer) -> dict:
@@ -129,6 +146,7 @@ def build_maintenance_readiness_report(server: DrainoServer) -> dict:
             "node": item["node"],
             "message": item["blocking_reason"],
         })
+    findings.sort(key=_finding_priority)
     findings = findings[:4]
 
     total = len(items)

@@ -816,6 +816,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .report-severity.low { background: #e8f5e9; color: var(--green); }
 .report-finding-text { font-size: 12px; line-height: 1.5; }
 .report-kv-stack { display: grid; gap: 0; }
+.report-kv-stack .mrow { padding: 8px 0; }
 .report-tag {
   display: inline-flex;
   align-items: center;
