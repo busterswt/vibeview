@@ -73,6 +73,15 @@ function stressStatusTagClass(status) {
   return 'blue';
 }
 
+function stressDeleteInProgress() {
+  const statuses = [
+    stressState.status?.test?.status,
+    stressState.catalog?.guardrail?.stack?.status,
+    stressState.env?.guardrail?.stack?.status,
+  ];
+  return statuses.some(status => String(status || '').toUpperCase().includes('DELETE_IN_PROGRESS'));
+}
+
 function getCompatibleStressFlavors(profileKey = stressState.profileKey) {
   const draft = stressDraft(profileKey);
   const image = stressImageById(draft?.imageId);
@@ -414,6 +423,7 @@ function renderStressProfileNav() {
 function renderStressGuardrail() {
   const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
   const stack = guardrail.stack;
+  const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
     <section class="card">
       <div class="card-title"><span>Guardrail</span></div>
@@ -429,7 +439,7 @@ function renderStressGuardrail() {
           <div class="guard-row"><span>Message</span><span>${esc(guardrail.message || '')}</span></div>
           ${guardrail.active ? `
             <div class="stress-guard-actions">
-              <button class="btn danger" type="button" onclick="deleteStressTest()" ${stressState.actionLoading ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'delete' ? 'Deleting…' : 'Delete Existing Test'}</button>
+              <button class="btn danger" type="button" onclick="deleteStressTest()" ${deletePending ? 'disabled' : ''}>${deletePending ? 'Deleting…' : 'Delete Existing Test'}</button>
               <button class="btn" type="button" onclick="loadStressStatus(true)" ${stressState.statusLoading ? 'disabled' : ''}>${stressState.statusLoading ? 'Refreshing…' : 'Load Stack Details'}</button>
             </div>
           ` : ''}
@@ -657,6 +667,7 @@ function renderStressTemplateLaunchState() {
 function renderStressSummarySection(status) {
   const test = status.test || {};
   const summary = status.summary || {};
+  const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
     <section class="report-hero-grid">
       ${renderCapacityHero('Stack Status', test.status || 'unknown', stressStatusTagClass(test.status) === 'red' ? 'bad' : stressStatusTagClass(test.status) === 'yellow' ? 'warn' : 'good', 'Heat stack lifecycle state')}
@@ -684,7 +695,7 @@ function renderStressSummarySection(status) {
         <div class="card-body note">
           This stack is live and tracked directly from Heat and Nova. Delete it before launching a new test run.
           <div class="stress-stack-actions">
-            <button class="btn danger" type="button" onclick="deleteStressTest()" ${stressState.actionLoading ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'delete' ? 'Deleting…' : 'Delete Existing Test'}</button>
+            <button class="btn danger" type="button" onclick="deleteStressTest()" ${deletePending ? 'disabled' : ''}>${deletePending ? 'Deleting…' : 'Delete Existing Test'}</button>
             <button class="btn" type="button" onclick="loadStressStatus(true)" ${stressState.statusLoading ? 'disabled' : ''}>${stressState.statusLoading ? 'Refreshing…' : 'Refresh Status'}</button>
           </div>
         </div>
