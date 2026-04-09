@@ -409,11 +409,11 @@ function renderStressProfileNav() {
     const selected = profile.key === currentKey ? ' active' : '';
     const icon = profile.icon || STRESS_PROFILE_META[profile.key]?.icon || '🧪';
     return `
-      <button class="stress-profile-item${selected}" type="button" onclick="setStressProfile('${escAttr(profile.key)}')">
+      <button class="stress-template-item${selected}" type="button" onclick="setStressProfile('${escAttr(profile.key)}')">
         <div class="stress-profile-ico">${esc(icon)}</div>
         <div>
-          <div class="stress-profile-name">${esc(profile.label)}</div>
-          <div class="stress-profile-sub">${esc(profile.description)}</div>
+          <div class="stress-template-name">${esc(profile.label)}</div>
+          <div class="stress-template-sub">${esc(profile.description)}</div>
         </div>
       </button>
     `;
@@ -426,7 +426,7 @@ function renderStressGuardrail() {
   const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
     <section class="card">
-      <div class="card-title"><span>Guardrail</span></div>
+      <div class="card-title"><span>Active Stress Test</span></div>
       <div class="card-body">
         <div class="stress-guard${guardrail.active ? ' active' : ''}">
           <div class="stress-guard-head">${guardrail.active ? 'Existing Active Test Detected' : 'No Active Stress Test'}</div>
@@ -499,11 +499,15 @@ function renderStressLaunchCard() {
   const launchBlocked = guardrailActive || stressState.actionLoading;
   return `
     <div class="card">
-      <div class="card-title"><span>Launch Parameters</span></div>
+      <div class="card-title"><span>Selected Template</span></div>
       <div class="card-body">
-        <div class="stress-launch-note">
-          ${esc(profile?.label || 'Selected template')} targets ${esc(String(draft?.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(env.limits?.compute_count || 0))} visible compute hosts.
-        </div>
+        <div class="stress-selected-title">${esc(profile?.label || 'Selected Template')}</div>
+        <div class="stress-launch-note">${esc(profile?.description || 'Disposable Heat-driven infrastructure test template.')}</div>
+        ${guardrailActive ? `
+          <div class="stress-info-note">
+            An active stack already exists. You can keep editing this draft, but launching is disabled until the current test is removed.
+          </div>
+        ` : ''}
         <div class="stress-form-grid">
           <div class="field">
             <label>VM Count</label>
@@ -560,7 +564,7 @@ function renderStressLaunchCard() {
           </div>
         </div>
         <div class="stress-launch-actions">
-          <button class="btn primary" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'launch' ? 'Launching…' : 'Launch Test Stack'}</button>
+          <button class="btn ${launchBlocked && !(stressState.actionLoading && stressState.actionKind === 'launch') ? 'disabled' : 'primary'}" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'launch' ? 'Launching…' : guardrailActive ? 'Launch Disabled' : 'Launch Test Stack'}</button>
           <button class="btn" type="button" onclick="refreshStressView()" ${stressState.actionLoading ? 'disabled' : ''}>Refresh Status</button>
         </div>
         ${stressState.actionError ? `<div class="stress-action-error">${esc(stressState.actionError)}</div>` : ''}
@@ -569,96 +573,50 @@ function renderStressLaunchCard() {
   `;
 }
 
-function renderStressEmptyState() {
-  const profile = stressProfileByKey(stressState.profileKey) || STRESS_FALLBACK_PROFILES[0];
+function renderStressTemplateWorkspace() {
+  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || STRESS_FALLBACK_PROFILES[0];
+  const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false };
+  const draft = stressDraft();
   return `
-    <div class="stress-shell">
-      <aside class="stress-nav">
-        <div class="sidebar-head">Stress Profiles</div>
-        <div class="nav-group">Templates</div>
-        <div class="stress-nav-items">${renderStressProfileNav()}</div>
-      </aside>
-      <div class="stress-content">
-        <section class="report-header-card">
-          <div class="report-head-top">
-            <div>
-              <div class="report-title">Heat Stress Test Console</div>
-              <div class="report-subtitle">Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing. One active test stack is allowed at a time.</div>
-            </div>
-          </div>
-          <div class="report-meta-row">
-            <span class="meta-pill">Mode: live orchestration</span>
-            <span class="meta-pill">Stack prefix: vibe-stress-</span>
-            <span class="meta-pill">Guardrail: one active test</span>
-            <span class="meta-pill">Cleanup: Heat stack delete</span>
-          </div>
+    <section class="stress-workspace-card">
+      <div class="stress-workspace-kicker">Launch New Test</div>
+      <div class="stress-workspace-title">Template Workspace</div>
+      <div class="stress-workspace-text">
+        The active stack below does not change when you click templates. This upper workspace is only for configuring what you want to run next.
+        With an active stack present, the launch action stays disabled until that stack is deleted.
+      </div>
+      <div class="stress-workspace-grid">
+        <section class="card">
+          <div class="card-title"><span>Templates</span></div>
+          <div class="stress-template-list">${renderStressProfileNav()}</div>
         </section>
-        <section class="stress-launch-grid">
-          <section class="report-launch-card stress-landing-card">
-            <div class="report-launch-shell">
-              <div class="report-launch-icon">${esc(profile.icon || '🧪')}</div>
-              <div class="report-launch-copy">
-                <div class="report-launch-kicker">Stress Template</div>
-                <div class="report-launch-title">${esc(profile.label)}</div>
-                <div class="report-launch-subtitle">${esc(profile.description)}</div>
-                <div class="report-launch-text">
-                  OpenStack discovery for images, flavors, keypairs, and networks is intentionally manual here so the page opens instantly.
-                  Default target: ${esc(String(profile.default_vm_count || 1))} VMs. Full Host Spread expands to your visible compute count after details load.
+        ${stressState.env ? renderStressLaunchCard() : `
+          <section class="card">
+            <div class="card-title"><span>Selected Template</span></div>
+            <div class="card-body">
+              <div class="stress-selected-title">${esc(profile?.label || 'Selected Template')}</div>
+              <div class="stress-launch-note">${esc(profile?.description || 'Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing.')}</div>
+              ${guardrail.active ? `
+                <div class="stress-info-note">
+                  An active stack already exists. You can keep editing this draft, but launching is disabled until the current test is removed.
                 </div>
-                <div class="report-launch-pills">
-                  <span class="meta-pill">Template-first landing</span>
-                  <span class="meta-pill">Manual discovery</span>
-                  <span class="meta-pill">No stored data</span>
-                </div>
-                <div class="report-launch-actions">
-                  <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile.label)}`}</button>
-                </div>
+              ` : ''}
+              <div class="stress-launch-note">
+                Draft target: ${esc(String(draft?.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(stressState.catalog?.limits?.compute_count || 0))} visible compute hosts.
               </div>
+              <div class="stress-launch-actions">
+                <button class="btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : 'Load Template Details'}</button>
+              </div>
+              ${stressState.envLoading || stressState.catalogLoading ? `
+                <div class="stress-template-note" aria-live="polite">
+                  <span class="stress-action-spinner">↻</span>
+                  <span>Loading shared cloud options for the selected template.</span>
+                </div>
+              ` : ''}
+              ${stressState.envError ? `<div class="stress-action-error">${esc(stressState.envError)}</div>` : ''}
             </div>
           </section>
-        </section>
-      </div>
-    </div>
-  `;
-}
-
-function renderStressTemplateLaunchState() {
-  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || null;
-  const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false };
-  return `
-    <section class="report-launch-card">
-      <div class="report-launch-shell">
-        <div class="report-launch-icon">${esc(profile?.icon || '🧪')}</div>
-        <div class="report-launch-copy">
-          <div class="report-launch-kicker">Stress Template</div>
-          <div class="report-launch-title">${esc(profile?.label || 'Heat Stress Test Console')}</div>
-          <div class="report-launch-subtitle">${esc(profile?.description || 'Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing.')}</div>
-          <div class="report-launch-text">
-            Template selection is lightweight. Full launch parameters are loaded only when you explicitly open this template,
-            since image, flavor, keypair, and network discovery can be expensive. Default target:
-            ${esc(String(profile?.default_vm_count || 1))} VMs across ${esc(String(stressState.catalog?.limits?.compute_count || 0))} visible compute hosts.
-          </div>
-          <div class="report-launch-pills">
-            <span class="meta-pill">Manual details load</span>
-            <span class="meta-pill">No stored data</span>
-            <span class="meta-pill">${guardrail.active ? 'Guardrail active' : 'Ready to configure'}</span>
-          </div>
-          <div class="report-launch-actions">
-            <button class="report-launch-btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : `Load ${esc(profile?.label || 'Template')}`}</button>
-          </div>
-          ${stressState.envLoading || stressState.catalogLoading ? `
-            <div class="stress-template-note" aria-live="polite">
-              <span class="stress-action-spinner">↻</span>
-              <span>Loading shared cloud options and guardrail details for the selected template.</span>
-            </div>
-          ` : ''}
-          ${guardrail.active ? `
-            <div class="stress-template-note">
-              An active Heat stack already exists. Stack details and delete controls can be loaded from the live environment without re-running discovery.
-            </div>
-          ` : ''}
-          ${stressState.envError ? `<div class="stress-action-error">${esc(stressState.envError)}</div>` : ''}
-        </div>
+        `}
       </div>
     </section>
   `;
@@ -803,18 +761,7 @@ function renderStressDistributionTable(distribution) {
 function renderStressView() {
   const wrap = document.getElementById('stress-wrap');
   if (!wrap) return;
-  const priorContent = wrap.querySelector('.stress-content');
-  const contentScrollTop = priorContent ? priorContent.scrollTop : 0;
-  const priorNav = wrap.querySelector('.stress-nav');
-  const navScrollTop = priorNav ? priorNav.scrollTop : 0;
-  if (!stressState.catalog && !stressState.catalogLoading && !stressState.catalogError) {
-    wrap.innerHTML = renderStressEmptyState();
-    const nextContent = wrap.querySelector('.stress-content');
-    if (nextContent) nextContent.scrollTop = contentScrollTop;
-    const nextNav = wrap.querySelector('.stress-nav');
-    if (nextNav) nextNav.scrollTop = navScrollTop;
-    return;
-  }
+  const scrollTop = wrap.scrollTop;
   if (stressState.catalogError && !stressState.catalog) {
     wrap.innerHTML = `
       <section class="report-launch-card">
@@ -831,73 +778,28 @@ function renderStressView() {
         </div>
       </section>
     `;
-    const nextContent = wrap.querySelector('.stress-content');
-    if (nextContent) nextContent.scrollTop = contentScrollTop;
-    const nextNav = wrap.querySelector('.stress-nav');
-    if (nextNav) nextNav.scrollTop = navScrollTop;
+    wrap.scrollTop = scrollTop;
     return;
   }
-  const env = stressState.env || {};
-  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || STRESS_FALLBACK_PROFILES[0];
-  const draft = stressDraft();
   const status = stressState.status;
-  const showLoadedGrids = Boolean(draft?.loaded || status?.active);
   wrap.innerHTML = `
-    <div class="stress-shell">
-      <aside class="stress-nav">
-        <div class="sidebar-head">Stress Profiles</div>
-        <div class="nav-group">Templates</div>
-        <div class="stress-nav-items">${renderStressProfileNav()}</div>
-      </aside>
-      <div class="stress-content">
-        <section class="report-header-card">
-          <div class="report-head-top">
-            <div>
-              <div class="report-title">Heat Stress Test Console</div>
-              <div class="report-subtitle">Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing. One active test stack is allowed at a time.</div>
-            </div>
-          </div>
-          <div class="report-meta-row">
-            <span class="meta-pill">Mode: live orchestration</span>
-            <span class="meta-pill">Stack prefix: ${esc(stressState.catalog?.guardrail?.stack_prefix || env.guardrail?.stack_prefix || 'vibe-stress-')}</span>
-            <span class="meta-pill">Guardrail: one active test</span>
-            <span class="meta-pill">Cleanup: Heat stack delete</span>
-            <span class="report-action-pills">
-              <button class="report-action-pill${stressState.catalogLoading || stressState.envLoading || stressState.statusLoading ? ' active' : ''}" type="button" onclick="refreshStressView()" title="Refresh stress view">
-                <span class="report-refresh-icon${stressState.catalogLoading || stressState.envLoading || stressState.statusLoading ? ' active' : ''}">↻</span>
-              </button>
-            </span>
-          </div>
-        </section>
-        ${showLoadedGrids ? `
-          <section class="stress-launch-grid">
-            ${draft?.loaded ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
-            ${renderStressGuardrail()}
-          </section>
-          ${renderStressTrace()}
-          <section class="card">
-            <div class="card-title"><span>Notes</span></div>
-            <div class="card-body note">
-              Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
-              Timing and distribution are derived live from Heat resources and Nova server state.
-            </div>
-          </section>
-        ` : `
-          <section class="stress-launch-grid">
-            ${renderStressTemplateLaunchState()}
-            ${renderStressGuardrail()}
-          </section>
-          ${renderStressTrace()}
-        `}
-        ${status?.active ? renderStressSummarySection(status) : ''}
-        ${status?.active ? renderStressResourceTable(status.resources || []) : ''}
-        ${status?.active ? renderStressServerTable(status.servers || []) : ''}
-        ${status?.active ? renderStressDistributionTable(status.distribution || []) : ''}
+    ${renderStressTemplateWorkspace()}
+    <section class="stress-monitor-grid">
+      ${renderStressGuardrail()}
+      ${renderStressTrace()}
+    </section>
+    <section class="card">
+      <div class="card-title"><span>Notes</span></div>
+      <div class="card-body note">
+        Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
+        Timing and distribution are derived live from Heat resources and Nova server state.
+        Leaving Stress stops polling, but the current stack, action trace, and template drafts stay in browser state when you return.
       </div>
-    </div>
+    </section>
+    ${status?.active ? renderStressSummarySection(status) : ''}
+    ${status?.active ? renderStressResourceTable(status.resources || []) : ''}
+    ${status?.active ? renderStressServerTable(status.servers || []) : ''}
+    ${status?.active ? renderStressDistributionTable(status.distribution || []) : ''}
   `;
-  const nextContent = wrap.querySelector('.stress-content');
-  if (nextContent) nextContent.scrollTop = contentScrollTop;
-  const nextNav = wrap.querySelector('.stress-nav');
-  if (nextNav) nextNav.scrollTop = navScrollTop;
+  wrap.scrollTop = scrollTop;
 }
