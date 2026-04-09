@@ -282,6 +282,8 @@ async function loadNodeDetail(name, force = false) {
     const qs = force ? '?refresh=1' : '';
     const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail${qs}`);
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else if (nodes[name]?.is_compute) recordApiSuccess('Nova');
     nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, hw: json.hw || {}, error: json.error || null };
   } catch (e) {
     nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, error: String(e) };
@@ -1139,6 +1141,8 @@ async function loadInstanceDetail(nodeName, instanceId, force = false) {
   try {
     const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/instances/${encodeURIComponent(instanceId)}`);
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Nova');
     if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
     instanceDetailCache[instanceId] = { loading: false, data: json.instance, error: null };
   } catch (err) {

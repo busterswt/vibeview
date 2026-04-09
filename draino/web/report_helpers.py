@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import time
 
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
@@ -97,11 +98,15 @@ def _finding_priority(item: dict) -> tuple[int, int, str]:
 
 def build_maintenance_readiness_report(server: DrainoServer) -> dict:
     """Build a live maintenance-readiness report from the running environment."""
+    started = time.perf_counter()
     items: list[dict] = []
     states = sorted(server.node_states.values(), key=lambda item: item.k8s_name)
+    k8s_detail_ms = 0.0
 
     for state in states:
+        k8s_started = time.perf_counter()
         k8s_detail = k8s_ops.get_node_k8s_detail(state.k8s_name, auth=server.k8s_auth)
+        k8s_detail_ms += (time.perf_counter() - k8s_started) * 1000.0
         blockers = _node_blockers(state)
         reviews = _node_reviews(state)
         if blockers:
@@ -155,6 +160,7 @@ def build_maintenance_readiness_report(server: DrainoServer) -> dict:
     review_count = sum(1 for item in items if item["verdict"] == "review")
     reboot_required_count = sum(1 for item in items if item["reboot_required"])
     no_agent_count = sum(1 for item in items if not item["node_agent_ready"])
+    total_ms = (time.perf_counter() - started) * 1000.0
 
     return {
         "report": {
@@ -175,6 +181,16 @@ def build_maintenance_readiness_report(server: DrainoServer) -> dict:
             },
             "findings": findings,
             "items": items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "k8s_detail": round(k8s_detail_ms, 1),
+                },
+                "counts": {
+                    "nodes": total,
+                    "k8s_detail_calls": len(states),
+                },
+            },
         },
         "error": None,
     }
@@ -266,6 +282,7 @@ def _severity_for_percent(percent: float | None) -> str:
 
 def build_capacity_headroom_report(server: DrainoServer) -> dict:
     """Build a live capacity and headroom report from current compute state."""
+    started = time.perf_counter()
     items: list[dict] = []
     az_map: dict[str, dict] = {}
     total_vcpus = 0
@@ -281,12 +298,20 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
         (state for state in server.node_states.values() if state.is_compute),
         key=lambda item: item.k8s_name,
     )
+    host_summary_started = time.perf_counter()
     host_summaries = openstack_ops.get_all_host_summaries(auth=server.openstack_auth)
+    host_summary_ms = (time.perf_counter() - host_summary_started) * 1000.0
+    hypervisor_detail_ms = 0.0
+    k8s_detail_ms = 0.0
 
     for state in compute_states:
         summary = host_summaries.get(state.hypervisor, {})
+        hv_started = time.perf_counter()
         hv_detail = openstack_ops.get_hypervisor_detail(state.hypervisor, auth=server.openstack_auth)
+        hypervisor_detail_ms += (time.perf_counter() - hv_started) * 1000.0
+        k8s_started = time.perf_counter()
         k8s_detail = k8s_ops.get_node_k8s_detail(state.k8s_name, auth=server.k8s_auth)
+        k8s_detail_ms += (time.perf_counter() - k8s_started) * 1000.0
 
         vcpus = _as_int(hv_detail.get("vcpus"))
         vcpus_used = _as_int(hv_detail.get("vcpus_used"))
@@ -375,6 +400,7 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
     free_ram_pct = (total_memory_mb_free / total_memory_mb * 100.0) if total_memory_mb else None
     free_pod_pct = (total_pods_free / total_pods * 100.0) if total_pods else None
     drain_safe_count = sum(1 for item in items if item["maintenance_status"] == "drain-safe")
+    total_ms = (time.perf_counter() - started) * 1000.0
 
     return {
         "report": {
@@ -402,6 +428,19 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
             "az_headroom": az_headroom,
             "findings": findings,
             "items": items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "openstack_host_summaries": round(host_summary_ms, 1),
+                    "openstack_hypervisor_detail": round(hypervisor_detail_ms, 1),
+                    "k8s_detail": round(k8s_detail_ms, 1),
+                },
+                "counts": {
+                    "computes": len(items),
+                    "hypervisor_detail_calls": len(compute_states),
+                    "k8s_detail_calls": len(compute_states),
+                },
+            },
         },
         "error": None,
     }

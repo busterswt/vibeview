@@ -242,6 +242,56 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
 
 
+def test_node_detail_endpoint_returns_api_issue_on_nova_failure(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    class FakeExc(Exception):
+        status_code = 500
+        request_id = "req-nova-1"
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(web_server.k8s_ops, "get_node_k8s_detail", lambda node_name, auth=None: {"node": node_name})
+    monkeypatch.setattr(web_server.k8s_ops, "get_node_hardware_info", lambda node_name, hostname=None: {"hostname": hostname or node_name})
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_detail",
+        lambda hypervisor, auth=None: (_ for _ in ()).throw(FakeExc("nova internal server error")),
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        resp = client.get("/api/nodes/node-a/detail")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["api_issue"]["service"] == "Nova"
+    assert body["api_issue"]["status"] == 500
+    assert body["api_issue"]["request_id"] == "req-nova-1"
+
+
 def test_instance_network_detail_reads_flavor_from_object_reference(monkeypatch):
     class FakeServer:
         id = "vm-1"

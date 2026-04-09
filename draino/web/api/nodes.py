@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from ...operations import k8s_ops, openstack_ops
+from .api_issues import build_api_issue
 from ..latency import measure_latency
 
 router = APIRouter()
@@ -53,9 +54,9 @@ async def api_ovn_port_detail(port_id: str, request: Request):
     loop = asyncio.get_running_loop()
     try:
         data = await loop.run_in_executor(None, k8s_ops.get_ovn_port_detail, port_id, session.server.k8s_auth)
-        return {"port": data, "error": None}
+        return {"port": data, "error": None, "api_issue": None}
     except Exception as exc:
-        return {"port": None, "error": str(exc)}
+        return {"port": None, "error": str(exc), "api_issue": None}
 
 
 @router.get("/api/networks/{network_id}/ovn")
@@ -64,9 +65,9 @@ async def api_network_ovn(network_id: str, request: Request):
     loop = asyncio.get_running_loop()
     try:
         data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id, session.server.k8s_auth)
-        return {"ovn": data, "error": None}
+        return {"ovn": data, "error": None, "api_issue": None}
     except Exception as exc:
-        return {"ovn": None, "error": str(exc)}
+        return {"ovn": None, "error": str(exc), "api_issue": None}
 
 
 @router.get("/api/nodes/{node_name}/detail")
@@ -91,12 +92,17 @@ async def api_node_detail(node_name: str, request: Request):
         )
 
         nova: dict = {}
+        api_issue = None
         if state and state.is_compute:
-            nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
+            try:
+                nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
+            except Exception as exc:
+                api_issue = build_api_issue("Nova", f"GET /os-hypervisors/{state.hypervisor}", exc)
+                nova = {}
 
         k8s = await k8s_future
         hw = await hw_future
-        payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None}
+        payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None, "api_issue": api_issue}
         server.set_cached_node_detail(node_name, payload)
         return payload
 
@@ -203,7 +209,7 @@ async def api_node_instance_detail(node_name: str, instance_id: str, request: Re
                 server.openstack_auth,
             )
         except Exception as exc:
-            return {"instance": None, "error": str(exc)}
+            return {"instance": None, "error": str(exc), "api_issue": build_api_issue("Nova", f"GET /servers/{instance_id}", exc)}
 
         enriched_ports = []
         for port in instance.get("ports", []):
@@ -234,7 +240,7 @@ async def api_node_instance_detail(node_name: str, instance_id: str, request: Re
                 "actual_hypervisor": instance["compute_host"],
             }
 
-        return {"instance": instance, "error": None}
+        return {"instance": instance, "error": None, "api_issue": None}
 
 
 @router.get("/api/networks/{network_id}")
@@ -243,6 +249,6 @@ async def api_network_detail(network_id: str, request: Request):
     loop = asyncio.get_running_loop()
     try:
         data = await loop.run_in_executor(None, _require_network_detail(), network_id, session.server.openstack_auth)
-        return {"network": data, "error": None}
+        return {"network": data, "error": None, "api_issue": None}
     except Exception as exc:
-        return {"network": None, "error": str(exc)}
+        return {"network": None, "error": str(exc), "api_issue": build_api_issue("Neutron", f"GET /v2.0/networks/{network_id}", exc)}

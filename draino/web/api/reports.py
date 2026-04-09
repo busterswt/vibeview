@@ -7,6 +7,7 @@ from collections.abc import Callable
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
+from .api_issues import build_api_issue
 from ..report_helpers import (
     build_capacity_headroom_report,
     build_maintenance_readiness_report,
@@ -34,7 +35,12 @@ def _require_session_record() -> Callable[[Request], object]:
 async def api_report_maintenance_readiness(request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, build_maintenance_readiness_report, session.server)
+    try:
+        report = await loop.run_in_executor(None, build_maintenance_readiness_report, session.server)
+        report["api_issue"] = None
+        return report
+    except Exception as exc:
+        return {"report": None, "error": str(exc), "api_issue": None}
 
 
 @router.get("/api/reports/maintenance-readiness.csv")
@@ -54,7 +60,12 @@ async def api_report_maintenance_readiness_csv(request: Request):
 async def api_report_capacity_headroom(request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, build_capacity_headroom_report, session.server)
+    try:
+        report = await loop.run_in_executor(None, build_capacity_headroom_report, session.server)
+        report["api_issue"] = None
+        return report
+    except Exception as exc:
+        return {"report": None, "error": str(exc), "api_issue": build_api_issue("Nova", "GET capacity-headroom report", exc)}
 
 
 @router.get("/api/reports/capacity-headroom.csv")

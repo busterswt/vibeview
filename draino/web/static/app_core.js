@@ -26,6 +26,14 @@ let monitorEntriesHtml = '';
 let sidebarDragging = false;
 let tasksDragging = false;
 let nodeListRefreshing = false;
+const API_ISSUE_COOLDOWN_MS = 120000;
+const apiIssueState = {
+  open: false,
+  current: null,
+  recent: [],
+  suppressedUntil: {},
+  lastSuccessAt: null,
+};
 
 // Step timing: records when each step first entered a non-pending state.
 // Key format: `${nodeName}:${stepKey}:${status}` → Date
@@ -91,6 +99,7 @@ const reportState = {
   loading: false,
   error: null,
   reports: {},
+  fetchMeta: {},
 };
 
 const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
@@ -120,6 +129,187 @@ function showSessionExpiredOverlay() {
 function hideSessionExpiredOverlay() {
   sessionExpired = false;
   document.getElementById('session-expired-overlay')?.classList.remove('open');
+}
+
+function apiIssueFingerprint(issue) {
+  return [
+    issue?.service || '',
+    issue?.operation || '',
+    issue?.status != null ? String(issue.status) : '',
+    issue?.message || '',
+  ].join('|');
+}
+
+function recordApiSuccess(service) {
+  if (!service || !['Nova', 'Neutron', 'Keystone'].includes(service)) return;
+  apiIssueState.lastSuccessAt = new Date().toLocaleTimeString('en-US', { hour12: false });
+  apiIssueState.recent = apiIssueState.recent.filter(issue => issue.service !== service);
+  if (apiIssueState.current?.service === service) {
+    apiIssueState.current = apiIssueState.recent[0] || null;
+    apiIssueState.open = Boolean(apiIssueState.current);
+  }
+  renderApiIssuesOverlay();
+}
+
+function recordApiIssue(issue) {
+  if (!issue || !['Nova', 'Neutron', 'Keystone'].includes(issue.service || '')) return;
+  const entry = {
+    service: issue.service,
+    operation: issue.operation || '',
+    status: issue.status ?? null,
+    request_id: issue.request_id || '',
+    message: issue.message || 'Unknown upstream error',
+    severity: issue.severity || 'high',
+    at: new Date().toLocaleTimeString('en-US', { hour12: false }),
+  };
+  const fingerprint = apiIssueFingerprint(entry);
+  apiIssueState.recent = [entry, ...apiIssueState.recent.filter(item => apiIssueFingerprint(item) !== fingerprint)].slice(0, 8);
+  const suppressedUntil = apiIssueState.suppressedUntil[fingerprint] || 0;
+  if (!apiIssueState.open && Date.now() >= suppressedUntil) {
+    apiIssueState.current = entry;
+    apiIssueState.open = true;
+  } else if (apiIssueState.open) {
+    apiIssueState.current = entry;
+  }
+  renderApiIssuesOverlay();
+}
+
+function dismissApiIssuesOverlay() {
+  if (apiIssueState.current) {
+    apiIssueState.suppressedUntil[apiIssueFingerprint(apiIssueState.current)] = Date.now() + API_ISSUE_COOLDOWN_MS;
+  }
+  apiIssueState.open = false;
+  renderApiIssuesOverlay();
+}
+
+function retryApiIssuesNow() {
+  apiIssueState.open = false;
+  renderApiIssuesOverlay();
+  if (activeView === 'reports') return refreshActiveReport();
+  if (activeView === 'networking') return loadNetworks(true);
+  if (activeView === 'routers') return loadRouters(true);
+  if (activeView === 'storage') return loadVolumes(true);
+  if (activeView === 'infrastructure' && selectedNode) {
+    if (activeTab === 'summary') return loadNodeDetail(selectedNode, true);
+    if (activeTab === 'instances') {
+      const instanceId = expandedInstanceIdByNode[selectedNode];
+      if (instanceId) return loadInstanceDetail(selectedNode, instanceId, true);
+      if (typeof actionRefreshNode === 'function') return actionRefreshNode();
+      return;
+    }
+  }
+}
+
+function downloadApiIssueSnapshot() {
+  const payload = {
+    generated_at: new Date().toISOString(),
+    current: apiIssueState.current,
+    recent: apiIssueState.recent,
+    last_success_at: apiIssueState.lastSuccessAt,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'vibeview-api-issues.json';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderApiIssuesOverlay() {
+  const wrap = document.getElementById('api-issues-overlay');
+  const content = document.getElementById('api-issues-overlay-content');
+  if (!wrap || !content) return;
+  if (!apiIssueState.open || !apiIssueState.current) {
+    wrap.classList.remove('open');
+    content.innerHTML = '';
+    return;
+  }
+  const current = apiIssueState.current;
+  const recent = apiIssueState.recent;
+  const impacted = [...new Set(recent.map(issue => issue.service))];
+  content.innerHTML = `
+    <section class="api-issues-panel">
+      <div class="api-issues-head">
+        <div class="api-issues-alert">API Issues Detected</div>
+        <div class="api-issues-title">OpenStack API responses are failing</div>
+        <div class="api-issues-sub">VibeView can keep showing the last successful page state, but live data may be incomplete until Nova, Neutron, or Keystone recover.</div>
+      </div>
+      <div class="api-issues-body">
+        <div class="api-issues-summary">
+          <div class="api-issues-summary-card critical">
+            <div class="api-issues-summary-label">Services Impacted</div>
+            <div class="api-issues-summary-value">${esc(impacted.join(', ') || current.service)}</div>
+          </div>
+          <div class="api-issues-summary-card critical">
+            <div class="api-issues-summary-label">Last Failure</div>
+            <div class="api-issues-summary-value">${esc(current.status != null ? `HTTP ${current.status}` : 'Error')}</div>
+          </div>
+          <div class="api-issues-summary-card">
+            <div class="api-issues-summary-label">Occurred</div>
+            <div class="api-issues-summary-value">${esc(current.at || '—')}</div>
+          </div>
+          <div class="api-issues-summary-card">
+            <div class="api-issues-summary-label">Last Good Refresh</div>
+            <div class="api-issues-summary-value">${esc(apiIssueState.lastSuccessAt || '—')}</div>
+          </div>
+        </div>
+        <div class="api-issues-grid">
+          <div class="card">
+            <div class="card-title"><span>Active API Failures</span></div>
+            <div class="card-body report-findings">
+              ${recent.map(issue => `
+                <div class="report-finding-row">
+                  <div><span class="report-severity ${esc(issue.severity || 'high')}">${esc(issue.severity || 'high')}</span></div>
+                  <div class="report-finding-text"><span class="mono">${esc(issue.service)}</span> ${esc(issue.message)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>Last Error Detail</span></div>
+            <div class="card-body">
+              <div class="mrow"><span class="ml">Service</span><span class="mv">${esc(current.service)}</span></div>
+              <div class="mrow"><span class="ml">Operation</span><span class="mv api-issue-mono">${esc(current.operation || '—')}</span></div>
+              <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(current.status != null ? `${current.status}` : '—')}</span></div>
+              <div class="mrow"><span class="ml">Request ID</span><span class="mv api-issue-mono">${esc(current.request_id || '—')}</span></div>
+              <div class="mrow"><span class="ml">Message</span><span class="mv api-issue-mono">${esc(current.message || '—')}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span>Recent API Error Log</span></div>
+          <div class="card-body api-issue-table-wrap">
+            <table class="data-table api-issue-table">
+              <thead>
+                <tr><th>Time</th><th>Service</th><th>Operation</th><th>Status</th><th>Message</th></tr>
+              </thead>
+              <tbody>
+                ${recent.map(issue => `
+                  <tr>
+                    <td class="mono">${esc(issue.at || '—')}</td>
+                    <td>${esc(issue.service)}</td>
+                    <td class="api-issue-mono">${esc(issue.operation || '—')}</td>
+                    <td>${esc(issue.status != null ? String(issue.status) : '—')}</td>
+                    <td class="api-issue-mono">${esc(issue.message || '—')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="api-issues-actions">
+        <div class="api-issues-note">Dismissed issues stay quiet for ${Math.round(API_ISSUE_COOLDOWN_MS / 1000)} seconds unless a fresh failure appears.</div>
+        <div class="api-issues-btn-row">
+          <button class="btn" onclick="dismissApiIssuesOverlay()">Dismiss And Keep Working</button>
+          <button class="btn" onclick="downloadApiIssueSnapshot()">Download Debug Snapshot</button>
+          <button class="btn danger" onclick="retryApiIssuesNow()">Retry Now</button>
+        </div>
+      </div>
+    </section>
+  `;
+  wrap.classList.add('open');
 }
 
 function returnToLogin() {

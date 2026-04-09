@@ -17,6 +17,22 @@ const REPORT_META = {
   },
 };
 
+function guessReportApiIssue(message, status) {
+  const text = String(message || '').toLowerCase();
+  let service = null;
+  if (text.includes('neutron')) service = 'Neutron';
+  else if (text.includes('nova')) service = 'Nova';
+  else if (text.includes('keystone') || (text.includes('auth') && text.includes('token'))) service = 'Keystone';
+  if (!service) return null;
+  return {
+    service,
+    operation: `GET ${REPORT_META[reportState.active]?.url || '/api/reports'}`,
+    status: status ?? null,
+    message: String(message || ''),
+    severity: 'high',
+  };
+}
+
 async function loadActiveReport(force = false) {
   const key = reportState.active;
   if (reportState.loading) return;
@@ -26,24 +42,45 @@ async function loadActiveReport(force = false) {
   }
   reportState.loading = true;
   reportState.error = null;
+  const started = performance.now();
+  reportState.fetchMeta[key] = {
+    status: null,
+    durationMs: null,
+    contentType: null,
+    errorText: null,
+    fetchedAt: null,
+  };
   renderReportsView();
   try {
     const resp = await fetch(REPORT_META[key].url);
     const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+    reportState.fetchMeta[key].status = resp.status;
+    reportState.fetchMeta[key].contentType = contentType || null;
     if (!resp.ok) {
       const bodyText = (await resp.text()).trim();
+      const issue = guessReportApiIssue(bodyText, resp.status);
+      if (issue) recordApiIssue(issue);
+      reportState.fetchMeta[key].errorText = bodyText || `Report request failed (${resp.status})`;
       throw new Error(bodyText || `Report request failed (${resp.status})`);
     }
     if (!contentType.includes('application/json')) {
       const bodyText = (await resp.text()).trim();
+      const issue = guessReportApiIssue(bodyText, resp.status);
+      if (issue) recordApiIssue(issue);
+      reportState.fetchMeta[key].errorText = bodyText || 'Report request returned a non-JSON response';
       throw new Error(bodyText || 'Report request returned a non-JSON response');
     }
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else if (reportState.active === 'capacity-headroom') recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
     reportState.reports[key] = json.report;
   } catch (e) {
     reportState.error = String(e);
+    reportState.fetchMeta[key].errorText = String(e);
   } finally {
+    reportState.fetchMeta[key].durationMs = Math.round(performance.now() - started);
+    reportState.fetchMeta[key].fetchedAt = new Date().toLocaleTimeString('en-US', { hour12: false });
     reportState.loading = false;
     renderReportsView();
   }
@@ -69,6 +106,44 @@ function renderReportActionPills() {
       <button class="report-action-pill" type="button" onclick="exportActiveReportCsv()">CSV</button>
       <button class="report-action-pill primary" type="button" onclick="window.print()">PDF</button>
     </span>
+  `;
+}
+
+function renderReportDebugCard(report) {
+  const meta = reportState.fetchMeta[reportState.active] || {};
+  const debug = report?.debug || {};
+  const timing = debug.timing_ms || {};
+  const counts = debug.counts || {};
+  const statusLabel = meta.status != null ? String(meta.status) : '—';
+  const durationLabel = meta.durationMs != null ? `${meta.durationMs} ms` : '—';
+  const fetchedAtLabel = meta.fetchedAt || '—';
+  const errorLabel = meta.errorText || 'none';
+  return `
+    <section class="card">
+      <div class="card-title"><span>Debug</span></div>
+      <div class="card-body report-debug-grid">
+        <div class="report-debug-block">
+          <div class="report-debug-head">Last Fetch</div>
+          <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(statusLabel)}</span></div>
+          <div class="mrow"><span class="ml">Duration</span><span class="mv">${esc(durationLabel)}</span></div>
+          <div class="mrow"><span class="ml">Fetched</span><span class="mv">${esc(fetchedAtLabel)}</span></div>
+          <div class="mrow"><span class="ml">Content-Type</span><span class="mv">${esc(meta.contentType || '—')}</span></div>
+          <div class="mrow"><span class="ml">Error</span><span class="mv report-debug-error">${esc(errorLabel)}</span></div>
+        </div>
+        <div class="report-debug-block">
+          <div class="report-debug-head">Backend Timing</div>
+          ${Object.keys(timing).length ? Object.entries(timing).map(([key, value]) => `
+            <div class="mrow"><span class="ml">${esc(key.replaceAll('_', ' '))}</span><span class="mv">${esc(String(value))} ms</span></div>
+          `).join('') : '<div class="card-note">No timing data available.</div>'}
+        </div>
+        <div class="report-debug-block">
+          <div class="report-debug-head">Collection Counts</div>
+          ${Object.keys(counts).length ? Object.entries(counts).map(([key, value]) => `
+            <div class="mrow"><span class="ml">${esc(key.replaceAll('_', ' '))}</span><span class="mv">${esc(String(value))}</span></div>
+          `).join('') : '<div class="card-note">No collection counts available.</div>'}
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -197,6 +272,8 @@ function renderMaintenanceReport(activeMeta, report, nowLabel) {
         </table>
       </div>
     </section>
+
+    ${renderReportDebugCard(report)}
   `;
 }
 
@@ -280,6 +357,8 @@ function renderCapacityReport(activeMeta, report, nowLabel) {
         </table>
       </div>
     </section>
+
+    ${renderReportDebugCard(report)}
   `;
 }
 

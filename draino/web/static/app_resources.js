@@ -28,6 +28,8 @@ async function loadNetworks(force = false) {
   try {
     const resp = await fetch('/api/networks');
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
     netState.data  = json.networks || [];
     netState.page  = 1;
     if (json.error) appendNetError(json.error);
@@ -119,6 +121,8 @@ async function selectNetwork(id) {
   try {
     const resp = await fetch(`/api/networks/${encodeURIComponent(id)}`);
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
     if (json.error) throw new Error(json.error);
     const meta = netState.data?.find(n => n.id === id) || {};
     netDetailState.data = { ...meta, ...json.network };
@@ -428,6 +432,8 @@ async function loadRouters(force = false) {
   try {
     const resp = await fetch('/api/routers');
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
     routerState.data = json.routers || [];
     routerState.page = 1;
     if (json.error) appendRouterError(json.error);
@@ -517,6 +523,8 @@ async function selectRouter(id) {
   try {
     const resp = await fetch(`/api/routers/${encodeURIComponent(id)}`);
     const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
     if (json.error) throw new Error(json.error);
     const meta = routerState.data?.find(r => r.id === id) || {};
     routerDetailState.data = { ...meta, ...json.router };

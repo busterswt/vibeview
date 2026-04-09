@@ -68,6 +68,9 @@ def test_build_maintenance_readiness_report_aggregates_live_node_state(monkeypat
     assert payload["report"]["items"][2]["blocking_reason"] == "mariadb requires staggered reboots"
     assert payload["report"]["items"][3]["verdict"] == "blocked"
     assert "etcd requires staggered reboots" in payload["report"]["items"][3]["blocking_reason"]
+    assert payload["report"]["debug"]["counts"]["nodes"] == 4
+    assert payload["report"]["debug"]["counts"]["k8s_detail_calls"] == 4
+    assert payload["report"]["debug"]["timing_ms"]["total"] >= 0
     findings = payload["report"]["findings"]
     assert findings[0]["severity"] == "high"
     assert findings[0]["message"] == "mariadb requires staggered reboots"
@@ -199,6 +202,9 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
     assert payload["report"]["items"][1]["maintenance_status"] == "blocked"
     assert payload["report"]["az_headroom"][1]["availability_zone"] == "az-c"
     assert payload["report"]["az_headroom"][1]["severity"] == "high"
+    assert payload["report"]["debug"]["counts"]["computes"] == 2
+    assert payload["report"]["debug"]["counts"]["hypervisor_detail_calls"] == 2
+    assert payload["report"]["debug"]["timing_ms"]["total"] >= 0
 
 
 def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
