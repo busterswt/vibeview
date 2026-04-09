@@ -332,6 +332,7 @@ def test_stress_launch_status_and_delete_endpoints(monkeypatch):
             "external_network_id": "ext-net-1",
         })
         status = client.get("/api/stress/status")
+        status_detail = client.get("/api/stress/status?include_details=1")
         deleted = client.post("/api/stress/delete")
 
     launch_body = launch.json()
@@ -346,8 +347,13 @@ def test_stress_launch_status_and_delete_endpoints(monkeypatch):
     assert status.status_code == 200
     assert status_body["status"]["summary"]["plumbing_elapsed"] == "10s"
     assert status_body["status"]["summary"]["avg_vm_build"] == "44s"
-    assert status_body["status"]["servers"][0]["host"] == "cmp-a.example.com"
-    assert status_body["status"]["distribution"][0]["share_pct"] == 50.0
+    assert status_body["status"]["servers"] == []
+    assert status_body["status"]["distribution"] == []
+
+    status_detail_body = status_detail.json()
+    assert status_detail.status_code == 200
+    assert status_detail_body["status"]["servers"][0]["host"] == "cmp-a.example.com"
+    assert status_detail_body["status"]["distribution"][0]["share_pct"] == 50.0
 
     delete_body = deleted.json()
     assert deleted.status_code == 200

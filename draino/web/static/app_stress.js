@@ -244,9 +244,13 @@ async function loadStressEnvironment(force = false) {
   }
 }
 
-async function loadStressStatus(force = false) {
+function stressNeedsDetailData() {
+  return Boolean(stressState.detailSections.resources || stressState.detailSections.servers);
+}
+
+async function loadStressStatus(force = false, includeDetails = stressNeedsDetailData()) {
   if (stressState.statusLoading) return;
-  if (stressState.status && !force) {
+  if (stressState.status && !force && (!!stressState.status.details_included || !includeDetails)) {
     renderStressView();
     return;
   }
@@ -254,7 +258,7 @@ async function loadStressStatus(force = false) {
   stressState.actionError = null;
   renderStressView();
   try {
-    const json = await fetchStressJson('/api/stress/status');
+    const json = await fetchStressJson(`/api/stress/status${includeDetails ? '?include_details=1' : ''}`);
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
@@ -277,7 +281,7 @@ async function refreshStressView() {
   await loadStressCatalog(true);
   if (stressState.env) await loadStressEnvironment(true);
   if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
-    await loadStressStatus(true);
+    await loadStressStatus(true, stressNeedsDetailData());
   } else {
     syncStressActiveState();
     renderStressView();
@@ -294,8 +298,25 @@ async function loadSelectedStressTemplate() {
     draft.error = null;
   }
   if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
-    await loadStressStatus(true);
+    await loadStressStatus(true, stressNeedsDetailData());
   }
+  renderStressView();
+}
+
+async function toggleStressDetailSection(section) {
+  if (!stressState.detailSections[section]) {
+    stressState.detailSections[section] = true;
+    stressState.detailsLoading = true;
+    renderStressView();
+    try {
+      await loadStressStatus(true, true);
+    } finally {
+      stressState.detailsLoading = false;
+      renderStressView();
+    }
+    return;
+  }
+  stressState.detailSections[section] = false;
   renderStressView();
 }
 
@@ -402,13 +423,14 @@ async function launchStressTest() {
     if (json.error) throw new Error(json.error);
     stressState.status = json.status;
     await loadStressCatalog(true);
-    await loadStressStatus(true);
+    await loadStressStatus(true, stressNeedsDetailData());
     startStressStatusPolling();
   } catch (e) {
     stressState.actionError = String(e);
     await loadStressCatalog(true);
     if (stressState.catalog?.guardrail?.active) {
       await loadStressStatus(true);
+      if (stressNeedsDetailData()) await loadStressStatus(true, true);
       startStressStatusPolling();
     }
   } finally {
@@ -466,6 +488,7 @@ function renderStressProfileNav() {
 function renderStressGuardrail() {
   const guardrail = stressState.catalog?.guardrail || stressState.env?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
   const stack = guardrail.stack;
+  const test = stressState.status?.test || null;
   const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
     <section class="card">
@@ -476,6 +499,9 @@ function renderStressGuardrail() {
           ${stack ? `
             <div class="guard-row"><span>Stack</span><span class="mono">${esc(stack.stack_name)}</span></div>
             <div class="guard-row"><span>Status</span><span>${esc(stack.status || 'UNKNOWN')}</span></div>
+            ${test ? `<div class="guard-row"><span>Profile</span><span>${esc(test.profile || '—')}</span></div>` : ''}
+            ${test ? `<div class="guard-row"><span>Requested VMs</span><span>${esc(String(test.requested_vms ?? '—'))}</span></div>` : ''}
+            ${test ? `<div class="guard-row"><span>Created VMs</span><span>${esc(String(test.created_vms ?? '—'))}</span></div>` : ''}
             <div class="guard-row"><span>Created</span><span>${esc(stack.created_at || '—')}</span></div>
             <div class="guard-row"><span>Updated</span><span>${esc(stack.updated_at || '—')}</span></div>
           ` : ''}
@@ -663,49 +689,23 @@ function renderStressTemplateWorkspace() {
 }
 
 function renderStressSummarySection(status) {
-  const test = status.test || {};
   const summary = status.summary || {};
-  const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
     <section class="report-hero-grid stress-hero-grid">
-      ${renderCapacityHero('Stack Status', test.status || 'unknown', stressStatusTagClass(test.status) === 'red' ? 'bad' : stressStatusTagClass(test.status) === 'yellow' ? 'warn' : 'good', 'Heat stack lifecycle state')}
       ${renderCapacityHero('Plumbing Time', summary.plumbing_elapsed || '—', 'good', 'Network, subnet, router, and interface attachment')}
       ${renderCapacityHero('Avg VM Build', summary.avg_vm_build || '—', 'good', 'Server create requested to ACTIVE')}
       ${renderCapacityHero('P95 VM Build', summary.p95_vm_build || '—', 'warn', 'Tail latency for slower builds')}
-    </section>
-
-    <section class="stress-meta-grid">
-      <div class="card">
-        <div class="card-title"><span>Summary</span></div>
-        <div class="card-body">
-          <table class="summary-table">
-            <tr><td>Stack Name</td><td class="mono">${esc(test.stack_name || '—')}</td></tr>
-            <tr><td>Profile</td><td>${esc(test.profile || '—')}</td></tr>
-            <tr><td>Requested VMs</td><td>${esc(String(test.requested_vms ?? '—'))}</td></tr>
-            <tr><td>Created VMs</td><td>${esc(String(test.created_vms ?? '—'))}</td></tr>
-            <tr><td>Total Stack Time</td><td>${esc(summary.stack_elapsed || '—')}</td></tr>
-            <tr><td>Slowest VM Build</td><td>${esc(summary.slowest_vm_build || '—')}</td></tr>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span>Actions</span></div>
-        <div class="card-body note">
-          This stack is live and tracked directly from Heat and Nova. Delete it before launching a new test run.
-          <div class="stress-stack-actions">
-            <button class="btn danger" type="button" onclick="deleteStressTest()" ${deletePending ? 'disabled' : ''}>${deletePending ? 'Deleting…' : 'Delete Existing Test'}</button>
-            <button class="btn" type="button" onclick="loadStressStatus(true)" ${stressState.statusLoading ? 'disabled' : ''}>${stressState.statusLoading ? 'Refreshing…' : 'Refresh Status'}</button>
-          </div>
-        </div>
-      </div>
+      ${renderCapacityHero('Total Stack Time', summary.stack_elapsed || '—', 'good', 'Heat stack create requested to complete')}
     </section>
   `;
 }
 
 function renderStressResourceTable(resources) {
+  const open = Boolean(stressState.detailSections.resources);
   return `
     <section class="card">
-      <div class="card-title"><span>Resource Timing</span></div>
+      <div class="card-title"><span>Resource Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('resources')">${open ? 'Collapse' : 'Expand'}</button></div>
+      ${open ? `
       <div class="card-body report-table-wrap">
         <table class="report-table">
           <thead>
@@ -732,14 +732,19 @@ function renderStressResourceTable(resources) {
           </tbody>
         </table>
       </div>
+      ` : `
+      <div class="card-body note">Expand this panel to load Heat resource timing details.</div>
+      `}
     </section>
   `;
 }
 
 function renderStressServerTable(servers) {
+  const open = Boolean(stressState.detailSections.servers);
   return `
     <section class="card">
-      <div class="card-title"><span>VM Timing</span></div>
+      <div class="card-title"><span>VM Timing</span><button class="btn" type="button" onclick="toggleStressDetailSection('servers')">${open ? 'Collapse' : 'Expand'}</button></div>
+      ${open ? `
       <div class="card-body report-table-wrap">
         <table class="report-table">
           <thead>
@@ -766,11 +771,15 @@ function renderStressServerTable(servers) {
           </tbody>
         </table>
       </div>
+      ` : `
+      <div class="card-body note">Expand this panel to load per-VM timing and host placement details.</div>
+      `}
     </section>
   `;
 }
 
 function renderStressDistributionTable(distribution) {
+  if (!stressState.detailSections.servers) return '';
   return `
     <section class="card">
       <div class="card-title"><span>VM Distribution</span></div>

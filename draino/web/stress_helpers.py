@@ -784,7 +784,7 @@ def _percentile(values: list[int], pct: float) -> int | None:
     return ordered[index]
 
 
-def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any]:
+def get_stress_status(auth: openstack_ops.OpenStackAuth | None, *, include_details: bool = False) -> dict[str, Any]:
     conn = openstack_ops._conn(auth=auth)
     stack = _find_active_stress_stack_obj(conn)
     if stack is None:
@@ -795,6 +795,7 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
             "resources": [],
             "servers": [],
             "distribution": [],
+            "details_included": include_details,
             "error": None,
         }
 
@@ -803,66 +804,29 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
     requested_vms = _coerce_int(parameters.get("vm_count")) or 0
     resources_raw = _stack_resources(conn, stack)
     event_elapsed = _event_elapsed_by_resource(_stack_events(conn, stack))
-    resources: list[dict[str, Any]] = []
+    resource_stubs: list[dict[str, Any]] = []
+    server_elapsed_values: list[int] = []
+    plumbing_elapsed_values: list[int] = []
     for resource in resources_raw:
-        resources.append({
+        item = {
             "logical_name": getattr(resource, "resource_name", None) or getattr(resource, "logical_resource_id", None) or "",
             "type": getattr(resource, "resource_type", None) or "",
             "physical_id": getattr(resource, "physical_resource_id", None) or getattr(resource, "physical_id", None) or "",
             "status": getattr(resource, "resource_status", None) or getattr(resource, "status", None) or "UNKNOWN",
             "created_at": str(getattr(resource, "creation_time", None) or getattr(resource, "created_at", None) or ""),
             "updated_at": str(getattr(resource, "updated_time", None) or getattr(resource, "updated_at", None) or ""),
-        })
-    server_map = _server_map_for_resources(conn, resources)
-
-    server_rows: list[dict[str, Any]] = []
-    distribution_counts: dict[str, int] = {}
-    resource_rows: list[dict[str, Any]] = []
-    server_elapsed_values: list[int] = []
-    plumbing_elapsed_values: list[int] = []
-
-    for item in resources:
+        }
+        resource_stubs.append(item)
         elapsed_s = event_elapsed.get(item["logical_name"])
         if elapsed_s is None:
             elapsed_s = _elapsed_seconds(item["created_at"], item["updated_at"])
-        server_info = None
         if item["type"] == "OS::Nova::Server":
-            server_info = server_map.get(item["physical_id"])
-            host = _server_host(server_info) if server_info is not None else ""
-            status = str(getattr(server_info, "status", None) or "UNKNOWN") if server_info is not None else "UNKNOWN"
-            addresses = _server_addresses(server_info) if server_info is not None else []
-            server_rows.append({
-                "name": (getattr(server_info, "name", None) if server_info is not None else "") or item["logical_name"].replace("_", "-"),
-                "server_id": item["physical_id"],
-                "host": host,
-                "status": status,
-                "elapsed_s": elapsed_s,
-                "elapsed": _format_seconds(elapsed_s),
-                "ip": addresses[0] if addresses else "—",
-            })
-            if host:
-                distribution_counts[host] = distribution_counts.get(host, 0) + 1
             if elapsed_s is not None:
                 server_elapsed_values.append(elapsed_s)
         elif item["type"].startswith("OS::Neutron::"):
             if elapsed_s is not None:
                 plumbing_elapsed_values.append(elapsed_s)
-        resource_rows.append({
-            "type": item["type"],
-            "logical_name": item["logical_name"],
-            "physical_id": item["physical_id"],
-            "status": item["status"],
-            "elapsed_s": elapsed_s,
-            "elapsed": _format_seconds(elapsed_s),
-            "notes": _resource_note(item, server_info=server_info),
-            "cidr": parameters.get("network_cidr", "") if item["type"] == "OS::Neutron::Subnet" else "",
-        })
 
-    created_vms = len(server_rows)
-    distribution = [
-        {"host": host, "vm_count": count, "share_pct": _percent(count, created_vms)}
-        for host, count in sorted(distribution_counts.items(), key=lambda entry: (-entry[1], entry[0]))
-    ]
     stack_elapsed_s = _elapsed_seconds(stack_data.get("created_at"), stack_data.get("updated_at"))
     summary = {
         "stack_elapsed_s": stack_elapsed_s,
@@ -876,6 +840,51 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
         "slowest_vm_build_s": max(server_elapsed_values) if server_elapsed_values else None,
         "slowest_vm_build": _format_seconds(max(server_elapsed_values)) if server_elapsed_values else "—",
     }
+    resource_rows: list[dict[str, Any]] = []
+    server_rows: list[dict[str, Any]] = []
+    distribution: list[dict[str, Any]] = []
+    created_vms = 0
+    if include_details:
+        server_map = _server_map_for_resources(conn, resource_stubs)
+        distribution_counts: dict[str, int] = {}
+        for item in resource_stubs:
+            elapsed_s = event_elapsed.get(item["logical_name"])
+            if elapsed_s is None:
+                elapsed_s = _elapsed_seconds(item["created_at"], item["updated_at"])
+            server_info = None
+            if item["type"] == "OS::Nova::Server":
+                server_info = server_map.get(item["physical_id"])
+                host = _server_host(server_info) if server_info is not None else ""
+                status = str(getattr(server_info, "status", None) or "UNKNOWN") if server_info is not None else "UNKNOWN"
+                addresses = _server_addresses(server_info) if server_info is not None else []
+                server_rows.append({
+                    "name": (getattr(server_info, "name", None) if server_info is not None else "") or item["logical_name"].replace("_", "-"),
+                    "server_id": item["physical_id"],
+                    "host": host,
+                    "status": status,
+                    "elapsed_s": elapsed_s,
+                    "elapsed": _format_seconds(elapsed_s),
+                    "ip": addresses[0] if addresses else "—",
+                })
+                if host:
+                    distribution_counts[host] = distribution_counts.get(host, 0) + 1
+            resource_rows.append({
+                "type": item["type"],
+                "logical_name": item["logical_name"],
+                "physical_id": item["physical_id"],
+                "status": item["status"],
+                "elapsed_s": elapsed_s,
+                "elapsed": _format_seconds(elapsed_s),
+                "notes": _resource_note(item, server_info=server_info),
+                "cidr": parameters.get("network_cidr", "") if item["type"] == "OS::Neutron::Subnet" else "",
+            })
+        created_vms = len(server_rows)
+        distribution = [
+            {"host": host, "vm_count": count, "share_pct": _percent(count, created_vms)}
+            for host, count in sorted(distribution_counts.items(), key=lambda entry: (-entry[1], entry[0]))
+        ]
+    else:
+        created_vms = sum(1 for item in resource_stubs if item["type"] == "OS::Nova::Server")
     return {
         "active": True,
         "test": {
@@ -887,8 +896,9 @@ def get_stress_status(auth: openstack_ops.OpenStackAuth | None) -> dict[str, Any
             "created_vms": created_vms,
         },
         "summary": summary,
-        "resources": sorted(resource_rows, key=lambda item: (item["type"] != "OS::Nova::Server", item["logical_name"])),
-        "servers": sorted(server_rows, key=lambda item: item["name"]),
+        "resources": sorted(resource_rows, key=lambda item: (item["type"] != "OS::Nova::Server", item["logical_name"])) if include_details else [],
+        "servers": sorted(server_rows, key=lambda item: item["name"]) if include_details else [],
         "distribution": distribution,
+        "details_included": include_details,
         "error": None,
     }

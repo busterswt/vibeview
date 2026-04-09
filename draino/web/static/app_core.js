@@ -117,6 +117,11 @@ const stressState = {
   status: null,
   profileKey: '',
   drafts: {},
+  detailSections: {
+    resources: false,
+    servers: false,
+  },
+  detailsLoading: false,
 };
 
 const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };

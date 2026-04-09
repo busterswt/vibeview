@@ -109,12 +109,14 @@ async def api_stress_catalog(request: Request):
 async def api_stress_status(request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
+    include_details = str(request.query_params.get("include_details") or "").strip().lower() in {"1", "true", "yes", "on"}
     try:
         data = await loop.run_in_executor(
             None,
             partial(
                 get_stress_status,
                 auth=session.server.openstack_auth,
+                include_details=include_details,
             ),
         )
         return {"status": data, "error": None, "api_issue": None}
