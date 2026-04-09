@@ -65,7 +65,6 @@ function switchView(name) {
     if (name === 'monitor') renderMonitorView();
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
-    if (name === 'reports'    && !reportState.reports[reportState.active] && !reportState.loading) loadActiveReport();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'reports') renderReportsView();
     // Restore network detail panel visibility when returning

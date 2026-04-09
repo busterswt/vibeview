@@ -110,6 +110,33 @@ function renderReportActionPills() {
   `;
 }
 
+function renderReportLaunchState(activeMeta) {
+  return `
+    <section class="report-launch-card">
+      <div class="report-launch-shell">
+        <div class="report-launch-icon">${esc(activeMeta.icon || '📄')}</div>
+        <div class="report-launch-copy">
+          <div class="report-launch-kicker">Live Report</div>
+          <div class="report-launch-title">${esc(activeMeta.label)}</div>
+          <div class="report-launch-subtitle">${esc(activeMeta.subtitle)}</div>
+          <div class="report-launch-text">
+            This report runs live against the current environment and can be expensive for large clouds.
+            It will not auto-run or auto-refresh until you explicitly request it.
+          </div>
+          <div class="report-launch-pills">
+            <span class="meta-pill">Live synthesis</span>
+            <span class="meta-pill">No stored data</span>
+            <span class="meta-pill">Manual execution only</span>
+          </div>
+          <div class="report-launch-actions">
+            <button class="report-launch-btn" type="button" onclick="loadActiveReport(true)">Run ${esc(activeMeta.label)}</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderReportDebugCard(report) {
   const meta = reportState.fetchMeta[reportState.active] || {};
   const debug = report?.debug || {};
@@ -425,6 +452,8 @@ function renderReportsView() {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
       : renderMaintenanceReport(activeMeta, report, nowLabel);
+  } else {
+    content = renderReportLaunchState(activeMeta);
   }
 
   wrap.innerHTML = `
@@ -450,8 +479,8 @@ function renderReportsView() {
 function selectReport(key) {
   if (!REPORT_META[key]) return;
   reportState.active = key;
+  reportState.error = null;
   renderReportsView();
-  if (!reportState.reports[key] && !reportState.loading) loadActiveReport();
 }
 
 function renderReportStatus(value) {

@@ -733,6 +733,85 @@ body.no-hints .vmware-ref-card { display: none !important; }
   padding: 24px;
   color: var(--dim);
 }
+.report-launch-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 22px 24px;
+}
+.report-launch-shell {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.report-launch-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid #d7e2ec;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.report-launch-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--blue);
+}
+.report-launch-title {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+.report-launch-subtitle {
+  margin-top: 6px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+.report-launch-text {
+  margin-top: 14px;
+  max-width: 720px;
+  color: #36516a;
+  line-height: 1.65;
+}
+.report-launch-pills {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.report-launch-actions {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.report-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: white;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(21, 101, 192, 0.16);
+}
+.report-launch-btn:hover {
+  background: var(--blue-lt);
+}
 .report-header-card {
   background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
   border: 1px solid var(--border);
@@ -1092,6 +1171,12 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .api-issues-btn-row {
   display: flex;
   gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .report-launch-shell {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1100px) {
