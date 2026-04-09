@@ -23,6 +23,7 @@
     <a data-view="networking"                    onclick="switchView('networking')">Networks</a>
     <a data-view="routers"                       onclick="switchView('routers')">Routers</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
+    <a data-view="stress"                        onclick="switchView('stress')">Stress</a>
     <a data-view="reports"                       onclick="switchView('reports')">Reports</a>
   </nav>
   <div class="top-right">
@@ -81,6 +82,9 @@
     <button class="btn" onclick="refreshActiveReport()">⟳ Refresh Report</button>
     <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
     <button class="btn primary" onclick="window.print()">PDF</button>
+  </div>
+  <div class="bc-actions" id="bc-stress-actions" style="display:none">
+    <button class="btn" onclick="loadStressOptions(true)">⟳ Refresh Stress View</button>
   </div>
   <div class="bc-actions" id="bc-k8s-actions" style="display:none">
     <button class="btn" onclick="refreshK8sResource()">⟳ Refresh</button>
@@ -230,6 +234,11 @@
     <div id="reports-wrap"></div>
   </div>
 
+  <!-- ── Stress view ── -->
+  <div class="view" id="view-stress">
+    <div id="stress-wrap"></div>
+  </div>
+
 </div><!-- /#body -->
 
 <div id="api-issues-overlay" class="api-issues-overlay">
@@ -342,6 +351,7 @@
 <script src="/static/app_infra.js"></script>
 <script src="/static/app_resources.js"></script>
 <script src="/static/app_reports.js"></script>
+<script src="/static/app_stress.js"></script>
 <script src="/static/app_tasks.js"></script>
 <script src="/static/app_actions.js"></script>
 <script src="/static/app.js"></script>

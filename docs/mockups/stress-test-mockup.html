@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Stress Test</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-lt: #1e88e5;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --sidebar: #f4f6f8;
+  --border: #d1d9e0;
+  --sel: #bbdefb;
+  --hover: #e8f4fd;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --purple: #6a1b9a;
+  --purple-bg: #f3e5f5;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-weight: 700;
+}
+
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.logo-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: #90a4ae;
+}
+
+.top-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 24px;
+}
+
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.top-nav a.active { color: white; }
+
+.top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  cursor: default;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+.btn.danger { background: #c62828; color: white; border-color: #c62828; }
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.bc-link { color: var(--blue); }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#body { display: flex; flex: 1; overflow: hidden; }
+
+#sidebar {
+  width: 280px;
+  min-width: 240px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-head {
+  background: var(--white);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-group {
+  padding: 7px 10px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-item {
+  padding: 8px 12px 8px 16px;
+  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-item.active {
+  background: var(--sel);
+  border-left-color: var(--blue);
+}
+
+.nav-item .ico {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.nav-item .name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.nav-item .sub {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 1px;
+}
+
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px 24px;
+}
+
+.shell {
+  max-width: 1260px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.sub {
+  margin-top: 4px;
+  color: var(--dim);
+  line-height: 1.5;
+  max-width: 760px;
+}
+
+.meta-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.launch-grid {
+  display: grid;
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 14px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.card-head {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.card-body {
+  padding: 14px;
+}
+
+.note {
+  color: var(--dim);
+  line-height: 1.55;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.field .input {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fbfdff;
+}
+
+.stack-guard {
+  border: 1px solid #efc3c3;
+  background: #fff7f7;
+  color: #7c2323;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.guard-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.guard-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 14px 12px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--dim);
+}
+
+.hero-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 8px;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.green { color: var(--green); }
+.yellow { color: var(--yellow); }
+.red { color: var(--red); }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--white);
+}
+
+.summary-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.summary-table tr:last-child td { border-bottom: none; }
+.summary-table td:first-child { color: var(--dim); width: 42%; }
+
+.table-wrap {
+  padding: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--white);
+}
+
+thead th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+  background: #fbfdff;
+}
+
+tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  margin-right: 5px;
+}
+
+.tag.green { background: var(--green-bg); color: var(--green); }
+.tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag.red { background: var(--red-bg); color: var(--red); }
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+
+@media print {
+  #top-bar, #breadcrumb-bar, #sidebar { display: none !important; }
+  #content { padding: 0; overflow: visible; }
+  .shell { max-width: none; }
+  .card, .hero { break-inside: avoid; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div class="logo-icon">V</div>
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Vibing Cloud Infrastructure Since 2026</div>
+      </div>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Kubernetes</a>
+      <a href="#">Networks</a>
+      <a href="#">Routers</a>
+      <a href="#">Storage</a>
+      <a href="#" class="active">Stress</a>
+    </div>
+    <div class="top-right">
+      <span class="mock-pill">MOCKUP</span>
+      <button class="btn">CSV</button>
+      <button class="btn primary">PDF</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Stress</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Heat Test Console</span>
+    <div class="bc-actions">
+      <button class="btn">Refresh Status</button>
+      <button class="btn danger">Delete Existing Test</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <aside id="sidebar">
+      <div class="sidebar-head">Stress Profiles</div>
+      <div class="nav-group">Templates</div>
+      <div class="nav-item active">
+        <div class="ico">🌐</div>
+        <div>
+          <div class="name">Full Host Spread</div>
+          <div class="sub">One VM per compute, full plumbing</div>
+        </div>
+      </div>
+      <div class="nav-item">
+        <div class="ico">⚡</div>
+        <div>
+          <div class="name">Burst</div>
+          <div class="sub">High-count VM launch test</div>
+        </div>
+      </div>
+      <div class="nav-item">
+        <div class="ico">🧪</div>
+        <div>
+          <div class="name">Small Distribution</div>
+          <div class="sub">Quick scheduler sanity test</div>
+        </div>
+      </div>
+    </aside>
+
+    <main id="content">
+      <div class="shell">
+        <section class="header-card">
+          <div class="header-top">
+            <div>
+              <div class="title">Heat Stress Test Console</div>
+              <div class="sub">Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing. One active test stack is allowed at a time.</div>
+            </div>
+          </div>
+          <div class="meta-row">
+            <span class="meta-pill">Mode: live orchestration</span>
+            <span class="meta-pill">Stack prefix: vibe-stress-</span>
+            <span class="meta-pill">Guardrail: one active test</span>
+            <span class="meta-pill">Cleanup: Heat stack delete</span>
+          </div>
+        </section>
+
+        <section class="launch-grid">
+          <div class="card">
+            <div class="card-head">Launch Parameters</div>
+            <div class="card-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Profile</label>
+                  <div class="input">Full Host Spread</div>
+                </div>
+                <div class="field">
+                  <label>VM Count</label>
+                  <div class="input">31</div>
+                </div>
+                <div class="field">
+                  <label>Image</label>
+                  <div class="input">ubuntu-24.04</div>
+                </div>
+                <div class="field">
+                  <label>Flavor</label>
+                  <div class="input">m1.small</div>
+                </div>
+                <div class="field">
+                  <label>Keypair</label>
+                  <div class="input">vibe-stress-key</div>
+                </div>
+                <div class="field">
+                  <label>CIDR</label>
+                  <div class="input">10.77.0.0/24</div>
+                </div>
+              </div>
+              <div style="margin-top:14px; display:flex; gap:8px;">
+                <button class="btn primary">Launch Test Stack</button>
+                <button class="btn">Preview Template Inputs</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Guardrail</div>
+            <div class="card-body">
+              <div class="stack-guard">
+                <div class="guard-head">Existing Active Test Detected</div>
+                <div class="guard-row"><span>Stack</span><span class="mono">vibe-stress-20260409-141522</span></div>
+                <div class="guard-row"><span>Status</span><span>CREATE_COMPLETE</span></div>
+                <div class="guard-row"><span>Profile</span><span>Full Host Spread</span></div>
+                <div class="guard-row"><span>Requested VMs</span><span>31</span></div>
+                <div class="guard-row"><span>Created</span><span>31</span></div>
+                <div class="guard-row"><span>Message</span><span>Delete the existing stack before launching a new stress test.</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="hero-grid">
+          <div class="hero">
+            <div class="hero-label">Stack Status</div>
+            <div class="hero-value green">Complete</div>
+            <div class="hero-foot">All requested resources were created successfully.</div>
+          </div>
+          <div class="hero">
+            <div class="hero-label">Plumbing Time</div>
+            <div class="hero-value">18s</div>
+            <div class="hero-foot">Network, subnet, router, and interface attachment.</div>
+          </div>
+          <div class="hero">
+            <div class="hero-label">Avg VM Build</div>
+            <div class="hero-value">52s</div>
+            <div class="hero-foot">Server create requested to `ACTIVE`.</div>
+          </div>
+          <div class="hero">
+            <div class="hero-label">P95 VM Build</div>
+            <div class="hero-value yellow">77s</div>
+            <div class="hero-foot">Tail latency for the slowest 5% of builds.</div>
+          </div>
+          <div class="hero">
+            <div class="hero-label">Total Stack Time</div>
+            <div class="hero-value">434s</div>
+            <div class="hero-foot">Heat stack create start to complete.</div>
+          </div>
+        </section>
+
+        <section class="two-col">
+          <div class="card">
+            <div class="card-head">Summary</div>
+            <div class="card-body">
+              <table class="summary-table">
+                <tr><td>Stack Name</td><td class="mono">vibe-stress-20260409-141522</td></tr>
+                <tr><td>Profile</td><td>Full Host Spread</td></tr>
+                <tr><td>Requested VMs</td><td>31</td></tr>
+                <tr><td>Created VMs</td><td>31</td></tr>
+                <tr><td>Network Objects</td><td>1 network, 1 subnet, 1 router, 31 ports</td></tr>
+                <tr><td>Key / Security</td><td>1 keypair, 1 security group</td></tr>
+                <tr><td>Cleanup Mode</td><td>Delete the Heat stack and all tagged resources</td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Notes</div>
+            <div class="card-body note">
+              This view treats stress tests as disposable Heat stacks, not persistent jobs. All timing is derived live from Heat
+              resource states and current Nova server state. The structure leaves room for more profiles later, including burst,
+              gateway/FIP, and volume-backed tests.
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Resource Timing</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Logical Name</th>
+                  <th>Physical ID</th>
+                  <th>Status</th>
+                  <th>Elapsed</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>OS::Neutron::Net</td>
+                  <td class="mono">stress_net</td>
+                  <td class="mono">4a1c…d30f</td>
+                  <td><span class="tag green">complete</span></td>
+                  <td>3s</td>
+                  <td>Primary tenant network</td>
+                </tr>
+                <tr>
+                  <td>OS::Neutron::Subnet</td>
+                  <td class="mono">stress_subnet</td>
+                  <td class="mono">71f2…a102</td>
+                  <td><span class="tag green">complete</span></td>
+                  <td>2s</td>
+                  <td>10.77.0.0/24</td>
+                </tr>
+                <tr>
+                  <td>OS::Neutron::Router</td>
+                  <td class="mono">stress_router</td>
+                  <td class="mono">91ce…7780</td>
+                  <td><span class="tag green">complete</span></td>
+                  <td>5s</td>
+                  <td>External gateway attached</td>
+                </tr>
+                <tr>
+                  <td>OS::Nova::Server</td>
+                  <td class="mono">stress_vm_01</td>
+                  <td class="mono">9ca4…1058</td>
+                  <td><span class="tag green">active</span></td>
+                  <td>49s</td>
+                  <td>Placed on 1277287-tenant-dev…</td>
+                </tr>
+                <tr>
+                  <td>OS::Nova::Server</td>
+                  <td class="mono">stress_vm_02</td>
+                  <td class="mono">8d1a…22fb</td>
+                  <td><span class="tag green">active</span></td>
+                  <td>61s</td>
+                  <td>Placed on 1277274-tenant-dev…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">VM Timing</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>VM</th>
+                  <th>Server ID</th>
+                  <th>Host</th>
+                  <th>Status</th>
+                  <th>Elapsed</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">stress-vm-01</td>
+                  <td class="mono">9ca4…1058</td>
+                  <td class="mono">1277287-tenant-dev.iad3…</td>
+                  <td><span class="tag green">active</span></td>
+                  <td>49s</td>
+                  <td>10.77.0.5</td>
+                </tr>
+                <tr>
+                  <td class="mono">stress-vm-02</td>
+                  <td class="mono">8d1a…22fb</td>
+                  <td class="mono">1277274-tenant-dev.iad3…</td>
+                  <td><span class="tag green">active</span></td>
+                  <td>61s</td>
+                  <td>10.77.0.6</td>
+                </tr>
+                <tr>
+                  <td class="mono">stress-vm-03</td>
+                  <td class="mono">cc81…8730</td>
+                  <td class="mono">1277262-tenant-dev.iad3…</td>
+                  <td><span class="tag yellow">building</span></td>
+                  <td>38s</td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Distribution</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Host</th>
+                  <th>VM Count</th>
+                  <th>Share</th>
+                  <th>Comment</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">1277287-tenant-dev.iad3…</td>
+                  <td>1</td>
+                  <td>3%</td>
+                  <td>Expected one-per-host spread</td>
+                </tr>
+                <tr>
+                  <td class="mono">1277274-tenant-dev.iad3…</td>
+                  <td>1</td>
+                  <td>3%</td>
+                  <td>Expected one-per-host spread</td>
+                </tr>
+                <tr>
+                  <td class="mono">1277262-tenant-dev.iad3…</td>
+                  <td>1</td>
+                  <td>3%</td>
+                  <td>Expected one-per-host spread</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

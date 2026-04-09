@@ -102,6 +102,25 @@ const reportState = {
   fetchMeta: {},
 };
 
+const stressState = {
+  loading: false,
+  error: null,
+  options: null,
+  statusLoading: false,
+  actionLoading: false,
+  actionError: null,
+  status: null,
+  profileKey: '',
+  imageId: '',
+  flavorId: '',
+  externalNetworkId: '',
+  keypairMode: 'existing',
+  keypairName: '',
+  cidrMode: 'auto',
+  cidr: '',
+  vmCount: 1,
+};
+
 const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
 const OP_COLOR  = {
   queued:'op-queued', migrating:'op-migrating', 'cold-migrating':'op-migrating',

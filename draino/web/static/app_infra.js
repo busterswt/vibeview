@@ -25,6 +25,7 @@ function switchView(name) {
   document.getElementById('bc-net-actions').style.display   = name === 'networking'     ? '' : 'none';
   document.getElementById('bc-router-actions').style.display = name === 'routers'       ? '' : 'none';
   document.getElementById('bc-report-actions').style.display = name === 'reports'       ? '' : 'none';
+  document.getElementById('bc-stress-actions').style.display = name === 'stress'        ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display   = name === 'storage'        ? '' : 'none';
   document.getElementById('tasks-panel').style.display      = name === 'infrastructure' ? '' : 'none';
 
@@ -46,6 +47,8 @@ function switchView(name) {
         ? 'Networks'
         : name === 'routers'
           ? 'Routers'
+        : name === 'stress'
+          ? 'Stress'
         : name === 'reports'
           ? 'Reports'
         : name === 'storage'
@@ -66,6 +69,10 @@ function switchView(name) {
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
+    if (name === 'stress') {
+      renderStressView();
+      if (!stressState.options && !stressState.loading) loadStressOptions();
+    }
     if (name === 'reports') renderReportsView();
     // Restore network detail panel visibility when returning
     if (name === 'networking') {

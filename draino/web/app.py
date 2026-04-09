@@ -15,6 +15,7 @@ from .api import nodes as nodes_api
 from .api import reports as reports_api
 from .api import resources as resources_api
 from .api import runtime as runtime_api
+from .api import stress as stress_api
 from .session import SessionStore
 from . import ws as ws_api
 
@@ -68,6 +69,9 @@ def create_fastapi_app(
     reports_api.configure(
         get_session_record=get_session_record,
     )
+    stress_api.configure(
+        get_session_record=get_session_record,
+    )
     ws_api.configure(
         get_ws_session=get_ws_session,
     )
@@ -78,6 +82,7 @@ def create_fastapi_app(
     app.include_router(k8s_api.router)
     app.include_router(resources_api.router)
     app.include_router(reports_api.router)
+    app.include_router(stress_api.router)
     app.include_router(ws_api.router)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
