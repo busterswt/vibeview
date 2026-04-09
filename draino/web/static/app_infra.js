@@ -24,6 +24,7 @@ function switchView(name) {
   document.getElementById('bc-k8s-actions').style.display   = name === 'kubernetes'     ? '' : 'none';
   document.getElementById('bc-net-actions').style.display   = name === 'networking'     ? '' : 'none';
   document.getElementById('bc-router-actions').style.display = name === 'routers'       ? '' : 'none';
+  document.getElementById('bc-report-actions').style.display = name === 'reports'       ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display   = name === 'storage'        ? '' : 'none';
   document.getElementById('tasks-panel').style.display      = name === 'infrastructure' ? '' : 'none';
 
@@ -45,6 +46,8 @@ function switchView(name) {
         ? 'Networks'
         : name === 'routers'
           ? 'Routers'
+        : name === 'reports'
+          ? 'Reports'
         : name === 'storage'
           ? 'Volumes'
           : name === 'kubernetes'
@@ -62,7 +65,9 @@ function switchView(name) {
     if (name === 'monitor') renderMonitorView();
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
+    if (name === 'reports'    && !reportState.reports[reportState.active] && !reportState.loading) loadActiveReport();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
+    if (name === 'reports') renderReportsView();
     // Restore network detail panel visibility when returning
     if (name === 'networking') {
       const det = document.getElementById('net-detail-wrap');

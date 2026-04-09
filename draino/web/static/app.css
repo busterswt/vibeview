@@ -154,6 +154,7 @@ body {
 .view.active { display: flex; }
 #view-infrastructure { flex-direction: row; }
 #view-kubernetes     { flex-direction: row; }
+#view-reports        { flex-direction: row; }
 #view-networking     { flex-direction: row; }
 #view-storage        { flex-direction: column; }
 #k8s-sidebar { width: 220px; min-width: 220px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
@@ -675,6 +676,188 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .st-available { color: var(--green); }
 .st-inuse     { color: var(--blue); font-weight: 600; }
 .data-table tbody tr.selected td { background: var(--sel); }
+
+.reports-shell { display: flex; min-height: 100%; }
+.reports-nav {
+  width: 280px;
+  min-width: 240px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.reports-nav-head {
+  background: var(--white);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+.reports-nav-group {
+  padding: 7px 10px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: 1px solid var(--border);
+}
+.reports-nav-item {
+  padding: 8px 12px 8px 16px;
+  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.reports-nav-item:hover { background: var(--hover); }
+.reports-nav-item.active { background: var(--sel); border-left-color: var(--blue); }
+.reports-nav-item .ico { font-size: 14px; flex-shrink: 0; }
+.reports-nav-item .name { font-size: 12px; font-weight: 500; }
+.reports-nav-item .sub { font-size: 10px; color: var(--dim); margin-top: 1px; }
+.reports-content { flex: 1; overflow-y: auto; padding: 18px 20px 24px; }
+.report-empty {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 24px;
+  color: var(--dim);
+}
+.report-header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+.report-head-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+.report-head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.report-title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.report-subtitle { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 760px; }
+.report-meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+.report-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.report-hero-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 14px 12px;
+}
+.report-hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--dim);
+}
+.report-hero-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 8px;
+}
+.report-hero-foot { margin-top: 8px; font-size: 11px; color: var(--dim); }
+.report-hero-foot.good { color: var(--green); }
+.report-hero-foot.warn { color: var(--yellow); }
+.report-hero-foot.bad { color: var(--red); }
+.report-grid-two { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 14px; }
+.report-findings { display: grid; gap: 8px; }
+.report-finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.report-finding-row:last-child { border-bottom: none; }
+.report-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.report-severity.high { background: #ffebee; color: var(--red); }
+.report-severity.medium { background: #fff8e1; color: var(--yellow); }
+.report-severity.low { background: #e8f5e9; color: var(--green); }
+.report-finding-text { font-size: 12px; line-height: 1.5; }
+.report-kv-stack { display: grid; gap: 0; }
+.report-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  margin-right: 5px;
+}
+.report-tag.blue { background: var(--blue-bg); color: var(--blue); }
+.report-tag.green { background: #e8f5e9; color: var(--green); }
+.report-tag.yellow { background: #fff8e1; color: var(--yellow); }
+.report-tag.red { background: #ffebee; color: var(--red); }
+.report-tag.purple { background: #f3e5f5; color: #6a1b9a; }
+.report-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.report-status.good { color: var(--green); }
+.report-status.warn { color: var(--yellow); }
+.report-status.bad { color: var(--red); }
+.report-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.report-dot.good { background: #4caf50; }
+.report-dot.warn { background: #ffc107; }
+.report-dot.bad { background: #ef5350; }
+.report-table td { vertical-align: top; }
+
+@media print {
+  #top-bar,
+  #breadcrumb-bar,
+  .reports-nav,
+  .report-head-actions { display: none !important; }
+  #content,
+  .reports-content { overflow: visible; padding: 0; }
+  .reports-shell { display: block; }
+  .report-header-card,
+  .report-hero-card,
+  .card { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+}
 
 /* ═══════════════════════════════════════════════════════
    RECENT TASKS PANEL (bottom)

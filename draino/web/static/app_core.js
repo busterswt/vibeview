@@ -85,6 +85,14 @@ const routerDetailState = { loading: false, data: null, ovn: { loading: false, d
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
 
+// Reports view state
+const reportState = {
+  active: 'maintenance-readiness',
+  loading: false,
+  error: null,
+  reports: {},
+};
+
 const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
 const OP_COLOR  = {
   queued:'op-queued', migrating:'op-migrating', 'cold-migrating':'op-migrating',

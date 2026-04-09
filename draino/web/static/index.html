@@ -22,6 +22,7 @@
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
     <a data-view="networking"                    onclick="switchView('networking')">Networks</a>
     <a data-view="routers"                       onclick="switchView('routers')">Routers</a>
+    <a data-view="reports"                       onclick="switchView('reports')">Reports</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
   </nav>
   <div class="top-right">
@@ -75,6 +76,11 @@
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="loadVolumes(true)">⟳ Refresh Volumes</button>
+  </div>
+  <div class="bc-actions" id="bc-report-actions" style="display:none">
+    <button class="btn" onclick="refreshActiveReport()">⟳ Refresh Report</button>
+    <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
+    <button class="btn primary" onclick="window.print()">PDF</button>
   </div>
   <div class="bc-actions" id="bc-k8s-actions" style="display:none">
     <button class="btn" onclick="refreshK8sResource()">⟳ Refresh</button>
@@ -219,6 +225,11 @@
     </div>
   </div>
 
+  <!-- ── Reports view ── -->
+  <div class="view" id="view-reports">
+    <div id="reports-wrap"></div>
+  </div>
+
 </div><!-- /#body -->
 
 <!-- ═══ RECENT TASKS PANEL (Infrastructure only) ═══ -->
@@ -326,6 +337,7 @@
 <script src="/static/app_core.js"></script>
 <script src="/static/app_infra.js"></script>
 <script src="/static/app_resources.js"></script>
+<script src="/static/app_reports.js"></script>
 <script src="/static/app_tasks.js"></script>
 <script src="/static/app_actions.js"></script>
 <script src="/static/app.js"></script>

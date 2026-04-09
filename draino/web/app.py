@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import auth as auth_api
 from .api import k8s as k8s_api
 from .api import nodes as nodes_api
+from .api import reports as reports_api
 from .api import resources as resources_api
 from .api import runtime as runtime_api
 from .session import SessionStore
@@ -64,6 +65,9 @@ def create_fastapi_app(
     resources_api.configure(
         get_session_record=get_session_record,
     )
+    reports_api.configure(
+        get_session_record=get_session_record,
+    )
     ws_api.configure(
         get_ws_session=get_ws_session,
     )
@@ -73,6 +77,7 @@ def create_fastapi_app(
     app.include_router(nodes_api.router)
     app.include_router(k8s_api.router)
     app.include_router(resources_api.router)
+    app.include_router(reports_api.router)
     app.include_router(ws_api.router)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app
