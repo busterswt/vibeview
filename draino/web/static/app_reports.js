@@ -59,6 +59,19 @@ function exportActiveReportCsv() {
   window.location = meta.csvUrl;
 }
 
+function renderReportActionPills() {
+  const loadingClass = reportState.loading ? ' active' : '';
+  return `
+    <span class="report-action-pills">
+      <button class="report-action-pill" type="button" onclick="refreshActiveReport()" title="Refresh report">
+        <span class="report-refresh-icon${loadingClass}">↻</span>
+      </button>
+      <button class="report-action-pill" type="button" onclick="exportActiveReportCsv()">CSV</button>
+      <button class="report-action-pill primary" type="button" onclick="window.print()">PDF</button>
+    </span>
+  `;
+}
+
 function renderReportBreakdownBar(label, count, total, cls) {
   const safeTotal = Number(total) > 0 ? Number(total) : 0;
   const safeCount = Number(count) > 0 ? Number(count) : 0;
@@ -115,17 +128,13 @@ function renderMaintenanceReport(activeMeta, report, nowLabel) {
           <div class="report-title">${esc(report.title || activeMeta.label)}</div>
           <div class="report-subtitle">${esc(report.subtitle || '')}</div>
         </div>
-        <div class="report-head-actions">
-          <button class="btn" onclick="refreshActiveReport()">↻ Refresh</button>
-          <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
-          <button class="btn primary" onclick="window.print()">PDF</button>
-        </div>
       </div>
       <div class="report-meta-row">
         <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
         <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
         <span class="meta-pill">Scope: ${esc(String(report.scope?.nodes ?? items.length))} nodes</span>
         <span class="meta-pill">Mode: Live snapshot only</span>
+        ${renderReportActionPills()}
       </div>
     </section>
 
@@ -204,17 +213,13 @@ function renderCapacityReport(activeMeta, report, nowLabel) {
           <div class="report-title">${esc(report.title || activeMeta.label)}</div>
           <div class="report-subtitle">${esc(report.subtitle || '')}</div>
         </div>
-        <div class="report-head-actions">
-          <button class="btn" onclick="refreshActiveReport()">↻ Refresh</button>
-          <button class="btn" onclick="exportActiveReportCsv()">CSV</button>
-          <button class="btn primary" onclick="window.print()">PDF</button>
-        </div>
       </div>
       <div class="report-meta-row">
         <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
         <span class="meta-pill">Scope: ${esc(String(report.scope?.computes ?? items.length))} computes / ${esc(String(report.scope?.instances ?? 0))} instances / ${esc(String(report.scope?.pods ?? 0))} pods</span>
         <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
         <span class="meta-pill">No stored history</span>
+        ${renderReportActionPills()}
       </div>
     </section>
 

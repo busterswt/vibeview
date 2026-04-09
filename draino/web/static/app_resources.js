@@ -4,6 +4,21 @@
 // § NETWORKS VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
+function abbreviateRouterPortId(value) {
+  const text = String(value || '');
+  if (!text) return '—';
+  if (text.length <= 18) return text;
+  return `${text.slice(0, 8)}…${text.slice(-6)}`;
+}
+
+function compactRouterMac(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const parts = text.split(':');
+  if (parts.length !== 6) return text;
+  return parts.slice(3).join(':');
+}
+
 async function loadNetworks(force = false) {
   if (netState.loading) return;
   if (netState.data && !force) { renderNetworksView(); return; }
@@ -640,10 +655,10 @@ function renderRouterDetail() {
     if (lr.ports?.length) {
       h += `<div style="padding:0">
         <table class="data-table" style="font-size:11px">
-          <thead><tr><th>Port</th><th>MAC</th><th>Networks</th><th>Peer / Chassis</th></tr></thead>
+          <thead><tr><th>Port</th><th>MAC</th><th>Networks</th><th>Chassis</th></tr></thead>
           <tbody>${lr.ports.map(port => `<tr>
-            <td style="font-family:monospace;font-size:10px">${esc(port.id || '')}</td>
-            <td style="font-family:monospace;font-size:10px">${esc(port.mac || '') || '—'}</td>
+            <td style="font-family:monospace;font-size:10px" title="${escAttr(port.id || '')}">${esc(abbreviateRouterPortId(port.id || ''))}</td>
+            <td style="font-family:monospace;font-size:10px" title="${escAttr(port.mac || '')}">${esc(compactRouterMac(port.mac || ''))}</td>
             <td style="font-family:monospace;font-size:10px">${esc((port.networks || []).join(', ')) || '—'}</td>
             <td style="font-family:monospace;font-size:10px">${esc(port.peer || (port.gateway_hosts || []).join(', ') || '') || '—'}</td>
           </tr>`).join('')}</tbody>
