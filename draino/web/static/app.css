@@ -817,6 +817,34 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .report-finding-text { font-size: 12px; line-height: 1.5; }
 .report-kv-stack { display: grid; gap: 0; }
 .report-kv-stack .mrow { padding: 8px 0; }
+.report-chart-strip { display: grid; gap: 10px; }
+.report-bar-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 62px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.report-bar-label { color: var(--text); }
+.report-bar-value {
+  color: var(--dim);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+.report-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3eaf1;
+  overflow: hidden;
+}
+.report-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+.report-bar-fill.good { background: #4caf50; }
+.report-bar-fill.warn { background: #ffc107; }
+.report-bar-fill.bad { background: #ef5350; }
 .report-tag {
   display: inline-flex;
   align-items: center;
@@ -852,6 +880,21 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .report-dot.good { background: #4caf50; }
 .report-dot.warn { background: #ffc107; }
 .report-dot.bad { background: #ef5350; }
+.report-table {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--white);
+}
+.report-table thead th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.report-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf1f5;
+}
+.report-table tbody tr:last-child td { border-bottom: none; }
 .report-table td { vertical-align: top; }
 
 @media print {

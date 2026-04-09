@@ -43,6 +43,19 @@ function exportActiveReportCsv() {
   window.location = meta.csvUrl;
 }
 
+function renderReportBreakdownBar(label, count, total, cls) {
+  const safeTotal = Number(total) > 0 ? Number(total) : 0;
+  const safeCount = Number(count) > 0 ? Number(count) : 0;
+  const width = safeTotal ? Math.max(0, Math.min(100, (safeCount / safeTotal) * 100)) : 0;
+  return `
+    <div class="report-bar-row">
+      <div class="report-bar-label">${esc(label)}</div>
+      <div class="report-bar-track"><div class="report-bar-fill ${escAttr(cls)}" style="width:${width.toFixed(1)}%"></div></div>
+      <div class="report-bar-value">${esc(String(safeCount))} / ${esc(String(safeTotal))}</div>
+    </div>
+  `;
+}
+
 function renderReportsView() {
   const wrap = document.getElementById('reports-wrap');
   if (!wrap) return;
@@ -67,6 +80,7 @@ function renderReportsView() {
     const summary = report.summary || {};
     const findings = report.findings || [];
     const items = report.items || [];
+    const totalNodes = Number(report.scope?.nodes ?? items.length) || 0;
     content = `
       <section class="report-header-card">
         <div class="report-head-top">
@@ -125,17 +139,17 @@ function renderReportsView() {
         </div>
         <div class="card">
           <div class="card-title"><span>Readiness Breakdown</span></div>
-          <div class="card-body report-kv-stack">
-            <div class="mrow"><span class="ml">Ready nodes</span><span class="mv">${summary.ready_now ?? 0}</span></div>
-            <div class="mrow"><span class="ml">Blocked nodes</span><span class="mv">${summary.blocked ?? 0}</span></div>
-            <div class="mrow"><span class="ml">Review nodes</span><span class="mv">${summary.review ?? 0}</span></div>
-            <div class="mrow"><span class="ml">No-agent nodes</span><span class="mv">${summary.no_agent ?? 0}</span></div>
+          <div class="card-body report-chart-strip">
+            ${renderReportBreakdownBar('Ready nodes', summary.ready_now ?? 0, totalNodes, 'good')}
+            ${renderReportBreakdownBar('Blocked nodes', summary.blocked ?? 0, totalNodes, 'bad')}
+            ${renderReportBreakdownBar('Review nodes', summary.review ?? 0, totalNodes, 'warn')}
+            ${renderReportBreakdownBar('No-agent nodes', summary.no_agent ?? 0, totalNodes, 'bad')}
           </div>
         </div>
       </section>
 
       <section class="card">
-        <div class="card-title"><span>Node Maintenance Grid</span><span class="card-note">Dense, sortable-style layout</span></div>
+        <div class="card-title"><span>Node Maintenance Grid</span></div>
         <div class="card-body" style="padding:0">
           <table class="data-table report-table">
             <thead>
