@@ -946,37 +946,64 @@ body.no-hints .vmware-ref-card { display: none !important; }
   max-height: calc(100vh - 112px);
   overflow: auto;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, #f7fafc, #eef4f8);
-  padding: 16px 14px 22px;
+  background: var(--sidebar);
+  padding: 0;
+}
+.stress-nav .sidebar-head {
+  background: var(--white);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
 }
 .nav-group {
-  margin-top: 10px;
+  padding: 7px 10px 5px;
   color: var(--dim);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.5px;
+  border-top: 1px solid var(--border);
 }
-.stress-nav-items { display: grid; gap: 10px; margin-top: 12px; }
+.stress-nav-items { display: grid; gap: 0; margin-top: 0; }
 .stress-profile-item {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px 12px;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  padding: 8px 12px 8px 16px;
   cursor: pointer;
-  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  transition: background-color .15s ease, border-color .15s ease;
 }
-.stress-profile-item:hover { border-color: #98c1d1; box-shadow: 0 10px 24px rgba(12, 32, 43, 0.07); transform: translateY(-1px); }
-.stress-profile-item.active { border-color: #0f6f8f; box-shadow: 0 14px 34px rgba(15, 111, 143, 0.12); background: linear-gradient(180deg, rgba(15,111,143,0.06), rgba(15,111,143,0.02)); }
-.stress-profile-ico { font-size: 22px; line-height: 1; padding-top: 2px; }
-.stress-profile-name { font-weight: 700; color: var(--ink); }
-.stress-profile-sub { color: var(--dim); font-size: 12px; line-height: 1.45; margin-top: 3px; }
+.stress-profile-item:hover { background: rgba(13, 71, 161, 0.04); }
+.stress-profile-item.active {
+  background: var(--sel);
+  border-left-color: var(--blue);
+}
+.stress-profile-ico {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.stress-profile-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.stress-profile-sub {
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.35;
+  margin-top: 1px;
+}
 .stress-content { min-width: 0; overflow: auto; padding: 18px 20px 26px; }
 .stress-content .card { border-radius: 4px; }
 .stress-content .card-title { padding: 11px 14px; }
