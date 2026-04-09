@@ -322,3 +322,98 @@ def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch,
     assert item["aggregates"] == ["general", "ssd"]
     assert item["vcpus"] == 96
     assert item["memory_mb"] == 524288
+
+
+def test_build_project_placement_report_flags_concentrated_projects(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_project_vm_distribution",
+        lambda auth=None: [
+            {
+                "project_id": "proj-a",
+                "project_name": "tenant-a",
+                "vm_count": 8,
+                "host_count": 2,
+                "top_host": "cmp-a01",
+                "top_host_count": 6,
+                "top_host_pct": 75.0,
+                "host_counts": [{"host": "cmp-a01", "vm_count": 6}, {"host": "cmp-a02", "vm_count": 2}],
+            },
+            {
+                "project_id": "proj-b",
+                "project_name": "tenant-b",
+                "vm_count": 6,
+                "host_count": 3,
+                "top_host": "cmp-b01",
+                "top_host_count": 3,
+                "top_host_pct": 50.0,
+                "host_counts": [{"host": "cmp-b01", "vm_count": 3}, {"host": "cmp-b02", "vm_count": 2}, {"host": "cmp-b03", "vm_count": 1}],
+            },
+        ],
+    )
+
+    payload = web_server._build_project_placement_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["projects_at_risk"] == 2
+    assert payload["report"]["summary"]["high_risk_projects"] == 1
+    assert payload["report"]["items"][0]["risk"] == "high"
+    assert payload["report"]["items"][0]["top_hosts_label"] == "cmp-a01 (6), cmp-a02 (2)"
+    assert payload["report"]["findings"][0]["severity"] == "high"
+
+
+def test_project_placement_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_project_vm_distribution",
+        lambda auth=None: [
+            {
+                "project_id": "proj-a",
+                "project_name": "tenant-a",
+                "vm_count": 8,
+                "host_count": 2,
+                "top_host": "cmp-a01",
+                "top_host_count": 6,
+                "top_host_pct": 75.0,
+                "host_counts": [{"host": "cmp-a01", "vm_count": 6}, {"host": "cmp-a02", "vm_count": 2}],
+            },
+        ],
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        report = client.get("/api/reports/project-placement")
+        export = client.get("/api/reports/project-placement.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["items"][0]["project_name"] == "tenant-a"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="project-placement.csv"'
+    assert "tenant-a" in export.text

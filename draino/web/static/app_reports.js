@@ -15,6 +15,13 @@ const REPORT_META = {
     csvUrl: '/api/reports/capacity-headroom.csv',
     icon: '📊',
   },
+  'project-placement': {
+    label: 'Project Placement',
+    subtitle: 'Tenant VM distribution across compute hosts',
+    url: '/api/reports/project-placement',
+    csvUrl: '/api/reports/project-placement.csv',
+    icon: '🏢',
+  },
 };
 
 function guessReportApiIssue(message, status) {
@@ -428,6 +435,87 @@ function renderReportError(activeMeta) {
   `;
 }
 
+function renderProjectPlacementReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const items = report.items || [];
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
+        <span class="meta-pill">Scope: ${esc(String(report.scope?.projects ?? items.length))} projects / ${esc(String(report.scope?.instances ?? 0))} instances</span>
+        <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
+        <span class="meta-pill">No stored history</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Projects At Risk', String(summary.projects_at_risk ?? 0), (summary.projects_at_risk ?? 0) > 0 ? 'warn' : 'good', summaryFoot.projects_at_risk || '')}
+      ${renderCapacityHero('High-Risk Projects', String(summary.high_risk_projects ?? 0), (summary.high_risk_projects ?? 0) > 0 ? 'bad' : 'good', summaryFoot.high_risk_projects || '')}
+      ${renderCapacityHero('Single-Host Projects', String(summary.single_host_projects ?? 0), (summary.single_host_projects ?? 0) > 0 ? 'warn' : 'good', summaryFoot.single_host_projects || '')}
+      ${renderCapacityHero('Largest Project', String(summary.largest_project_vms ?? 0), 'good', summaryFoot.largest_project_vms || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Concentration Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('High risk', summary.high_risk_projects ?? 0, report.scope?.projects ?? items.length, 'bad')}
+          ${renderReportBreakdownBar('At risk', summary.projects_at_risk ?? 0, report.scope?.projects ?? items.length, 'warn')}
+          ${renderReportBreakdownBar('Single-host', summary.single_host_projects ?? 0, report.scope?.projects ?? items.length, 'warn')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Project VM Distribution</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Project ID</th>
+              <th>VMs</th>
+              <th>Hosts</th>
+              <th>Top Host</th>
+              <th>Top Share</th>
+              <th>Top Hosts</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td>${esc(item.project_name || item.project_id || '')}</td>
+                <td class="mono">${esc(item.project_id || '')}</td>
+                <td>${esc(String(item.vm_count ?? 0))}</td>
+                <td>${esc(String(item.host_count ?? 0))}</td>
+                <td class="mono">${esc(item.top_host || '—')}</td>
+                <td>${esc(item.top_host_pct != null ? `${Math.round(item.top_host_pct)}%` : '—')}</td>
+                <td>${esc(item.top_hosts_label || '—')}</td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || '')}</span></td>
+                <td>${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
 function renderReportsView() {
   const wrap = document.getElementById('reports-wrap');
   if (!wrap) return;
@@ -451,7 +539,9 @@ function renderReportsView() {
   } else if (report) {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
-      : renderMaintenanceReport(activeMeta, report, nowLabel);
+      : reportState.active === 'project-placement'
+        ? renderProjectPlacementReport(activeMeta, report, nowLabel)
+        : renderMaintenanceReport(activeMeta, report, nowLabel);
   } else {
     content = renderReportLaunchState(activeMeta);
   }

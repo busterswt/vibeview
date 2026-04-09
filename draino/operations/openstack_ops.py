@@ -78,6 +78,19 @@ def _server_host(server) -> str | None:
     )
 
 
+def _server_project_id(server) -> str:
+    data = server.to_dict() if hasattr(server, "to_dict") else {}
+    return (
+        getattr(server, "project_id", None)
+        or getattr(server, "tenant_id", None)
+        or data.get("project_id")
+        or data.get("tenant_id")
+        or data.get("os-extended-volumes:tenant_id")
+        or data.get("OS-EXT-SRV-ATTR:project_id")
+        or ""
+    )
+
+
 def _servers_on_host(conn, hypervisor: str) -> list:
     """Return all Nova servers scheduled on *hypervisor*.
 
@@ -172,6 +185,52 @@ def _resolve_flavor_data(conn, flavor_ref) -> dict:
     if resolved_key != cache_key:
         _flavor_cache_set(resolved_key, flavor_data)
     return dict(flavor_data)
+
+
+def get_project_vm_distribution(auth: OpenStackAuth | None = None) -> list[dict]:
+    """Return project-level VM placement distribution across compute hosts."""
+    conn = _conn(auth=auth)
+    project_names: dict[str, str] = {}
+    try:
+        for project in conn.identity.projects():
+            project_id = getattr(project, "id", None) or ""
+            if project_id:
+                project_names[project_id] = getattr(project, "name", None) or project_id
+    except Exception:
+        pass
+
+    projects: dict[str, dict] = {}
+    for server in conn.compute.servers(all_projects=True):
+        host = _server_host(server) or ""
+        if not host:
+            continue
+        project_id = _server_project_id(server) or "unknown"
+        entry = projects.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id,
+            "vm_count": 0,
+            "hosts": {},
+        })
+        entry["vm_count"] += 1
+        entry["hosts"][host] = entry["hosts"].get(host, 0) + 1
+
+    result: list[dict] = []
+    for entry in projects.values():
+        host_counts = sorted(entry["hosts"].items(), key=lambda item: (-item[1], item[0]))
+        top_host, top_count = host_counts[0] if host_counts else ("", 0)
+        vm_count = entry["vm_count"]
+        result.append({
+            "project_id": entry["project_id"],
+            "project_name": entry["project_name"],
+            "vm_count": vm_count,
+            "host_count": len(host_counts),
+            "top_host": top_host,
+            "top_host_count": top_count,
+            "top_host_pct": (top_count / vm_count * 100.0) if vm_count else 0.0,
+            "host_counts": [{"host": host, "vm_count": count} for host, count in host_counts],
+        })
+    result.sort(key=lambda item: (-item["vm_count"], item["project_name"]))
+    return result
 
 
 # ── Node summary (for the node-list panel) ────────────────────────────────────

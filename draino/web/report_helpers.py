@@ -526,3 +526,130 @@ def render_capacity_headroom_csv(report: dict) -> str:
             item.get("maintenance_detail", ""),
         ])
     return output.getvalue()
+
+
+def _project_vm_distribution_risk(item: dict) -> tuple[str, str]:
+    vm_count = int(item.get("vm_count") or 0)
+    host_count = int(item.get("host_count") or 0)
+    top_host_pct = float(item.get("top_host_pct") or 0.0)
+    top_host_count = int(item.get("top_host_count") or 0)
+    if vm_count >= 5 and (host_count <= 1 or top_host_pct >= 70):
+        return ("high", f"{top_host_count} of {vm_count} VMs are concentrated on {item.get('top_host') or 'one host'}")
+    if vm_count >= 5 and (host_count <= 2 or top_host_pct >= 50):
+        return ("medium", f"{top_host_count} of {vm_count} VMs are weighted to {item.get('top_host') or 'a small host set'}")
+    return ("low", "VM distribution is not heavily concentrated")
+
+
+def build_project_placement_report(server: DrainoServer) -> dict:
+    """Build a live per-project VM placement concentration report."""
+    started = time.perf_counter()
+    distribution_started = time.perf_counter()
+    projects = openstack_ops.get_project_vm_distribution(auth=server.openstack_auth)
+    distribution_ms = (time.perf_counter() - distribution_started) * 1000.0
+
+    items: list[dict] = []
+    findings: list[dict] = []
+    high_risk = 0
+    medium_risk = 0
+    single_host_projects = 0
+    total_vms = 0
+
+    for item in projects:
+        risk, reason = _project_vm_distribution_risk(item)
+        total_vms += int(item.get("vm_count") or 0)
+        if item.get("host_count") == 1 and item.get("vm_count", 0) >= 3:
+            single_host_projects += 1
+        if risk == "high":
+            high_risk += 1
+            findings.append({
+                "severity": "high",
+                "node": item.get("project_name") or item.get("project_id") or "",
+                "message": reason,
+            })
+        elif risk == "medium":
+            medium_risk += 1
+            findings.append({
+                "severity": "medium",
+                "node": item.get("project_name") or item.get("project_id") or "",
+                "message": reason,
+            })
+        items.append({
+            **item,
+            "risk": risk,
+            "reason": reason,
+            "top_hosts_label": ", ".join(
+                f"{host['host']} ({host['vm_count']})" for host in item.get("host_counts", [])[:3]
+            ) or "—",
+        })
+
+    findings = sorted(findings, key=lambda item: (0 if item["severity"] == "high" else 1, item["node"]))[:6]
+    largest_project = items[0] if items else None
+    total_ms = (time.perf_counter() - started) * 1000.0
+
+    return {
+        "report": {
+            "key": "project-placement",
+            "title": "Project Placement Report",
+            "subtitle": "Live tenant-level VM concentration view across compute hosts.",
+            "source": "OpenStack Nova",
+            "scope": {
+                "projects": len(items),
+                "instances": total_vms,
+            },
+            "summary": {
+                "projects_at_risk": high_risk + medium_risk,
+                "high_risk_projects": high_risk,
+                "single_host_projects": single_host_projects,
+                "largest_project_vms": largest_project["vm_count"] if largest_project else 0,
+            },
+            "summary_foot": {
+                "projects_at_risk": "Projects whose VMs are overly concentrated on a small host set",
+                "high_risk_projects": "Projects with severe single-host or top-host concentration",
+                "single_host_projects": "Projects running on only one compute host",
+                "largest_project_vms": f"Largest project: {largest_project['project_name']}" if largest_project else "No project data available",
+            },
+            "findings": findings,
+            "items": items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "openstack_project_distribution": round(distribution_ms, 1),
+                },
+                "counts": {
+                    "projects": len(items),
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def render_project_placement_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "project_name",
+        "project_id",
+        "vm_count",
+        "host_count",
+        "top_host",
+        "top_host_count",
+        "top_host_pct",
+        "risk",
+        "reason",
+        "top_hosts",
+    ])
+    for item in report.get("items", []):
+        writer.writerow([
+            item.get("project_name", ""),
+            item.get("project_id", ""),
+            item.get("vm_count", ""),
+            item.get("host_count", ""),
+            item.get("top_host", ""),
+            item.get("top_host_count", ""),
+            round(float(item.get("top_host_pct") or 0.0), 1),
+            item.get("risk", ""),
+            item.get("reason", ""),
+            item.get("top_hosts_label", ""),
+        ])
+    return output.getvalue()
