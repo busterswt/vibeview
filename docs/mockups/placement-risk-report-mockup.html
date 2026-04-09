@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Placement Risk Report</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-lt: #1e88e5;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --sidebar: #f4f6f8;
+  --border: #d1d9e0;
+  --sel: #bbdefb;
+  --hover: #e8f4fd;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --purple: #6a1b9a;
+  --purple-bg: #f3e5f5;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-weight: 700;
+}
+
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.logo-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: #90a4ae;
+}
+
+.top-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 24px;
+}
+
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.top-nav a.active { color: white; }
+
+.top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  cursor: default;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: var(--blue);
+  color: white;
+  border-color: var(--blue);
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.bc-link { color: var(--blue); }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+#sidebar {
+  width: 280px;
+  min-width: 240px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-head {
+  background: var(--white);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.report-group {
+  padding: 7px 10px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: 1px solid var(--border);
+}
+
+.report-item {
+  padding: 8px 12px 8px 16px;
+  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.report-item.active {
+  background: var(--sel);
+  border-left-color: var(--blue);
+}
+
+.report-item .ico {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.report-item .name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.report-item .sub {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 1px;
+}
+
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px 24px;
+}
+
+.report-shell {
+  max-width: 1220px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.report-header {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.report-header-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.report-title {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.report-sub {
+  margin-top: 4px;
+  color: var(--dim);
+  line-height: 1.5;
+  max-width: 760px;
+}
+
+.report-meta {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero-card, .card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.hero-card {
+  padding: 14px 14px 12px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--dim);
+}
+
+.hero-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 8px;
+}
+
+.hero-value.high { color: var(--red); }
+.hero-value.medium { color: var(--yellow); }
+.hero-value.low { color: var(--green); }
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 14px;
+}
+
+.card-head {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.card-body {
+  padding: 12px 14px;
+}
+
+.finding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.finding-row:last-child { border-bottom: none; }
+
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.sev.high { background: var(--red-bg); color: var(--red); }
+.sev.medium { background: var(--yellow-bg); color: var(--yellow); }
+.sev.low { background: var(--green-bg); color: var(--green); }
+
+.finding-text { font-size: 12px; line-height: 1.5; }
+
+.chart-strip {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) 70px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3eaf1;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.bar-fill.high { background: #ef5350; }
+.bar-fill.medium { background: #ffc107; }
+.bar-fill.low { background: #4caf50; }
+
+.bar-value {
+  color: var(--dim);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table-wrap {
+  padding: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--white);
+}
+
+thead th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+  background: #fbfdff;
+}
+
+tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  margin-right: 5px;
+}
+
+.tag.red { background: var(--red-bg); color: var(--red); }
+.tag.purple { background: var(--purple-bg); color: var(--purple); }
+.tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+.tag.green { background: var(--green-bg); color: var(--green); }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.good { color: var(--green); }
+.warn { color: var(--yellow); }
+.bad { color: var(--red); }
+.na { color: var(--dim); }
+
+.dot.good { background: #4caf50; }
+.dot.warn { background: #ffc107; }
+.dot.bad { background: #ef5350; }
+
+.note {
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media print {
+  #top-bar, #breadcrumb-bar, #sidebar { display: none !important; }
+  #content { padding: 0; overflow: visible; }
+  .report-shell { max-width: none; }
+  .hero-card, .card { break-inside: avoid; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div class="logo-icon">V</div>
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Vibing Cloud Infrastructure Since 2026</div>
+      </div>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Kubernetes</a>
+      <a href="#">Networks</a>
+      <a href="#">Routers</a>
+      <a href="#">Storage</a>
+      <a href="#" class="active">Reports</a>
+    </div>
+    <div class="top-right">
+      <span class="mock-pill">MOCKUP</span>
+      <button class="btn">CSV</button>
+      <button class="btn primary">PDF</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Reports</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Placement Risk</span>
+    <div class="bc-actions">
+      <button class="btn">Refresh</button>
+      <button class="btn">Run Report</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <aside id="sidebar">
+      <div class="sidebar-head">Report Navigator</div>
+      <div class="report-group">Operations</div>
+      <div class="report-item">
+        <div class="ico">🛠️</div>
+        <div class="meta">
+          <div class="name">Maintenance Readiness</div>
+          <div class="sub">Drain and reboot posture</div>
+        </div>
+      </div>
+      <div class="report-item">
+        <div class="ico">📊</div>
+        <div class="meta">
+          <div class="name">Capacity &amp; Headroom</div>
+          <div class="sub">Nova and Kubernetes saturation</div>
+        </div>
+      </div>
+      <div class="report-item active">
+        <div class="ico">⚠️</div>
+        <div class="meta">
+          <div class="name">Placement Risk</div>
+          <div class="sub">Concentration and blast radius</div>
+        </div>
+      </div>
+    </aside>
+
+    <main id="content">
+      <div class="report-shell">
+        <section class="report-header">
+          <div class="report-header-top">
+            <div>
+              <div class="report-title">Placement Risk Report</div>
+              <div class="report-sub">Live concentration and maintenance blast-radius view for clustered control-plane roles, OVN edge duties, and high-density compute hosts.</div>
+            </div>
+          </div>
+          <div class="report-meta">
+            <span class="meta-pill">Generated: 04/08/2026 14:17:58</span>
+            <span class="meta-pill">Scope: 48 nodes / 31 computes</span>
+            <span class="meta-pill">Source: Kubernetes + OpenStack + OVN</span>
+            <span class="meta-pill">No stored history</span>
+          </div>
+        </section>
+
+        <section class="hero-grid">
+          <div class="hero-card">
+            <div class="hero-label">etcd Risk</div>
+            <div class="hero-value high">High</div>
+            <div class="hero-foot">Quorum-sensitive placement needs operator sequencing before any staggered maintenance.</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-label">MariaDB Spread</div>
+            <div class="hero-value medium">3 Hosts</div>
+            <div class="hero-foot">Cluster members are live on three compute nodes. Staggered reboots are mandatory.</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-label">Gateway Concentration</div>
+            <div class="hero-value medium">3 Edge</div>
+            <div class="hero-foot">OVN gateway duties are spread across three nodes, but one host carries a heavy amphora load.</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-label">High-Density Hosts</div>
+            <div class="hero-value high">4</div>
+            <div class="hero-foot">Four computes exceed VM, pod, or amphora thresholds and should be handled conservatively.</div>
+          </div>
+        </section>
+
+        <section class="two-col">
+          <div class="card">
+            <div class="card-head">Highest-Risk Findings</div>
+            <div class="card-body finding-list">
+              <div class="finding-row">
+                <div><span class="sev high">High</span></div>
+                <div class="finding-text"><span class="mono">cmp-a01</span> etcd requires staggered reboots and should never be grouped with another control-plane member.</div>
+              </div>
+              <div class="finding-row">
+                <div><span class="sev high">High</span></div>
+                <div class="finding-text"><span class="mono">cmp-c03</span> mariadb requires staggered reboots and already carries elevated tenant density.</div>
+              </div>
+              <div class="finding-row">
+                <div><span class="sev medium">Medium</span></div>
+                <div class="finding-text">Three edge hosts carry eleven amphorae total, with one chassis acting as the dominant gateway target.</div>
+              </div>
+              <div class="finding-row">
+                <div><span class="sev medium">Medium</span></div>
+                <div class="finding-text"><span class="mono">cmp-x05</span> carries 42 VMs and 57 pods; avoid pairing it with another dense compute in the same maintenance window.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Risk Breakdown</div>
+            <div class="card-body chart-strip">
+              <div class="bar-row">
+                <div>Critical role hosts</div>
+                <div class="bar-track"><div class="bar-fill high" style="width: 22%"></div></div>
+                <div class="bar-value">5 / 23</div>
+              </div>
+              <div class="bar-row">
+                <div>Edge / gateway hosts</div>
+                <div class="bar-track"><div class="bar-fill medium" style="width: 13%"></div></div>
+                <div class="bar-value">3 / 23</div>
+              </div>
+              <div class="bar-row">
+                <div>High-density hosts</div>
+                <div class="bar-track"><div class="bar-fill high" style="width: 17%"></div></div>
+                <div class="bar-value">4 / 23</div>
+              </div>
+              <div class="bar-row">
+                <div>Drain-safe criticals</div>
+                <div class="bar-track"><div class="bar-fill low" style="width: 9%"></div></div>
+                <div class="bar-value">2 / 23</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Control Plane Placement</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Role</th>
+                  <th>AZ</th>
+                  <th>Aggregate</th>
+                  <th>K8s</th>
+                  <th>Nova</th>
+                  <th>Maintenance</th>
+                  <th>Risk</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">cmp-a01</td>
+                  <td><span class="tag red">etcd</span></td>
+                  <td>az-a</td>
+                  <td>general</td>
+                  <td><span class="status warn"><span class="dot warn"></span>ready</span></td>
+                  <td><span class="status warn"><span class="dot warn"></span>up</span></td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>etcd requires staggered reboots; node is not yet in maintenance posture</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-a02</td>
+                  <td><span class="tag red">etcd</span></td>
+                  <td>az-a</td>
+                  <td>general</td>
+                  <td><span class="status good"><span class="dot good"></span>cordoned</span></td>
+                  <td><span class="status good"><span class="dot good"></span>disabled</span></td>
+                  <td><span class="tag green">ready</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>critical role remains quorum-sensitive even while already staged for maintenance</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-c03</td>
+                  <td><span class="tag purple">mariadb</span></td>
+                  <td>az-c</td>
+                  <td>general, ssd</td>
+                  <td><span class="status warn"><span class="dot warn"></span>ready</span></td>
+                  <td><span class="status warn"><span class="dot warn"></span>up</span></td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>mariadb requires staggered reboots; node also carries elevated tenant density</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Gateway / Edge Placement</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>AZ</th>
+                  <th>Aggregate</th>
+                  <th>Amphorae</th>
+                  <th>VMs</th>
+                  <th>Maintenance</th>
+                  <th>Risk</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">cmp-gw01</td>
+                  <td>az-b</td>
+                  <td>edge</td>
+                  <td>5</td>
+                  <td>18</td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>hosts OVN edge responsibilities and carries the highest amphora concentration</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-gw02</td>
+                  <td>az-c</td>
+                  <td>edge</td>
+                  <td>4</td>
+                  <td>11</td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag yellow">medium</span></td>
+                  <td>gateway host is healthy, but not yet in maintenance posture</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-gw03</td>
+                  <td>az-d</td>
+                  <td>edge</td>
+                  <td>2</td>
+                  <td>9</td>
+                  <td><span class="tag green">drain-safe</span></td>
+                  <td><span class="tag yellow">medium</span></td>
+                  <td>edge host is staged correctly, but still participates in gateway spread</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">High-Density Compute Hosts</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>AZ</th>
+                  <th>VMs</th>
+                  <th>Pods</th>
+                  <th>Amphorae</th>
+                  <th>Maintenance</th>
+                  <th>Risk</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">cmp-x05</td>
+                  <td>az-c</td>
+                  <td>42</td>
+                  <td>57</td>
+                  <td>1</td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>high VM density and pod density on the same compute host</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-c03</td>
+                  <td>az-c</td>
+                  <td>35</td>
+                  <td>33</td>
+                  <td>0</td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>mariadb host also exceeds VM density threshold</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-a09</td>
+                  <td>az-a</td>
+                  <td>31</td>
+                  <td>21</td>
+                  <td>0</td>
+                  <td><span class="tag green">drain-safe</span></td>
+                  <td><span class="tag yellow">medium</span></td>
+                  <td>high VM density but already staged for maintenance</td>
+                </tr>
+                <tr>
+                  <td class="mono">cmp-gw01</td>
+                  <td>az-b</td>
+                  <td>18</td>
+                  <td>16</td>
+                  <td>5</td>
+                  <td><span class="tag yellow">review</span></td>
+                  <td><span class="tag red">high</span></td>
+                  <td>amphora concentration makes this edge host a maintenance hotspot</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Notes</div>
+          <div class="card-body note">
+            This mockup assumes the first release stays stateless and live-only. It synthesizes risk from current node roles,
+            maintenance posture, VM counts, pod counts, amphora density, and OVN edge membership. No historical data,
+            trend scoring, or tenant affinity analysis is included in the first pass.
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
