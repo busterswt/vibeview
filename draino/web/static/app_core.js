@@ -19,6 +19,7 @@ let appMetaTimer = null;
 let appRuntimeTimer = null;
 let nodeMonitorTimer = null;
 let nodeNetStatsTimer = null;
+let stressStatusTimer = null;
 let wsStatusMode = 'offline';
 let sessionExpired = false;
 let logoutInProgress = false;

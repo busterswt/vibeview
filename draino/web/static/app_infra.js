@@ -5,6 +5,9 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 function switchView(name) {
+  if (activeView === 'stress' && name !== 'stress' && typeof stopStressStatusPolling === 'function') {
+    stopStressStatusPolling();
+  }
   activeView = name;
 
   // Top nav highlight
@@ -71,6 +74,7 @@ function switchView(name) {
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'stress') {
       renderStressView();
+      if (typeof startStressStatusPolling === 'function') startStressStatusPolling();
     }
     if (name === 'reports') renderReportsView();
     // Restore network detail panel visibility when returning

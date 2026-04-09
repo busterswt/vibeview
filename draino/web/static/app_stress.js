@@ -6,10 +6,19 @@ const STRESS_PROFILE_META = {
   'small-distribution': { icon: '🧪' },
 };
 const STRESS_PROFILE_STORAGE_KEY = 'vibeviewStressProfile';
+const STRESS_FALLBACK_PROFILES = [
+  { key: 'full-host-spread', label: 'Full Host Spread', description: 'Best-effort one VM per compute host for scheduler and placement validation.', icon: '🧭', default_vm_count: 1 },
+  { key: 'burst', label: 'Burst', description: 'High-count VM launch test against shared network plumbing.', icon: '⚡', default_vm_count: 20 },
+  { key: 'small-distribution', label: 'Small Distribution', description: 'Quick scheduler sanity test with a small spread set.', icon: '🧪', default_vm_count: 5 },
+];
+
+function stressProfiles() {
+  return stressState.catalog?.profiles || stressState.options?.profiles || STRESS_FALLBACK_PROFILES;
+}
 
 function stressProfileByKey(key) {
   if (stressState.options?.selected_profile?.key === key) return stressState.options.selected_profile;
-  return (stressState.catalog?.profiles || []).find(profile => profile.key === key) || null;
+  return stressProfiles().find(profile => profile.key === key) || null;
 }
 
 function stressImageById(imageId) {
@@ -56,6 +65,40 @@ function syncStressDefaults(options) {
   }
 }
 
+function stressNeedsPolling() {
+  return activeView === 'stress' && (
+    stressState.actionLoading ||
+    stressState.actionKind === 'launch' ||
+    stressState.actionKind === 'delete' ||
+    Boolean(stressState.catalog?.guardrail?.active) ||
+    Boolean(stressState.status?.active)
+  );
+}
+
+async function pollStressStatusTick() {
+  if (activeView !== 'stress') return;
+  await loadStressCatalog(true);
+  if (stressState.catalog?.guardrail?.active || stressState.status?.active || stressState.actionLoading) {
+    await loadStressStatus(true);
+  } else if (stressState.status?.active) {
+    stressState.status = null;
+    renderStressView();
+  }
+  if (!stressNeedsPolling()) stopStressStatusPolling();
+}
+
+function startStressStatusPolling() {
+  if (!stressNeedsPolling()) return;
+  if (stressStatusTimer) return;
+  stressStatusTimer = setInterval(pollStressStatusTick, 5000);
+}
+
+function stopStressStatusPolling() {
+  if (!stressStatusTimer) return;
+  clearInterval(stressStatusTimer);
+  stressStatusTimer = null;
+}
+
 async function loadStressCatalog(force = false) {
   if (stressState.catalogLoading) return;
   if (stressState.catalog && !force) {
@@ -88,6 +131,7 @@ async function loadStressCatalog(force = false) {
     stressState.catalogError = String(e);
   } finally {
     stressState.catalogLoading = false;
+    if (stressNeedsPolling()) startStressStatusPolling();
     renderStressView();
   }
 }
@@ -145,6 +189,7 @@ async function loadStressStatus(force = false) {
     stressState.actionError = String(e);
   } finally {
     stressState.statusLoading = false;
+    if (stressNeedsPolling()) startStressStatusPolling();
     renderStressView();
   }
 }
@@ -158,7 +203,6 @@ async function refreshStressView() {
 }
 
 function setStressProfile(profileKey) {
-  if (!stressState.catalog && !stressState.options) return;
   stressState.profileKey = profileKey;
   localStorage.setItem(STRESS_PROFILE_STORAGE_KEY, profileKey);
   const profile = stressProfileByKey(profileKey);
@@ -244,13 +288,15 @@ async function launchStressTest() {
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
     stressState.status = json.status;
-    await loadStressOptions(true);
+    await loadStressCatalog(true);
     await loadStressStatus(true);
+    startStressStatusPolling();
   } catch (e) {
     stressState.actionError = String(e);
   } finally {
     stressState.actionLoading = false;
     stressState.actionKind = '';
+    if (stressNeedsPolling()) startStressStatusPolling();
     renderStressView();
   }
 }
@@ -268,22 +314,21 @@ async function deleteStressTest() {
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
     stressState.status = null;
-    await loadStressOptions(true);
+    await loadStressCatalog(true);
+    startStressStatusPolling();
   } catch (e) {
     stressState.actionError = String(e);
   } finally {
     stressState.actionLoading = false;
     stressState.actionKind = '';
+    if (stressNeedsPolling()) startStressStatusPolling();
+    else stopStressStatusPolling();
     renderStressView();
   }
 }
 
 function renderStressProfileNav() {
-  const sourceProfiles = stressState.catalog?.profiles || stressState.options?.profiles || [
-    { key: 'full-host-spread', label: 'Full Host Spread', description: 'Best-effort one VM per compute host for scheduler and placement validation.', icon: '🧭' },
-    { key: 'burst', label: 'Burst', description: 'High-count VM launch test against shared network plumbing.', icon: '⚡' },
-    { key: 'small-distribution', label: 'Small Distribution', description: 'Quick scheduler sanity test with a small spread set.', icon: '🧪' },
-  ];
+  const sourceProfiles = stressProfiles();
   const currentKey = stressState.profileKey || sourceProfiles[0]?.key || '';
   return sourceProfiles.map(profile => {
     const selected = profile.key === currentKey ? ' active' : '';
