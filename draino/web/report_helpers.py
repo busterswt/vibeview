@@ -281,8 +281,10 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
         (state for state in server.node_states.values() if state.is_compute),
         key=lambda item: item.k8s_name,
     )
+    host_summaries = openstack_ops.get_all_host_summaries(auth=server.openstack_auth)
 
     for state in compute_states:
+        summary = host_summaries.get(state.hypervisor, {})
         hv_detail = openstack_ops.get_hypervisor_detail(state.hypervisor, auth=server.openstack_auth)
         k8s_detail = k8s_ops.get_node_k8s_detail(state.k8s_name, auth=server.k8s_auth)
 
@@ -307,7 +309,8 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
         total_instances += state.vm_count or 0
         total_running_pods += pod_count
 
-        az = state.availability_zone or "unknown"
+        az = state.availability_zone or summary.get("availability_zone") or "unknown"
+        aggregates = state.aggregates or summary.get("aggregates") or []
         az_entry = az_map.setdefault(az, {"vcpus": 0, "vcpus_used": 0, "hosts": 0})
         az_entry["hosts"] += 1
         if vcpus is not None:
@@ -319,7 +322,7 @@ def build_capacity_headroom_report(server: DrainoServer) -> dict:
         items.append({
             "host": state.k8s_name,
             "availability_zone": az,
-            "aggregates": state.aggregates or [],
+            "aggregates": aggregates,
             "vm_count": state.vm_count or 0,
             "amphora_count": state.amphora_count or 0,
             "vcpus": vcpus,

@@ -164,6 +164,14 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
 
     monkeypatch.setattr(
         web_server.openstack_ops,
+        "get_all_host_summaries",
+        lambda auth=None, log_cb=None: {
+            "hv-a01": {"availability_zone": "az-a", "aggregates": ["general", "ssd"]},
+            "hv-c03": {"availability_zone": "az-c", "aggregates": ["general"]},
+        },
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
         "get_hypervisor_detail",
         lambda hypervisor, auth=None: {
             "hv-a01": {"vcpus": 96, "vcpus_used": 72, "memory_mb": 524288, "memory_mb_used": 430080},
@@ -186,6 +194,7 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
     assert payload["report"]["scope"]["instances"] == 36
     assert payload["report"]["summary"]["drain_safe_hosts"] == 1
     assert payload["report"]["items"][0]["host"] == "cmp-a01"
+    assert payload["report"]["items"][0]["availability_zone"] == "az-a"
     assert payload["report"]["items"][0]["maintenance_status"] == "drain-safe"
     assert payload["report"]["items"][1]["maintenance_status"] == "blocked"
     assert payload["report"]["az_headroom"][1]["availability_zone"] == "az-c"
@@ -202,6 +211,13 @@ def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
 
     monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
     monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_all_host_summaries",
+        lambda auth=None, log_cb=None: {
+            "hv-a01": {"availability_zone": "az-a", "aggregates": ["general"]},
+        },
+    )
     monkeypatch.setattr(
         web_server.openstack_ops,
         "get_hypervisor_detail",

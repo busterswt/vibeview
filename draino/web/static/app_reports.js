@@ -29,6 +29,15 @@ async function loadActiveReport(force = false) {
   renderReportsView();
   try {
     const resp = await fetch(REPORT_META[key].url);
+    const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+    if (!resp.ok) {
+      const bodyText = (await resp.text()).trim();
+      throw new Error(bodyText || `Report request failed (${resp.status})`);
+    }
+    if (!contentType.includes('application/json')) {
+      const bodyText = (await resp.text()).trim();
+      throw new Error(bodyText || 'Report request returned a non-JSON response');
+    }
     const json = await resp.json();
     if (json.error) throw new Error(json.error);
     reportState.reports[key] = json.report;
@@ -142,7 +151,7 @@ function renderMaintenanceReport(activeMeta, report, nowLabel) {
 
     <section class="card">
       <div class="card-title"><span>Node Maintenance Grid</span></div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body report-table-wrap">
         <table class="data-table report-table">
           <thead>
             <tr>
@@ -233,7 +242,7 @@ function renderCapacityReport(activeMeta, report, nowLabel) {
 
     <section class="card">
       <div class="card-title"><span>Per-Host Headroom Grid</span></div>
-      <div class="card-body" style="padding:0">
+      <div class="card-body report-table-wrap">
         <table class="data-table report-table">
           <thead>
             <tr>

@@ -880,11 +880,13 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .report-dot.good { background: #4caf50; }
 .report-dot.warn { background: #ffc107; }
 .report-dot.bad { background: #ef5350; }
+.report-table-wrap { padding: 12px; }
 .report-table {
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
   background: var(--white);
+  margin-bottom: 0;
 }
 .report-table thead th {
   padding: 8px 10px;
