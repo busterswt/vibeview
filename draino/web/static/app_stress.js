@@ -5,6 +5,7 @@ const STRESS_PROFILE_META = {
   'burst': { icon: '⚡' },
   'small-distribution': { icon: '🧪' },
 };
+const STRESS_PROFILE_STORAGE_KEY = 'vibeviewStressProfile';
 
 function stressProfileByKey(key) {
   return (stressState.options?.profiles || []).find(profile => profile.key === key) || null;
@@ -54,6 +55,42 @@ function syncStressDefaults(options) {
   }
 }
 
+async function loadStressCatalog(force = false) {
+  if (stressState.catalogLoading) return;
+  if (stressState.catalog && !force) {
+    renderStressView();
+    return;
+  }
+  stressState.catalogLoading = true;
+  stressState.catalogError = null;
+  renderStressView();
+  try {
+    const resp = await fetch('/api/stress/catalog');
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Nova');
+    if (json.error) throw new Error(json.error);
+    stressState.catalog = json.catalog;
+    if (!stressState.profileKey) {
+      const savedProfile = localStorage.getItem(STRESS_PROFILE_STORAGE_KEY) || '';
+      if (savedProfile && (json.catalog?.profiles || []).some(profile => profile.key === savedProfile)) {
+        stressState.profileKey = savedProfile;
+      }
+    }
+    if (!stressState.profileKey) {
+      stressState.profileKey = json.catalog?.profiles?.[0]?.key || '';
+    }
+    if (stressState.catalog?.guardrail?.active) {
+      await loadStressStatus(true);
+    }
+  } catch (e) {
+    stressState.catalogError = String(e);
+  } finally {
+    stressState.catalogLoading = false;
+    renderStressView();
+  }
+}
+
 async function loadStressOptions(force = false) {
   if (stressState.loading) return;
   if (stressState.options && !force) {
@@ -71,6 +108,11 @@ async function loadStressOptions(force = false) {
     else recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
     stressState.options = json.options;
+    stressState.catalog = {
+      profiles: json.options?.profiles || [],
+      guardrail: json.options?.guardrail || null,
+      limits: json.options?.limits || null,
+    };
     syncStressDefaults(json.options || {});
     if (json.options?.guardrail?.active) await loadStressStatus(true);
   } catch (e) {
@@ -106,15 +148,17 @@ async function loadStressStatus(force = false) {
 }
 
 async function refreshStressView() {
-  await loadStressOptions(true);
-  if (stressState.options?.guardrail?.active || stressState.status?.active) {
+  await loadStressCatalog(true);
+  if (stressState.options) await loadStressOptions(true);
+  if (stressState.catalog?.guardrail?.active || stressState.status?.active) {
     await loadStressStatus(true);
   }
 }
 
 function setStressProfile(profileKey) {
-  if (!stressState.options) return;
+  if (!stressState.catalog && !stressState.options) return;
   stressState.profileKey = profileKey;
+  localStorage.setItem(STRESS_PROFILE_STORAGE_KEY, profileKey);
   const profile = stressProfileByKey(profileKey);
   if (profile) stressState.vmCount = profile.default_vm_count || 1;
   renderStressView();
@@ -172,6 +216,7 @@ function setStressExternalNetwork(value) {
 async function launchStressTest() {
   if (stressState.actionLoading) return;
   stressState.actionLoading = true;
+  stressState.actionKind = 'launch';
   stressState.actionError = null;
   renderStressView();
   try {
@@ -201,6 +246,7 @@ async function launchStressTest() {
     stressState.actionError = String(e);
   } finally {
     stressState.actionLoading = false;
+    stressState.actionKind = '';
     renderStressView();
   }
 }
@@ -208,6 +254,7 @@ async function launchStressTest() {
 async function deleteStressTest() {
   if (stressState.actionLoading) return;
   stressState.actionLoading = true;
+  stressState.actionKind = 'delete';
   stressState.actionError = null;
   renderStressView();
   try {
@@ -222,12 +269,26 @@ async function deleteStressTest() {
     stressState.actionError = String(e);
   } finally {
     stressState.actionLoading = false;
+    stressState.actionKind = '';
     renderStressView();
   }
 }
 
+function renderStressActionBanner() {
+  if (!stressState.actionLoading) return '';
+  const actionLabel = stressState.actionKind === 'delete'
+    ? 'Deleting Heat stack and refreshing guardrails...'
+    : 'Launching Heat stack and gathering live status...';
+  return `
+    <section class="stress-action-banner" aria-live="polite">
+      <span class="stress-action-spinner">↻</span>
+      <span>${esc(actionLabel)}</span>
+    </section>
+  `;
+}
+
 function renderStressProfileNav() {
-  const profiles = stressState.options?.profiles || [];
+  const profiles = stressState.catalog?.profiles || stressState.options?.profiles || [];
   return profiles.map(profile => {
     const selected = profile.key === stressState.profileKey ? ' active' : '';
     const icon = profile.icon || STRESS_PROFILE_META[profile.key]?.icon || '🧪';
@@ -244,7 +305,7 @@ function renderStressProfileNav() {
 }
 
 function renderStressGuardrail() {
-  const guardrail = stressState.options?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
+  const guardrail = stressState.catalog?.guardrail || stressState.options?.guardrail || { active: false, stack: null, message: 'No active stress stack detected.' };
   const stack = guardrail.stack;
   return `
     <div class="card">
@@ -259,6 +320,12 @@ function renderStressGuardrail() {
             <div class="guard-row"><span>Updated</span><span>${esc(stack.updated_at || '—')}</span></div>
           ` : ''}
           <div class="guard-row"><span>Message</span><span>${esc(guardrail.message || '')}</span></div>
+          ${guardrail.active ? `
+            <div class="stress-guard-actions">
+              <button class="btn danger" type="button" onclick="deleteStressTest()" ${stressState.actionLoading ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'delete' ? 'Deleting…' : 'Delete Existing Test'}</button>
+              <button class="btn" type="button" onclick="loadStressStatus(true)" ${stressState.statusLoading ? 'disabled' : ''}>${stressState.statusLoading ? 'Refreshing…' : 'Load Stack Details'}</button>
+            </div>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -336,7 +403,7 @@ function renderStressLaunchCard() {
           </div>
         </div>
         <div class="stress-launch-actions">
-          <button class="btn primary" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading ? 'Launching…' : 'Launch Test Stack'}</button>
+          <button class="btn primary" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'launch' ? 'Launching…' : 'Launch Test Stack'}</button>
           <button class="btn" type="button" onclick="refreshStressView()" ${stressState.actionLoading ? 'disabled' : ''}>Refresh Status</button>
         </div>
         ${stressState.actionError ? `<div class="stress-action-error">${esc(stressState.actionError)}</div>` : ''}
@@ -358,6 +425,40 @@ function renderStressEmptyState() {
           <div class="report-launch-actions">
             <button class="report-launch-btn" type="button" onclick="loadStressOptions(true)">Load Stress Options</button>
           </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderStressTemplateLaunchState() {
+  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || null;
+  const guardrail = stressState.catalog?.guardrail || { active: false };
+  return `
+    <section class="report-launch-card">
+      <div class="report-launch-shell">
+        <div class="report-launch-icon">${esc(profile?.icon || '🧪')}</div>
+        <div class="report-launch-copy">
+          <div class="report-launch-kicker">Stress Template</div>
+          <div class="report-launch-title">${esc(profile?.label || 'Heat Stress Test Console')}</div>
+          <div class="report-launch-subtitle">${esc(profile?.description || 'Disposable Heat-driven infrastructure tests for scheduler, networking, and control-plane timing.')}</div>
+          <div class="report-launch-text">
+            Template selection is lightweight. Full launch parameters are loaded only when you explicitly open this template,
+            since image, flavor, keypair, and network discovery can be expensive.
+          </div>
+          <div class="report-launch-pills">
+            <span class="meta-pill">Manual details load</span>
+            <span class="meta-pill">No stored data</span>
+            <span class="meta-pill">${guardrail.active ? 'Guardrail active' : 'Ready to configure'}</span>
+          </div>
+          <div class="report-launch-actions">
+            <button class="report-launch-btn" type="button" onclick="loadStressOptions(true)">Load ${esc(profile?.label || 'Template')}</button>
+          </div>
+          ${guardrail.active ? `
+            <div class="stress-template-note">
+              An active Heat stack already exists. Stack details and delete controls can be loaded from the live environment without re-running discovery.
+            </div>
+          ` : ''}
         </div>
       </div>
     </section>
@@ -394,7 +495,7 @@ function renderStressSummarySection(status) {
         <div class="card-body note">
           This stack is live and tracked directly from Heat and Nova. Delete it before launching a new test run.
           <div class="stress-stack-actions">
-            <button class="btn danger" type="button" onclick="deleteStressTest()" ${stressState.actionLoading ? 'disabled' : ''}>Delete Existing Test</button>
+            <button class="btn danger" type="button" onclick="deleteStressTest()" ${stressState.actionLoading ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'delete' ? 'Deleting…' : 'Delete Existing Test'}</button>
             <button class="btn" type="button" onclick="loadStressStatus(true)" ${stressState.statusLoading ? 'disabled' : ''}>${stressState.statusLoading ? 'Refreshing…' : 'Refresh Status'}</button>
           </div>
         </div>
@@ -502,25 +603,25 @@ function renderStressDistributionTable(distribution) {
 function renderStressView() {
   const wrap = document.getElementById('stress-wrap');
   if (!wrap) return;
-  if (!stressState.options && !stressState.loading && !stressState.error) {
+  if (!stressState.catalog && !stressState.catalogLoading && !stressState.catalogError) {
     wrap.innerHTML = renderStressEmptyState();
     return;
   }
-  if (stressState.loading && !stressState.options) {
-    wrap.innerHTML = `<div class="data-view-wrap"><div style="text-align:center;padding:40px 0;color:var(--dim)">Loading stress options…</div></div>`;
+  if (stressState.catalogLoading && !stressState.catalog) {
+    wrap.innerHTML = `<div class="data-view-wrap"><div style="text-align:center;padding:40px 0;color:var(--dim)">Loading stress templates…</div></div>`;
     return;
   }
-  if (stressState.error && !stressState.options) {
+  if (stressState.catalogError && !stressState.catalog) {
     wrap.innerHTML = `
       <section class="report-launch-card">
         <div class="report-launch-shell">
           <div class="report-launch-icon">⛔</div>
           <div class="report-launch-copy">
             <div class="report-launch-kicker">Stress Console</div>
-            <div class="report-launch-title">Unable to load stress options</div>
-            <div class="report-launch-text">${esc(stressState.error)}</div>
+            <div class="report-launch-title">Unable to load stress templates</div>
+            <div class="report-launch-text">${esc(stressState.catalogError)}</div>
             <div class="report-launch-actions">
-              <button class="report-launch-btn" type="button" onclick="loadStressOptions(true)">Retry</button>
+              <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Retry</button>
             </div>
           </div>
         </div>
@@ -529,7 +630,7 @@ function renderStressView() {
     return;
   }
   const options = stressState.options || {};
-  const profile = stressProfileByKey(stressState.profileKey) || options.profiles?.[0] || {};
+  const profile = stressProfileByKey(stressState.profileKey) || stressState.catalog?.profiles?.[0] || options.profiles?.[0] || {};
   const status = stressState.status;
   wrap.innerHTML = `
     <div class="stress-shell">
@@ -548,18 +649,19 @@ function renderStressView() {
           </div>
           <div class="report-meta-row">
             <span class="meta-pill">Mode: live orchestration</span>
-            <span class="meta-pill">Stack prefix: ${esc(options.guardrail?.stack_prefix || 'vibe-stress-')}</span>
+            <span class="meta-pill">Stack prefix: ${esc(stressState.catalog?.guardrail?.stack_prefix || options.guardrail?.stack_prefix || 'vibe-stress-')}</span>
             <span class="meta-pill">Guardrail: one active test</span>
             <span class="meta-pill">Cleanup: Heat stack delete</span>
             <span class="report-action-pills">
-              <button class="report-action-pill${stressState.loading || stressState.statusLoading ? ' active' : ''}" type="button" onclick="refreshStressView()" title="Refresh stress view">
-                <span class="report-refresh-icon${stressState.loading || stressState.statusLoading ? ' active' : ''}">↻</span>
+              <button class="report-action-pill${stressState.catalogLoading || stressState.loading || stressState.statusLoading ? ' active' : ''}" type="button" onclick="refreshStressView()" title="Refresh stress view">
+                <span class="report-refresh-icon${stressState.catalogLoading || stressState.loading || stressState.statusLoading ? ' active' : ''}">↻</span>
               </button>
             </span>
           </div>
         </section>
+        ${renderStressActionBanner()}
         <section class="stress-launch-grid">
-          ${renderStressLaunchCard()}
+          ${stressState.options ? renderStressLaunchCard() : renderStressTemplateLaunchState()}
           ${renderStressGuardrail()}
         </section>
         <section class="two-col">

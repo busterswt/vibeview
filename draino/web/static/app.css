@@ -940,9 +940,14 @@ body.no-hints .vmware-ref-card { display: none !important; }
   height: 100%;
 }
 .stress-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - 112px);
+  overflow: auto;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(14, 62, 86, 0.03), rgba(14, 62, 86, 0.01));
-  padding: 16px 14px;
+  background: linear-gradient(180deg, #f7fafc, #eef4f8);
+  padding: 16px 14px 22px;
 }
 .nav-group {
   margin-top: 10px;
@@ -986,32 +991,84 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .stress-form-grid .field label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 6px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .stress-form-grid .field select,
 .stress-form-grid .field input {
+  appearance: none;
   width: 100%;
   min-width: 0;
   height: 34px;
-  border: 1px solid var(--line);
+  border: 1px solid #cfd9e2;
   border-radius: 4px;
   padding: 0 10px;
   font: inherit;
   color: var(--ink);
-  background: #fbfdff;
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+.stress-form-grid .field select:focus,
+.stress-form-grid .field input:focus {
+  outline: none;
+  border-color: #84aecd;
+  box-shadow: 0 0 0 3px rgba(93, 141, 173, 0.12);
+}
+.stress-form-grid .field select {
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #6d889d 50%),
+    linear-gradient(135deg, #6d889d 50%, transparent 50%),
+    linear-gradient(180deg, #ffffff, #f7fbff);
+  background-position:
+    calc(100% - 16px) 14px,
+    calc(100% - 11px) 14px,
+    0 0;
+  background-size: 5px 5px, 5px 5px, 100% 100%;
+  background-repeat: no-repeat;
 }
 .stress-field-note { font-size: 11px; color: var(--dim); margin-top: 6px; line-height: 1.45; }
 .stress-inline-toggle { display: inline-flex; gap: 6px; margin-bottom: 8px; }
 .stress-inline-toggle button {
-  border: 1px solid var(--line);
-  background: white;
-  color: var(--dim);
+  border: 1px solid #d4dde5;
+  background: #f8fbfd;
+  color: #476172;
   border-radius: 999px;
   height: 28px;
   padding: 0 12px;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
-.stress-inline-toggle button.active { background: #0f6f8f; border-color: #0f6f8f; color: white; }
+.stress-inline-toggle button:hover {
+  border-color: #aabfce;
+  background: #f1f7fb;
+}
+.stress-inline-toggle button.active {
+  background: #e8f1f8;
+  border-color: #9bb8cc;
+  color: #20445b;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+}
 .stress-launch-actions { margin-top: 16px; display: flex; gap: 8px; }
 .stress-launch-note { margin-top: 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
+.stress-action-banner {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: #eef4f9;
+  border: 1px solid #cdd9e3;
+  color: #26475c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.stress-action-spinner {
+  display: inline-block;
+  transform-origin: 50% 50%;
+  animation: spin 1s linear infinite;
+}
 .stress-action-error {
   margin-top: 12px;
   color: var(--red);
@@ -1040,6 +1097,17 @@ body.no-hints .vmware-ref-card { display: none !important; }
   justify-content: space-between;
   gap: 12px;
 }
+.stress-guard-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.stress-template-note {
+  margin-top: 12px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .summary-table {
   width: 100%;
   border-collapse: separate;
@@ -1058,7 +1126,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 
 @media (max-width: 1180px) {
   .stress-shell { grid-template-columns: 1fr; }
-  .stress-nav { border-right: none; border-bottom: 1px solid var(--line); }
+  .stress-nav { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--line); }
   .stress-launch-grid { grid-template-columns: 1fr; }
 }
 .report-chart-strip { display: grid; gap: 10px; }

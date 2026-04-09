@@ -71,7 +71,7 @@ function switchView(name) {
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'stress') {
       renderStressView();
-      if (!stressState.options && !stressState.loading) loadStressOptions();
+      if (!stressState.catalog && !stressState.catalogLoading) loadStressCatalog();
     }
     if (name === 'reports') renderReportsView();
     // Restore network detail panel visibility when returning

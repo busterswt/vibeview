@@ -278,23 +278,13 @@ def build_stress_options(
     auth: openstack_ops.OpenStackAuth | None,
     compute_count: int,
 ) -> dict[str, Any]:
+    catalog = build_stress_catalog(auth=auth, compute_count=compute_count)
     images = list_stress_images(auth)
     flavors = list_stress_flavors(auth)
     keypairs = list_stress_keypairs(auth)
     external_networks = _list_external_networks(auth)
-    active_stack = find_active_stress_stack(auth)
     suggested_cidr = suggest_stress_cidr(auth)
-
-    profiles: list[dict[str, Any]] = []
-    for profile in STRESS_PROFILES:
-        default_vm_count = profile["default_vm_count"]
-        if profile["key"] == "full-host-spread":
-            default_vm_count = max(1, compute_count or 1)
-        elif default_vm_count is None:
-            default_vm_count = max(1, min(compute_count or 1, 20))
-        profile_item = dict(profile)
-        profile_item["default_vm_count"] = default_vm_count
-        profiles.append(profile_item)
+    profiles = list(catalog["profiles"])
 
     default_image_id = images[0]["id"] if images else ""
     compatible_flavors = flavors
@@ -313,16 +303,7 @@ def build_stress_options(
         "flavors": flavors,
         "keypairs": keypairs,
         "external_networks": external_networks,
-        "guardrail": {
-            "active": active_stack is not None,
-            "stack": active_stack,
-            "message": (
-                "Delete the existing stack before launching a new stress test."
-                if active_stack is not None else
-                "No active stress stack detected."
-            ),
-            "stack_prefix": STRESS_STACK_PREFIX,
-        },
+        "guardrail": catalog["guardrail"],
         "defaults": {
             "profile": profiles[0]["key"] if profiles else "",
             "vm_count": profiles[0]["default_vm_count"] if profiles else max(1, compute_count or 1),
@@ -334,6 +315,40 @@ def build_stress_options(
             "cidr_mode": "auto",
             "cidr": suggested_cidr,
             "external_network_id": external_networks[0]["id"] if external_networks else "",
+        },
+        "limits": {
+            "compute_count": compute_count,
+        },
+    }
+
+
+def build_stress_catalog(
+    *,
+    auth: openstack_ops.OpenStackAuth | None,
+    compute_count: int,
+) -> dict[str, Any]:
+    active_stack = find_active_stress_stack(auth)
+    profiles: list[dict[str, Any]] = []
+    for profile in STRESS_PROFILES:
+        default_vm_count = profile["default_vm_count"]
+        if profile["key"] == "full-host-spread":
+            default_vm_count = max(1, compute_count or 1)
+        elif default_vm_count is None:
+            default_vm_count = max(1, min(compute_count or 1, 20))
+        profile_item = dict(profile)
+        profile_item["default_vm_count"] = default_vm_count
+        profiles.append(profile_item)
+    return {
+        "profiles": profiles,
+        "guardrail": {
+            "active": active_stack is not None,
+            "stack": active_stack,
+            "message": (
+                "Delete the existing stack before launching a new stress test."
+                if active_stack is not None else
+                "No active stress stack detected."
+            ),
+            "stack_prefix": STRESS_STACK_PREFIX,
         },
         "limits": {
             "compute_count": compute_count,

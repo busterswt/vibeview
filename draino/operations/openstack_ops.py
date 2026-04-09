@@ -318,7 +318,11 @@ def get_all_host_summaries(
     agg_map: dict[str, dict] = {}
     try:
         for agg in conn.compute.aggregates():
-            agg_az   = (agg.metadata or {}).get("availability_zone") or None
+            agg_az   = (
+                getattr(agg, "availability_zone", None)
+                or (agg.metadata or {}).get("availability_zone")
+                or None
+            )
             agg_name = getattr(agg, "name", None) or ""
             for host in (agg.hosts or []):
                 if host not in agg_map:

@@ -103,11 +103,15 @@ const reportState = {
 };
 
 const stressState = {
+  catalogLoading: false,
+  catalogError: null,
+  catalog: null,
   loading: false,
   error: null,
   options: null,
   statusLoading: false,
   actionLoading: false,
+  actionKind: '',
   actionError: null,
   status: null,
   profileKey: '',

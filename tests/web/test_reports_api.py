@@ -209,6 +209,41 @@ def test_build_capacity_headroom_report_aggregates_live_compute_state(monkeypatc
     assert payload["report"]["debug"]["timing_ms"]["total"] >= 0
 
 
+def test_get_all_host_summaries_reads_aggregate_availability_zone_attribute(monkeypatch):
+    class FakeConn:
+        class compute:
+            @staticmethod
+            def services(binary=None):
+                return [SimpleNamespace(host="hv-a01", state="up", status="enabled")]
+
+            @staticmethod
+            def servers(all_projects=True):
+                return []
+
+            @staticmethod
+            def aggregates():
+                return [
+                    SimpleNamespace(
+                        name="general",
+                        availability_zone="az-a",
+                        metadata={},
+                        hosts=["hv-a01"],
+                    )
+                ]
+
+        class load_balancer:
+            @staticmethod
+            def amphorae():
+                return []
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    payload = web_server.openstack_ops.get_all_host_summaries()
+
+    assert payload["hv-a01"]["availability_zone"] == "az-a"
+    assert payload["hv-a01"]["aggregates"] == ["general"]
+
+
 def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])

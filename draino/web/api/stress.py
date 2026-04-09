@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 
 from .api_issues import build_api_issue
 from ..stress_helpers import (
+    build_stress_catalog,
     build_stress_options,
     delete_active_stress_stack,
     get_stress_status,
@@ -51,6 +52,29 @@ async def api_stress_options(request: Request):
             "options": None,
             "error": str(exc),
             "api_issue": build_api_issue("Nova", "GET /api/stress/options", exc),
+        }
+
+
+@router.get("/api/stress/catalog")
+async def api_stress_catalog(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    compute_count = sum(1 for state in session.server.node_states.values() if state.is_compute)
+    try:
+        catalog = await loop.run_in_executor(
+            None,
+            partial(
+                build_stress_catalog,
+                auth=session.server.openstack_auth,
+                compute_count=compute_count,
+            ),
+        )
+        return {"catalog": catalog, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {
+            "catalog": None,
+            "error": str(exc),
+            "api_issue": build_api_issue("Nova", "GET /api/stress/catalog", exc),
         }
 
 
