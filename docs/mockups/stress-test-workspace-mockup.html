@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Stress Workspace</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-lt: #1e88e5;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --sidebar: #f4f6f8;
+  --border: #d1d9e0;
+  --sel: #bbdefb;
+  --hover: #e8f4fd;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-weight: 700;
+}
+
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.logo-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: #90a4ae;
+}
+
+.top-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 24px;
+}
+
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.top-nav a.active { color: white; }
+
+.top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  cursor: default;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+.btn.danger { background: #c62828; color: white; border-color: #c62828; }
+.btn.disabled {
+  background: #d7e1ea;
+  color: #6c8092;
+  border-color: #c5d0da;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.bc-link { color: var(--blue); }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#body { display: flex; flex: 1; overflow: hidden; }
+
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px 24px;
+}
+
+.shell {
+  max-width: 1320px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.sub { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 860px; }
+.meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.card-title {
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 14px; }
+
+.monitor-grid {
+  display: grid;
+  grid-template-columns: 0.62fr 1.38fr;
+  gap: 14px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.hero-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.hero-foot.good { color: var(--green); }
+.hero-foot.warn { color: var(--yellow); }
+
+.guard-box {
+  border: 1px solid #d49859;
+  background: linear-gradient(180deg, rgba(212, 152, 89, 0.12), rgba(212, 152, 89, 0.04));
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.guard-head {
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.guard-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guard-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.trace-table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.trace-table th,
+.trace-table td,
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: top;
+}
+
+.trace-table th,
+.data-table th {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  background: #fafbfc;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+.tag.green { background: var(--green-bg); color: var(--green); }
+.tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag.red { background: var(--red-bg); color: var(--red); }
+
+.workspace-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 18px;
+}
+
+.workspace-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--blue);
+}
+
+.workspace-title {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.08;
+}
+
+.workspace-text {
+  margin-top: 10px;
+  line-height: 1.6;
+  color: #36516a;
+  max-width: 760px;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.template-list {
+  display: grid;
+  gap: 0;
+}
+
+.template-item {
+  padding: 10px 12px 10px 16px;
+  border-left: 3px solid transparent;
+  display: flex;
+  gap: 8px;
+  background: transparent;
+}
+
+.template-item.active {
+  background: var(--sel);
+  border-left-color: var(--blue);
+}
+
+.template-item .ico { font-size: 14px; }
+.template-item .name { font-size: 12px; font-weight: 600; }
+.template-item .sub { font-size: 10px; color: var(--dim); margin-top: 2px; }
+
+.info-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #795548;
+  line-height: 1.5;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-top: 14px;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.field .input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #cfd9e2;
+  border-radius: 4px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+}
+
+.field-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.workspace-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div class="logo-icon">VV</div>
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Mockup review layout</div>
+      </div>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Networks</a>
+      <a href="#">Routers</a>
+      <a href="#">Storage</a>
+      <a href="#">Reports</a>
+      <a class="active" href="#">Stress</a>
+    </div>
+    <div class="top-right">
+      <div class="mock-pill">MOCKUP</div>
+      <button class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span class="bc-sep">/</span>
+    <span class="bc-cur">Stress</span>
+    <div class="bc-actions">
+      <button class="btn">Refresh Status</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <main id="content">
+      <div class="shell">
+        <section class="workspace-card">
+          <div class="workspace-kicker">Launch New Test</div>
+          <div class="workspace-title">Template Workspace</div>
+          <div class="workspace-text">The active stack below does not change when you click templates. This upper workspace is only for configuring what you want to run next. With an active stack present, the launch action stays disabled until that stack is deleted.</div>
+
+          <div class="split-grid" style="margin-top:14px;">
+            <section class="card">
+              <div class="card-title">Templates</div>
+              <div class="template-list">
+                <div class="template-item active">
+                  <div class="ico">⚡</div>
+                  <div>
+                    <div class="name">Burst</div>
+                    <div class="sub">High-count VM launch against shared network plumbing</div>
+                  </div>
+                </div>
+                <div class="template-item">
+                  <div class="ico">🧭</div>
+                  <div>
+                    <div class="name">Full Host Spread</div>
+                    <div class="sub">Best-effort one VM per compute host</div>
+                  </div>
+                </div>
+                <div class="template-item">
+                  <div class="ico">🧪</div>
+                  <div>
+                    <div class="name">Small Distribution</div>
+                    <div class="sub">Fast scheduler sanity run</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-title">Selected Template</div>
+              <div class="card-body">
+                <div style="font-size:18px;font-weight:700;">Burst</div>
+                <div style="margin-top:6px;color:var(--dim);line-height:1.55;">Launch a high-count VM set against shared network plumbing. Draft settings below belong only to this template and persist independently from the other templates.</div>
+                <div class="info-note">An active stack already exists. You can keep editing this draft, but launching is disabled until the current test is removed.</div>
+
+                <div class="form-grid">
+                  <div class="field">
+                    <label>VM Count</label>
+                    <div class="input">20</div>
+                  </div>
+                  <div class="field">
+                    <label>Image</label>
+                    <div class="input">ubuntu-24.04</div>
+                  </div>
+                  <div class="field">
+                    <label>Flavor</label>
+                    <div class="input">m1.small · 4 vCPU · 2 GB · 18 GB</div>
+                    <div class="field-note">Only flavors meeting image minimums are shown.</div>
+                  </div>
+                  <div class="field">
+                    <label>External Network</label>
+                    <div class="input">public</div>
+                  </div>
+                  <div class="field">
+                    <label>Keypair</label>
+                    <div class="input">Auto-generate</div>
+                  </div>
+                  <div class="field">
+                    <label>CIDR</label>
+                    <div class="input">10.212.44.0/24</div>
+                    <div class="field-note">Random RFC1918 suggestion; can be overridden freely.</div>
+                  </div>
+                </div>
+
+                <div class="workspace-actions">
+                  <button class="btn primary disabled">Launch Disabled</button>
+                  <button class="btn">Refresh Cloud Options</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="monitor-grid">
+          <section class="card">
+            <div class="card-title">Active Stress Test</div>
+            <div class="card-body">
+              <div class="guard-box">
+                <div class="guard-head">Existing Active Test Detected</div>
+                <div class="guard-row"><span>Stack</span><span class="mono">vibe-stress-20260409-193659</span></div>
+                <div class="guard-row"><span>Template</span><span>Full Host Spread</span></div>
+                <div class="guard-row"><span>Status</span><span><span class="tag green">create_complete</span></span></div>
+                <div class="guard-row"><span>Requested VMs</span><span>1</span></div>
+                <div class="guard-row"><span>Created</span><span>2026-04-09 19:37:03Z</span></div>
+                <div class="guard-actions">
+                  <button class="btn danger">Delete Existing Test</button>
+                  <button class="btn">Refresh Status</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-title">Action Trace</div>
+            <div class="card-body">
+              <table class="trace-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Stage</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">19:36:59</td>
+                    <td>launch</td>
+                    <td>heat_accepted</td>
+                    <td><span class="tag green">good</span></td>
+                    <td>Heat accepted create_stack request</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">19:36:59</td>
+                    <td>launch</td>
+                    <td>calling_heat</td>
+                    <td><span class="tag blue">info</span></td>
+                    <td>Calling Heat create_stack</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">19:36:58</td>
+                    <td>launch</td>
+                    <td>validated</td>
+                    <td><span class="tag green">good</span></td>
+                    <td>Launch request validated</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="card">
+          <div class="card-title">Current Stack Details</div>
+          <div class="card-body">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Elapsed</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>OS::Neutron::Net</td><td class="mono">stress_net</td><td><span class="tag green">create_complete</span></td><td>2s</td><td>Primary tenant network</td></tr>
+                <tr><td>OS::Neutron::Subnet</td><td class="mono">stress_subnet</td><td><span class="tag green">create_complete</span></td><td>1s</td><td>10.77.71.0/24</td></tr>
+                <tr><td>OS::Neutron::Router</td><td class="mono">stress_router</td><td><span class="tag green">create_complete</span></td><td>3s</td><td>External gateway attached</td></tr>
+                <tr><td>OS::Nova::Server</td><td class="mono">stress_vm_01</td><td><span class="tag green">create_complete</span></td><td>18s</td><td>Placed on 1277287-tenant-dev...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
