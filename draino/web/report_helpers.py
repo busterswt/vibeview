@@ -905,3 +905,218 @@ def render_placement_risk_csv(report: dict) -> str:
             item.get("reason", ""),
         ])
     return output.getvalue()
+
+
+def _pct(used: int | None, total: int | None) -> float | None:
+    if used is None or total in (None, 0):
+        return None
+    return round((used / total) * 100.0, 1)
+
+
+def _majority_version(version_counts: dict[str, int]) -> str:
+    if not version_counts:
+        return "unknown"
+    return sorted(version_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _k8s_node_risk(item: dict, majority_version: str) -> tuple[str, str]:
+    reasons: list[str] = []
+    risk = "low"
+    if not item.get("ready"):
+        reasons.append("node is NotReady")
+        risk = "high"
+    if item.get("conditions"):
+        reasons.append(", ".join(item["conditions"]))
+        risk = "high"
+    kubelet_version = item.get("kubelet_version") or "unknown"
+    if majority_version != "unknown" and kubelet_version != majority_version:
+        reasons.append("kubelet version drift")
+        if risk == "low":
+            risk = "high"
+    pods_pct = item.get("pods_pct")
+    if isinstance(pods_pct, (int, float)) and pods_pct >= 85:
+        reasons.append("high pod density")
+        risk = "high"
+    elif isinstance(pods_pct, (int, float)) and pods_pct >= 70 and risk == "low":
+        reasons.append("elevated pod density")
+        risk = "medium"
+    pvc_pod_count = int(item.get("pvc_pod_count") or 0)
+    if pvc_pod_count >= 10:
+        reasons.append("PVC-backed workload concentration")
+        if risk == "low":
+            risk = "medium"
+    cpu_req_pct = item.get("cpu_req_pct")
+    if isinstance(cpu_req_pct, (int, float)) and cpu_req_pct >= 80:
+        reasons.append("high CPU request load")
+        if risk == "low":
+            risk = "medium"
+    mem_req_pct = item.get("mem_req_pct")
+    if isinstance(mem_req_pct, (int, float)) and mem_req_pct >= 80:
+        reasons.append("high memory request load")
+        if risk == "low":
+            risk = "medium"
+    if item.get("cordoned") and (isinstance(pods_pct, (int, float)) and pods_pct >= 70):
+        reasons.append("cordoned while still dense")
+        if risk == "low":
+            risk = "medium"
+    if not reasons:
+        reasons.append("No standout conditions")
+    return risk, "; ".join(reasons)
+
+
+def build_k8s_node_health_density_report(server: DrainoServer) -> dict:
+    started = time.perf_counter()
+    data_started = time.perf_counter()
+    summary = k8s_ops.get_k8s_node_health_density_summary(auth=server.k8s_auth)
+    data_ms = (time.perf_counter() - data_started) * 1000.0
+    if summary.get("error"):
+        return {"report": None, "error": summary["error"]}
+
+    nodes = summary.get("nodes", [])
+    version_counts = summary.get("version_counts", {})
+    condition_counts = summary.get("condition_counts", {})
+    majority_version = _majority_version(version_counts)
+    total_nodes = len(nodes)
+
+    items: list[dict] = []
+    findings: list[dict] = []
+    ready_count = 0
+    version_drift = 0
+    high_pod_density = 0
+    pvc_hotspots = 0
+
+    for node in nodes:
+        pods_allocatable = _as_int(node.get("pods_allocatable"))
+        pod_count = int(node.get("pod_count") or 0)
+        pvc_pod_count = int(node.get("pvc_pod_count") or 0)
+        cpu_req_pct = _pct(node.get("cpu_requests_mcpu"), node.get("cpu_allocatable_mcpu"))
+        mem_req_pct = _pct(node.get("memory_requests_mib"), node.get("memory_allocatable_mib"))
+        pods_pct = _pct(pod_count, pods_allocatable)
+        if node.get("ready"):
+            ready_count += 1
+        if node.get("kubelet_version") != majority_version:
+            version_drift += 1
+        if isinstance(pods_pct, (int, float)) and pods_pct >= 70:
+            high_pod_density += 1
+        if pvc_pod_count >= 10:
+            pvc_hotspots += 1
+        item = {
+            "node": node["node"],
+            "ready": node.get("ready"),
+            "kubelet_version": node.get("kubelet_version") or "unknown",
+            "runtime": node.get("runtime_label") or node.get("container_runtime") or "unknown",
+            "pod_count": pod_count,
+            "pods_pct": pods_pct,
+            "pvc_pod_count": pvc_pod_count,
+            "pvc_claim_count": int(node.get("pvc_claim_count") or 0),
+            "namespace_count": int(node.get("namespace_count") or 0),
+            "cpu_req_pct": cpu_req_pct,
+            "mem_req_pct": mem_req_pct,
+            "conditions": node.get("conditions") or [],
+            "cordoned": bool(node.get("cordoned")),
+        }
+        risk, reason = _k8s_node_risk(item, majority_version)
+        item["risk"] = risk
+        item["reason"] = reason
+        items.append(item)
+        if risk != "low":
+            findings.append({
+                "severity": "high" if risk == "high" else "medium",
+                "node": item["node"],
+                "message": reason,
+            })
+
+    version_items = [
+        {
+            "kubelet_version": version,
+            "node_count": count,
+            "nodes": ", ".join(item["node"] for item in items if item["kubelet_version"] == version),
+            "is_majority": version == majority_version,
+        }
+        for version, count in sorted(version_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    pvc_items = sorted(
+        [item for item in items if item["pvc_pod_count"] > 0],
+        key=lambda item: (-item["pvc_pod_count"], -item["pvc_claim_count"], item["node"]),
+    )[:10]
+    findings = sorted(findings, key=lambda item: (0 if item["severity"] == "high" else 1, item["node"]))[:4]
+    total_ms = (time.perf_counter() - started) * 1000.0
+
+    return {
+        "report": {
+            "key": "k8s-node-health-density",
+            "title": "Kubernetes Node Health & Density",
+            "subtitle": "Live node posture, kubelet version drift, pod density, PVC-backed workload concentration, and standout conditions for fast operator review.",
+            "source": "Kubernetes",
+            "scope": {
+                "nodes": total_nodes,
+            },
+            "summary": {
+                "ready_nodes": ready_count,
+                "version_drift": version_drift,
+                "high_pod_density": high_pod_density,
+                "pvc_hotspots": pvc_hotspots,
+            },
+            "summary_foot": {
+                "ready_nodes": f"{ready_count} / {total_nodes} nodes reporting Ready",
+                "version_drift": f"Majority version: {majority_version}",
+                "high_pod_density": "Pods above 70% allocatable",
+                "pvc_hotspots": "PVC-backed pods concentrated on few nodes",
+            },
+            "findings": findings,
+            "items": items,
+            "version_items": version_items,
+            "pvc_items": pvc_items,
+            "condition_counts": condition_counts,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "k8s_node_density_summary": round(data_ms, 1),
+                },
+                "counts": {
+                    "nodes": total_nodes,
+                    "versions": len(version_items),
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def render_k8s_node_health_density_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "node",
+        "ready",
+        "kubelet_version",
+        "runtime",
+        "pod_count",
+        "pods_pct",
+        "pvc_pod_count",
+        "pvc_claim_count",
+        "namespace_count",
+        "cpu_req_pct",
+        "mem_req_pct",
+        "conditions",
+        "risk",
+        "reason",
+    ])
+    for item in report.get("items", []):
+        writer.writerow([
+            item.get("node", ""),
+            "yes" if item.get("ready") else "no",
+            item.get("kubelet_version", ""),
+            item.get("runtime", ""),
+            item.get("pod_count", ""),
+            item.get("pods_pct", ""),
+            item.get("pvc_pod_count", ""),
+            item.get("pvc_claim_count", ""),
+            item.get("namespace_count", ""),
+            item.get("cpu_req_pct", ""),
+            item.get("mem_req_pct", ""),
+            ",".join(item.get("conditions", [])),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    return output.getvalue()

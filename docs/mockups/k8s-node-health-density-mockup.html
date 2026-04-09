@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Kubernetes Node Health & Density</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --border: #d1d9e0;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+}
+
+.logo { color: white; font-weight: 700; }
+.logo-sub { font-size: 10px; font-weight: 400; color: #90a4ae; }
+
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.bc-link { color: var(--blue); }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#content {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.sub { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 820px; }
+.meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.hero-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.hero-foot.good { color: var(--green); }
+.hero-foot.warn { color: var(--yellow); }
+.hero-foot.bad { color: var(--red); }
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.card-title {
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 14px; }
+
+.finding-list { display: grid; gap: 8px; }
+.finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.finding-row:last-child { border-bottom: none; }
+
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sev.high { background: var(--red-bg); color: var(--red); }
+.sev.medium { background: var(--yellow-bg); color: var(--yellow); }
+.sev.low { background: var(--green-bg); color: var(--green); }
+.finding-text { font-size: 12px; line-height: 1.5; }
+
+.chart-strip { display: grid; gap: 10px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 62px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3eaf1;
+  overflow: hidden;
+}
+.bar-fill { height: 100%; border-radius: 999px; }
+.bar-fill.blue { background: var(--blue); }
+.bar-fill.red { background: var(--red); }
+.bar-fill.yellow { background: var(--yellow); }
+.bar-fill.green { background: var(--green); }
+.bar-value { color: var(--dim); font-size: 11px; text-align: right; }
+
+.table-wrap { padding: 12px; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: top;
+}
+.data-table th {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  background: #fafbfc;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+.tag.green { background: var(--green-bg); color: var(--green); }
+.tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag.red { background: var(--red-bg); color: var(--red); }
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@media (max-width: 1100px) {
+  .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-two { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div>VibeView</div>
+      <div class="logo-sub">Mockup review layout</div>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Networks</a>
+      <a href="#">Routers</a>
+      <a href="#">Storage</a>
+      <a class="active" href="#">Reports</a>
+      <a href="#">Stress</a>
+    </div>
+    <div class="top-right">
+      <div class="mock-pill">MOCKUP</div>
+      <button class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span>/</span>
+    <span>Kubernetes Node Health & Density</span>
+    <div class="bc-actions">
+      <button class="btn">Run Report</button>
+      <button class="btn">CSV</button>
+      <button class="btn">PDF</button>
+    </div>
+  </div>
+
+  <main id="content">
+    <section class="header-card">
+      <div class="title">Kubernetes Node Health & Density</div>
+      <div class="sub">Live node posture, kubelet version drift, pod density, PVC-backed workload concentration, and standout conditions for fast operator review.</div>
+      <div class="meta-row">
+        <span class="meta-pill">Kubernetes live view</span>
+        <span class="meta-pill">No stored history</span>
+        <span class="meta-pill">31 nodes</span>
+        <span class="meta-pill">Generated 14:26:11</span>
+      </div>
+    </section>
+
+    <section class="hero-grid">
+      <div class="hero">
+        <div class="hero-label">Ready Nodes</div>
+        <div class="hero-value">29</div>
+        <div class="hero-foot good">29 / 31 nodes reporting Ready</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Version Drift</div>
+        <div class="hero-value">3</div>
+        <div class="hero-foot warn">Majority version: v1.31.2</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">High Pod Density</div>
+        <div class="hero-value">4</div>
+        <div class="hero-foot warn">Pods above 70% allocatable</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">PVC Hotspots</div>
+        <div class="hero-value">2</div>
+        <div class="hero-foot bad">PVC-backed pods concentrated on few nodes</div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Highest-Risk Findings</div>
+        <div class="card-body">
+          <div class="finding-list">
+            <div class="finding-row">
+              <div><span class="sev high">High</span></div>
+              <div class="finding-text"><strong>cmp-a03</strong> is <code>NotReady</code> and reporting <code>MemoryPressure</code>.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev high">High</span></div>
+              <div class="finding-text"><strong>cmp-b02</strong> kubelet <code>v1.30.7</code> differs from the majority cohort <code>v1.31.2</code>.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev medium">Medium</span></div>
+              <div class="finding-text"><strong>cmp-c01</strong> is running <strong>92 / 110</strong> pods and sits above the density threshold.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev medium">Medium</span></div>
+              <div class="finding-text"><strong>cmp-d04</strong> hosts <strong>18 PVC-backed pods</strong> across <strong>6 namespaces</strong>.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Version / Density Breakdown</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>Ready</div>
+              <div class="bar-track"><div class="bar-fill green" style="width:93%"></div></div>
+              <div class="bar-value">29</div>
+            </div>
+            <div class="bar-row">
+              <div>Version Drift</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width:10%"></div></div>
+              <div class="bar-value">3</div>
+            </div>
+            <div class="bar-row">
+              <div>High Pod Density</div>
+              <div class="bar-track"><div class="bar-fill red" style="width:13%"></div></div>
+              <div class="bar-value">4</div>
+            </div>
+            <div class="bar-row">
+              <div>PVC Hotspots</div>
+              <div class="bar-track"><div class="bar-fill blue" style="width:6%"></div></div>
+              <div class="bar-value">2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Node Health Grid</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Ready</th>
+              <th>Kubelet</th>
+              <th>Runtime</th>
+              <th>Pods</th>
+              <th>Pods %</th>
+              <th>PVC Pods</th>
+              <th>Namespaces</th>
+              <th>CPU Req %</th>
+              <th>Mem Req %</th>
+              <th>Conditions</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">cmp-a03</td>
+              <td><span class="tag red">NotReady</span></td>
+              <td>v1.31.2</td>
+              <td>containerd 2.0</td>
+              <td>61</td>
+              <td>55%</td>
+              <td>4</td>
+              <td>5</td>
+              <td>71%</td>
+              <td>86%</td>
+              <td>MemoryPressure</td>
+              <td><span class="tag red">High</span></td>
+              <td>NotReady with pressure condition</td>
+            </tr>
+            <tr>
+              <td class="mono">cmp-b02</td>
+              <td><span class="tag green">Ready</span></td>
+              <td>v1.30.7</td>
+              <td>containerd 2.0</td>
+              <td>58</td>
+              <td>53%</td>
+              <td>3</td>
+              <td>7</td>
+              <td>64%</td>
+              <td>61%</td>
+              <td>Healthy</td>
+              <td><span class="tag red">High</span></td>
+              <td>Kubelet version drift</td>
+            </tr>
+            <tr>
+              <td class="mono">cmp-c01</td>
+              <td><span class="tag green">Ready</span></td>
+              <td>v1.31.2</td>
+              <td>containerd 2.0</td>
+              <td>92</td>
+              <td>84%</td>
+              <td>11</td>
+              <td>8</td>
+              <td>82%</td>
+              <td>78%</td>
+              <td>Healthy</td>
+              <td><span class="tag yellow">Medium</span></td>
+              <td>High pod density and CPU request load</td>
+            </tr>
+            <tr>
+              <td class="mono">cmp-d04</td>
+              <td><span class="tag green">Ready</span></td>
+              <td>v1.31.2</td>
+              <td>containerd 2.0</td>
+              <td>73</td>
+              <td>66%</td>
+              <td>18</td>
+              <td>6</td>
+              <td>68%</td>
+              <td>72%</td>
+              <td>Healthy</td>
+              <td><span class="tag yellow">Medium</span></td>
+              <td>PVC-backed workload concentration</td>
+            </tr>
+            <tr>
+              <td class="mono">cmp-e06</td>
+              <td><span class="tag green">Ready</span></td>
+              <td>v1.31.2</td>
+              <td>containerd 2.0</td>
+              <td>31</td>
+              <td>28%</td>
+              <td>0</td>
+              <td>2</td>
+              <td>21%</td>
+              <td>24%</td>
+              <td>Healthy</td>
+              <td><span class="tag green">Low</span></td>
+              <td>No standout conditions</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Version Drift Breakdown</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Kubelet Version</th>
+                <th>Node Count</th>
+                <th>Nodes</th>
+                <th>Majority</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>v1.31.2</td>
+                <td>28</td>
+                <td class="mono">cmp-a01, cmp-a02, cmp-c01, ...</td>
+                <td><span class="tag green">Yes</span></td>
+              </tr>
+              <tr>
+                <td>v1.30.7</td>
+                <td>3</td>
+                <td class="mono">cmp-b02, cmp-b03, cmp-d02</td>
+                <td><span class="tag yellow">No</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">PVC Density</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>PVC Pods</th>
+                <th>PVC Claims</th>
+                <th>Namespaces</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">cmp-d04</td>
+                <td>18</td>
+                <td>22</td>
+                <td>6</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-c01</td>
+                <td>11</td>
+                <td>14</td>
+                <td>8</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-b01</td>
+                <td>7</td>
+                <td>9</td>
+                <td>4</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

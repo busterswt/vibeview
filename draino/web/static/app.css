@@ -932,7 +932,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 #reports-wrap .report-header-card { padding: 14px; }
 #reports-wrap .report-grid-two { gap: 14px; }
 #reports-wrap .report-kv-stack .mrow { padding: 10px 0; }
-#reports-wrap .report-table-wrap { padding: 12px; }
+#reports-wrap .report-table-wrap { padding: 12px; overflow-x: auto; overflow-y: auto; }
 #stress-wrap {
   flex: 1;
   min-height: 0;
@@ -1206,6 +1206,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   height: 100%;
   border-radius: 999px;
 }
+.report-bar-fill.blue { background: var(--blue); }
 .report-bar-fill.good { background: #4caf50; }
 .report-bar-fill.warn { background: #ffc107; }
 .report-bar-fill.bad { background: #ef5350; }

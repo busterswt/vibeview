@@ -15,6 +15,13 @@ const REPORT_META = {
     csvUrl: '/api/reports/capacity-headroom.csv',
     icon: '📊',
   },
+  'k8s-node-health-density': {
+    label: 'Kubernetes Node Health & Density',
+    subtitle: 'Kubelet drift, pod density, PVC hotspots, and standout nodes',
+    url: '/api/reports/k8s-node-health-density',
+    csvUrl: '/api/reports/k8s-node-health-density.csv',
+    icon: '☸️',
+  },
   'project-placement': {
     label: 'Project Placement',
     subtitle: 'Tenant VM distribution across compute hosts',
@@ -523,6 +530,157 @@ function renderProjectPlacementReport(activeMeta, report, nowLabel) {
   `;
 }
 
+function renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const items = report.items || [];
+  const versionItems = report.version_items || [];
+  const pvcItems = report.pvc_items || [];
+  const totalNodes = Number(report.scope?.nodes ?? items.length) || 0;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Kubernetes live view</span>
+        <span class="meta-pill">No stored history</span>
+        <span class="meta-pill">${esc(String(totalNodes))} nodes</span>
+        <span class="meta-pill">Generated ${esc(nowLabel)}</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Ready Nodes', String(summary.ready_nodes ?? 0), 'good', summaryFoot.ready_nodes || '')}
+      ${renderCapacityHero('Version Drift', String(summary.version_drift ?? 0), (summary.version_drift ?? 0) > 0 ? 'warn' : 'good', summaryFoot.version_drift || '')}
+      ${renderCapacityHero('High Pod Density', String(summary.high_pod_density ?? 0), (summary.high_pod_density ?? 0) > 0 ? 'warn' : 'good', summaryFoot.high_pod_density || '')}
+      ${renderCapacityHero('PVC Hotspots', String(summary.pvc_hotspots ?? 0), (summary.pvc_hotspots ?? 0) > 0 ? 'bad' : 'good', summaryFoot.pvc_hotspots || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Version / Density Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('Ready', summary.ready_nodes ?? 0, totalNodes, 'good')}
+          ${renderReportBreakdownBar('Version Drift', summary.version_drift ?? 0, totalNodes, 'warn')}
+          ${renderReportBreakdownBar('High Pod Density', summary.high_pod_density ?? 0, totalNodes, 'bad')}
+          ${renderReportBreakdownBar('PVC Hotspots', summary.pvc_hotspots ?? 0, totalNodes, 'blue')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Node Health Grid</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Ready</th>
+              <th>Kubelet</th>
+              <th>Runtime</th>
+              <th>Pods</th>
+              <th>Pods %</th>
+              <th>PVC Pods</th>
+              <th>Namespaces</th>
+              <th>CPU Req %</th>
+              <th>Mem Req %</th>
+              <th>Conditions</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td class="mono">${esc(item.node || '')}</td>
+                <td>${renderNodeReadyTag(item.ready)}</td>
+                <td>${esc(item.kubelet_version || 'unknown')}</td>
+                <td>${esc(item.runtime || 'unknown')}</td>
+                <td>${esc(String(item.pod_count ?? 0))}</td>
+                <td>${renderPercentValue(item.pods_pct)}</td>
+                <td>${esc(String(item.pvc_pod_count ?? 0))}</td>
+                <td>${esc(String(item.namespace_count ?? 0))}</td>
+                <td>${renderPercentValue(item.cpu_req_pct)}</td>
+                <td>${renderPercentValue(item.mem_req_pct)}</td>
+                <td>${esc(item.conditions?.length ? item.conditions.join(', ') : 'Healthy')}</td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || 'low')}</span></td>
+                <td>${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="report-grid-two">
+      <div class="card">
+        <div class="card-title"><span>Version Drift Breakdown</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Kubelet Version</th>
+                <th>Node Count</th>
+                <th>Nodes</th>
+                <th>Majority</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${versionItems.map(item => `
+                <tr>
+                  <td>${esc(item.kubelet_version || 'unknown')}</td>
+                  <td>${esc(String(item.node_count ?? 0))}</td>
+                  <td class="mono">${esc(item.nodes || '—')}</td>
+                  <td><span class="report-tag ${item.is_majority ? 'green' : 'yellow'}">${item.is_majority ? 'Yes' : 'No'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>PVC Density</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>PVC Pods</th>
+                <th>PVC Claims</th>
+                <th>Namespaces</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pvcItems.map(item => `
+                <tr>
+                  <td class="mono">${esc(item.node || '')}</td>
+                  <td>${esc(String(item.pvc_pod_count ?? 0))}</td>
+                  <td>${esc(String(item.pvc_claim_count ?? 0))}</td>
+                  <td>${esc(String(item.namespace_count ?? 0))}</td>
+                </tr>
+              `).join('') || `
+                <tr>
+                  <td colspan="4" class="card-note">No PVC-backed pod concentration detected in the current snapshot.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
 function renderPlacementRiskReport(activeMeta, report, nowLabel) {
   const summary = report.summary || {};
   const summaryFoot = report.summary_foot || {};
@@ -701,6 +859,8 @@ function renderReportsView() {
   } else if (report) {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
+      : reportState.active === 'k8s-node-health-density'
+        ? renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel)
       : reportState.active === 'placement-risk'
         ? renderPlacementRiskReport(activeMeta, report, nowLabel)
       : reportState.active === 'project-placement'
@@ -768,6 +928,10 @@ function reportCapacityMaintenanceClass(status) {
   if (status === 'drain-safe') return 'green';
   if (status === 'blocked') return 'red';
   return 'yellow';
+}
+
+function renderNodeReadyTag(ready) {
+  return `<span class="report-tag ${ready ? 'green' : 'red'}">${ready ? 'Ready' : 'NotReady'}</span>`;
 }
 
 function formatReportMemory(memoryMb) {

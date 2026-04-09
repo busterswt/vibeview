@@ -152,6 +152,7 @@ def _kubectl_plugin_env(auth: K8sAuth | None) -> dict | None:
 
 from .k8s_inventory_ops import (
     get_etcd_node_names,
+    get_k8s_node_health_density_summary,
     get_mariadb_node_names,
     get_node_k8s_detail,
     get_node_pod_capacity_summary,

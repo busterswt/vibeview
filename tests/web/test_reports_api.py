@@ -316,6 +316,154 @@ def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
     assert "cmp-a01" in export.text
 
 
+def test_build_k8s_node_health_density_report_summarises_live_k8s_state(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_node_health_density_summary",
+        lambda auth=None: {
+            "nodes": [
+                {
+                    "node": "cmp-a03",
+                    "ready": False,
+                    "kubelet_version": "v1.31.2",
+                    "runtime_label": "containerd 2.0",
+                    "pods_allocatable": 110,
+                    "pod_count": 61,
+                    "pvc_pod_count": 4,
+                    "pvc_claim_count": 5,
+                    "namespace_count": 5,
+                    "cpu_allocatable_mcpu": 100000,
+                    "cpu_requests_mcpu": 71000,
+                    "memory_allocatable_mib": 100000,
+                    "memory_requests_mib": 86000,
+                    "conditions": ["MemoryPressure"],
+                    "cordoned": False,
+                },
+                {
+                    "node": "cmp-b02",
+                    "ready": True,
+                    "kubelet_version": "v1.30.7",
+                    "runtime_label": "containerd 2.0",
+                    "pods_allocatable": 110,
+                    "pod_count": 58,
+                    "pvc_pod_count": 3,
+                    "pvc_claim_count": 3,
+                    "namespace_count": 7,
+                    "cpu_allocatable_mcpu": 100000,
+                    "cpu_requests_mcpu": 64000,
+                    "memory_allocatable_mib": 100000,
+                    "memory_requests_mib": 61000,
+                    "conditions": [],
+                    "cordoned": False,
+                },
+                {
+                    "node": "cmp-c01",
+                    "ready": True,
+                    "kubelet_version": "v1.31.2",
+                    "runtime_label": "containerd 2.0",
+                    "pods_allocatable": 110,
+                    "pod_count": 92,
+                    "pvc_pod_count": 11,
+                    "pvc_claim_count": 14,
+                    "namespace_count": 8,
+                    "cpu_allocatable_mcpu": 100000,
+                    "cpu_requests_mcpu": 82000,
+                    "memory_allocatable_mib": 100000,
+                    "memory_requests_mib": 78000,
+                    "conditions": [],
+                    "cordoned": False,
+                },
+            ],
+            "version_counts": {"v1.31.2": 2, "v1.30.7": 1},
+            "condition_counts": {"NotReady": 1, "MemoryPressure": 1, "Cordoned": 0},
+            "error": None,
+        },
+    )
+
+    payload = web_server._build_k8s_node_health_density_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["ready_nodes"] == 2
+    assert payload["report"]["summary"]["version_drift"] == 1
+    assert payload["report"]["summary"]["high_pod_density"] == 1
+    assert payload["report"]["summary"]["pvc_hotspots"] == 1
+    assert payload["report"]["items"][0]["risk"] == "high"
+    assert payload["report"]["items"][1]["risk"] == "high"
+    assert payload["report"]["items"][2]["risk"] == "medium"
+    assert payload["report"]["version_items"][0]["is_majority"] is True
+    assert payload["report"]["pvc_items"][0]["node"] == "cmp-c01"
+    assert payload["report"]["debug"]["counts"]["nodes"] == 3
+
+
+def test_k8s_node_health_density_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_node_health_density_summary",
+        lambda auth=None: {
+            "nodes": [
+                {
+                    "node": "cmp-a03",
+                    "ready": False,
+                    "kubelet_version": "v1.31.2",
+                    "runtime_label": "containerd 2.0",
+                    "pods_allocatable": 110,
+                    "pod_count": 61,
+                    "pvc_pod_count": 4,
+                    "pvc_claim_count": 5,
+                    "namespace_count": 5,
+                    "cpu_allocatable_mcpu": 100000,
+                    "cpu_requests_mcpu": 71000,
+                    "memory_allocatable_mib": 100000,
+                    "memory_requests_mib": 86000,
+                    "conditions": ["MemoryPressure"],
+                    "cordoned": False,
+                },
+            ],
+            "version_counts": {"v1.31.2": 1},
+            "condition_counts": {"NotReady": 1, "MemoryPressure": 1, "Cordoned": 0},
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        report = client.get("/api/reports/k8s-node-health-density")
+        export = client.get("/api/reports/k8s-node-health-density.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["items"][0]["node"] == "cmp-a03"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="k8s-node-health-density.csv"'
+    assert "cmp-a03" in export.text
+
+
 def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch, tmp_path):
     server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
     server.node_states = {
