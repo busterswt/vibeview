@@ -653,3 +653,253 @@ def render_project_placement_csv(report: dict) -> str:
             item.get("top_hosts_label", ""),
         ])
     return output.getvalue()
+
+
+def _state_failure_domains(state: NodeState) -> tuple[str, str]:
+    az = state.availability_zone or "unknown"
+    aggregate = (state.aggregates or ["—"])[0]
+    return az, aggregate
+
+
+def _project_placement_row_risk(vm_count: int, pod_count: int, amphora_count: int) -> tuple[str, str]:
+    reasons: list[str] = []
+    risk = "low"
+    if vm_count >= 40:
+        reasons.append("high VM density")
+        risk = "high"
+    elif vm_count >= 30:
+        reasons.append("elevated VM density")
+        risk = "medium"
+    if pod_count >= 70:
+        reasons.append("high pod density")
+        risk = "high"
+    elif pod_count >= 50:
+        reasons.append("elevated pod density")
+        if risk == "low":
+            risk = "medium"
+    if amphora_count >= 5:
+        reasons.append("amphora concentration")
+        risk = "high"
+    if not reasons:
+        reasons.append("density is within expected range")
+    return risk, "; ".join(reasons)
+
+
+def build_placement_risk_report(server: DrainoServer) -> dict:
+    """Build a live placement-risk report from current node state."""
+    started = time.perf_counter()
+    pod_started = time.perf_counter()
+    pod_capacity = k8s_ops.get_node_pod_capacity_summary(auth=server.k8s_auth)
+    pod_ms = (time.perf_counter() - pod_started) * 1000.0
+
+    states = sorted(server.node_states.values(), key=lambda item: item.k8s_name)
+    compute_states = [state for state in states if state.is_compute]
+    control_states = [state for state in states if state.is_etcd or state.hosts_mariadb]
+    edge_states = [state for state in compute_states if state.is_edge]
+
+    az_role_counts: dict[tuple[str, str], int] = {}
+    agg_role_counts: dict[tuple[str, str], int] = {}
+    for state in control_states:
+        role = "etcd" if state.is_etcd else "mariadb"
+        az, aggregate = _state_failure_domains(state)
+        az_role_counts[(role, az)] = az_role_counts.get((role, az), 0) + 1
+        agg_role_counts[(role, aggregate)] = agg_role_counts.get((role, aggregate), 0) + 1
+
+    findings: list[dict] = []
+    control_plane_items: list[dict] = []
+    edge_items: list[dict] = []
+    density_items: list[dict] = []
+
+    high_density_hosts = 0
+    high_risk_control = 0
+    high_risk_edge = 0
+
+    for state in control_states:
+        role = "etcd" if state.is_etcd else "mariadb"
+        az, aggregate = _state_failure_domains(state)
+        reasons = [
+            "etcd requires staggered reboots" if role == "etcd" else "mariadb requires staggered reboots"
+        ]
+        if az_role_counts.get((role, az), 0) > 1:
+            reasons.append(f"{role} shares AZ {az}")
+        if aggregate != "—" and agg_role_counts.get((role, aggregate), 0) > 1:
+            reasons.append(f"{role} shares aggregate {aggregate}")
+        if not _in_maintenance_posture(state):
+            reasons.append("node is not yet in maintenance posture")
+        risk = "high"
+        if role == "etcd" and state.etcd_healthy is not True:
+            reasons.append("etcd health requires review")
+        high_risk_control += 1
+        control_plane_items.append({
+            "node": state.k8s_name,
+            "role": role,
+            "availability_zone": az,
+            "aggregate": aggregate,
+            "k8s_status": _k8s_status_label(state),
+            "nova_status": _nova_status_label(state),
+            "maintenance": "ready" if _in_maintenance_posture(state) else "review",
+            "risk": risk,
+            "reason": "; ".join(reasons),
+        })
+
+    for state in edge_states:
+        az, aggregate = _state_failure_domains(state)
+        pod_count = _as_int(pod_capacity.get(state.k8s_name, {}).get("pod_count")) or 0
+        reasons = ["hosts OVN edge/gateway responsibilities"]
+        risk = "medium"
+        if (state.amphora_count or 0) >= 5:
+            reasons.append("gateway host carries elevated amphora density")
+            risk = "high"
+        if state.vm_count and state.vm_count >= 30:
+            reasons.append("gateway host also carries elevated VM density")
+            risk = "high"
+        if not _in_maintenance_posture(state):
+            reasons.append("edge host is not yet in maintenance posture")
+        if risk == "high":
+            high_risk_edge += 1
+        edge_items.append({
+            "node": state.k8s_name,
+            "availability_zone": az,
+            "aggregate": aggregate,
+            "amphora_count": state.amphora_count or 0,
+            "vm_count": state.vm_count or 0,
+            "maintenance": "ready" if _in_maintenance_posture(state) else "review",
+            "risk": risk,
+            "reason": "; ".join(reasons),
+            "pod_count": pod_count,
+        })
+
+    for state in compute_states:
+        pod_count = _as_int(pod_capacity.get(state.k8s_name, {}).get("pod_count")) or 0
+        risk, reason = _project_placement_row_risk(state.vm_count or 0, pod_count, state.amphora_count or 0)
+        if risk == "low":
+            continue
+        high_density_hosts += 1
+        az, _aggregate = _state_failure_domains(state)
+        density_items.append({
+            "node": state.k8s_name,
+            "availability_zone": az,
+            "vm_count": state.vm_count or 0,
+            "pod_count": pod_count,
+            "amphora_count": state.amphora_count or 0,
+            "maintenance": "ready" if _in_maintenance_posture(state) else "review",
+            "risk": risk,
+            "reason": reason,
+        })
+
+    for item in control_plane_items:
+        findings.append({"severity": "high", "node": item["node"], "message": item["reason"]})
+    for item in edge_items:
+        if item["risk"] == "high":
+            findings.append({"severity": "medium", "node": item["node"], "message": item["reason"]})
+    for item in density_items:
+        if item["risk"] == "high":
+            findings.append({"severity": "medium", "node": item["node"], "message": item["reason"]})
+    findings = sorted(findings, key=lambda item: (0 if item["severity"] == "high" else 1, item["node"]))[:6]
+
+    total_ms = (time.perf_counter() - started) * 1000.0
+    return {
+        "report": {
+            "key": "placement-risk",
+            "title": "Placement Risk Report",
+            "subtitle": "Live concentration and maintenance blast-radius view for clustered control-plane roles, OVN edge duties, and high-density compute hosts.",
+            "source": "Kubernetes + OpenStack + OVN",
+            "scope": {
+                "nodes": len(states),
+                "computes": len(compute_states),
+                "critical_nodes": len(control_states),
+                "edge_hosts": len(edge_states),
+            },
+            "summary": {
+                "etcd_risk": "high" if any(state.is_etcd for state in states) else "low",
+                "mariadb_hosts": sum(1 for state in states if state.hosts_mariadb),
+                "gateway_hosts": len(edge_states),
+                "density_hotspots": high_density_hosts,
+            },
+            "summary_foot": {
+                "etcd_risk": "Quorum-sensitive placement needs operator sequencing" if any(state.is_etcd for state in states) else "No immediate quorum concentration detected",
+                "mariadb_hosts": "Staggered reboots required" if any(state.hosts_mariadb for state in states) else "No MariaDB cluster workloads detected",
+                "gateway_hosts": "Gateway duties concentrated on too few hosts" if len(edge_states) < 3 else "Gateway duties spread across multiple hosts",
+                "density_hotspots": "Elevated VM / pod / amphora concentration" if high_density_hosts else "No severe density outliers",
+            },
+            "findings": findings,
+            "control_plane_items": control_plane_items,
+            "edge_items": edge_items,
+            "density_items": density_items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "k8s_pod_summary": round(pod_ms, 1),
+                },
+                "counts": {
+                    "critical_nodes": len(control_plane_items),
+                    "edge_hosts": len(edge_items),
+                    "density_items": len(density_items),
+                    "high_risk_control": high_risk_control,
+                    "high_risk_edge": high_risk_edge,
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def render_placement_risk_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "section",
+        "node",
+        "role",
+        "availability_zone",
+        "aggregate",
+        "vm_count",
+        "pod_count",
+        "amphora_count",
+        "maintenance",
+        "risk",
+        "reason",
+    ])
+    for item in report.get("control_plane_items", []):
+        writer.writerow([
+            "control-plane",
+            item.get("node", ""),
+            item.get("role", ""),
+            item.get("availability_zone", ""),
+            item.get("aggregate", ""),
+            "",
+            "",
+            "",
+            item.get("maintenance", ""),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    for item in report.get("edge_items", []):
+        writer.writerow([
+            "edge",
+            item.get("node", ""),
+            "edge",
+            item.get("availability_zone", ""),
+            item.get("aggregate", ""),
+            item.get("vm_count", ""),
+            item.get("pod_count", ""),
+            item.get("amphora_count", ""),
+            item.get("maintenance", ""),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    for item in report.get("density_items", []):
+        writer.writerow([
+            "density",
+            item.get("node", ""),
+            "compute",
+            item.get("availability_zone", ""),
+            "",
+            item.get("vm_count", ""),
+            item.get("pod_count", ""),
+            item.get("amphora_count", ""),
+            item.get("maintenance", ""),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    return output.getvalue()

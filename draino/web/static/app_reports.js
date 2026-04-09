@@ -22,6 +22,13 @@ const REPORT_META = {
     csvUrl: '/api/reports/project-placement.csv',
     icon: '🏢',
   },
+  'placement-risk': {
+    label: 'Placement Risk',
+    subtitle: 'Concentration and maintenance blast radius',
+    url: '/api/reports/placement-risk',
+    csvUrl: '/api/reports/placement-risk.csv',
+    icon: '⚠️',
+  },
 };
 
 function guessReportApiIssue(message, status) {
@@ -516,6 +523,161 @@ function renderProjectPlacementReport(activeMeta, report, nowLabel) {
   `;
 }
 
+function renderPlacementRiskReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const controlItems = report.control_plane_items || [];
+  const edgeItems = report.edge_items || [];
+  const densityItems = report.density_items || [];
+  const totalCritical = report.scope?.critical_nodes ?? controlItems.length;
+  const totalEdge = report.scope?.edge_hosts ?? edgeItems.length;
+  const totalCompute = report.scope?.computes ?? densityItems.length;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Generated: ${esc(nowLabel)}</span>
+        <span class="meta-pill">Scope: ${esc(String(report.scope?.nodes ?? 0))} nodes / ${esc(String(report.scope?.computes ?? 0))} computes</span>
+        <span class="meta-pill">Source: ${esc(report.source || 'Live environment')}</span>
+        <span class="meta-pill">No stored history</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('etcd Risk', String(summary.etcd_risk || 'low').toUpperCase(), summary.etcd_risk === 'high' ? 'bad' : summary.etcd_risk === 'medium' ? 'warn' : 'good', summaryFoot.etcd_risk || '')}
+      ${renderCapacityHero('MariaDB Spread', String(summary.mariadb_hosts ?? 0), (summary.mariadb_hosts ?? 0) > 0 ? 'warn' : 'good', summaryFoot.mariadb_hosts || '')}
+      ${renderCapacityHero('Gateway Concentration', String(summary.gateway_hosts ?? 0), (summary.gateway_hosts ?? 0) < 3 ? 'warn' : 'good', summaryFoot.gateway_hosts || '')}
+      ${renderCapacityHero('High-Density Hosts', String(summary.density_hotspots ?? 0), (summary.density_hotspots ?? 0) > 0 ? 'bad' : 'good', summaryFoot.density_hotspots || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Risk Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('Critical role hosts', controlItems.length, totalCritical || controlItems.length || 1, 'bad')}
+          ${renderReportBreakdownBar('Edge / gateway hosts', edgeItems.length, totalEdge || edgeItems.length || 1, edgeItems.some(item => item.risk === 'high') ? 'warn' : 'good')}
+          ${renderReportBreakdownBar('High-density hosts', densityItems.length, totalCompute || densityItems.length || 1, densityItems.some(item => item.risk === 'high') ? 'bad' : 'warn')}
+          ${renderReportBreakdownBar('Drain-safe criticals', controlItems.filter(item => item.maintenance === 'ready').length, totalCritical || controlItems.length || 1, 'good')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Control Plane Placement</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Role</th>
+              <th>AZ</th>
+              <th>Aggregate</th>
+              <th>K8s</th>
+              <th>Nova</th>
+              <th>Maintenance</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${controlItems.map(item => `
+              <tr>
+                <td class="mono">${esc(item.node || '')}</td>
+                <td><span class="report-tag ${item.role === 'etcd' ? 'red' : 'purple'}">${esc(item.role || '')}</span></td>
+                <td>${esc(item.availability_zone || '—')}</td>
+                <td>${esc(item.aggregate || '—')}</td>
+                <td>${renderReportStatus(item.k8s_status)}</td>
+                <td>${renderReportStatus(item.nova_status)}</td>
+                <td><span class="report-tag ${item.maintenance === 'ready' ? 'green' : 'yellow'}">${esc(item.maintenance || '')}</span></td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || '')}</span></td>
+                <td>${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Gateway / Edge Placement</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>AZ</th>
+              <th>Aggregate</th>
+              <th>Amphorae</th>
+              <th>VMs</th>
+              <th>Maintenance</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${edgeItems.map(item => `
+              <tr>
+                <td class="mono">${esc(item.node || '')}</td>
+                <td>${esc(item.availability_zone || '—')}</td>
+                <td>${esc(item.aggregate || '—')}</td>
+                <td>${esc(String(item.amphora_count ?? 0))}</td>
+                <td>${esc(String(item.vm_count ?? 0))}</td>
+                <td><span class="report-tag ${item.maintenance === 'ready' ? 'green' : 'yellow'}">${esc(item.maintenance || '')}</span></td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || '')}</span></td>
+                <td>${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>High-Density Compute Hosts</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>AZ</th>
+              <th>VMs</th>
+              <th>Pods</th>
+              <th>Amphorae</th>
+              <th>Maintenance</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${densityItems.map(item => `
+              <tr>
+                <td class="mono">${esc(item.node || '')}</td>
+                <td>${esc(item.availability_zone || '—')}</td>
+                <td>${esc(String(item.vm_count ?? 0))}</td>
+                <td>${esc(String(item.pod_count ?? 0))}</td>
+                <td>${esc(String(item.amphora_count ?? 0))}</td>
+                <td><span class="report-tag ${item.maintenance === 'ready' ? 'green' : 'yellow'}">${esc(item.maintenance || '')}</span></td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || '')}</span></td>
+                <td>${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
 function renderReportsView() {
   const wrap = document.getElementById('reports-wrap');
   if (!wrap) return;
@@ -539,6 +701,8 @@ function renderReportsView() {
   } else if (report) {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
+      : reportState.active === 'placement-risk'
+        ? renderPlacementRiskReport(activeMeta, report, nowLabel)
       : reportState.active === 'project-placement'
         ? renderProjectPlacementReport(activeMeta, report, nowLabel)
         : renderMaintenanceReport(activeMeta, report, nowLabel);

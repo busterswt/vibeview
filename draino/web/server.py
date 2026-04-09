@@ -77,9 +77,11 @@ from .resource_helpers import (
 from .report_helpers import (
     build_capacity_headroom_report as _build_capacity_headroom_report,
     build_maintenance_readiness_report as _build_maintenance_readiness_report,
+    build_placement_risk_report as _build_placement_risk_report,
     build_project_placement_report as _build_project_placement_report,
     render_capacity_headroom_csv as _render_capacity_headroom_csv,
     render_maintenance_readiness_csv as _render_maintenance_readiness_csv,
+    render_placement_risk_csv as _render_placement_risk_csv,
     render_project_placement_csv as _render_project_placement_csv,
 )
 from .session import SESSION_TTL, SessionRecord, SessionStore, get_session_record, get_ws_session

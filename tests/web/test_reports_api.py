@@ -417,3 +417,126 @@ def test_project_placement_reports_endpoints_return_json_and_csv(monkeypatch):
     assert export.status_code == 200
     assert export.headers["content-disposition"] == 'attachment; filename="project-placement.csv"'
     assert "tenant-a" in export.text
+
+
+def test_build_placement_risk_report_summarises_control_edge_and_density(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server.node_states = {
+        "cmp-a01": NodeState(
+            k8s_name="cmp-a01",
+            hypervisor="hv-a01",
+            is_compute=True,
+            is_etcd=True,
+            availability_zone="az-a",
+            aggregates=["general"],
+            compute_status="up",
+            vm_count=18,
+            amphora_count=0,
+            node_agent_ready=True,
+        ),
+        "cmp-a02": NodeState(
+            k8s_name="cmp-a02",
+            hypervisor="hv-a02",
+            is_compute=True,
+            hosts_mariadb=True,
+            availability_zone="az-a",
+            aggregates=["general"],
+            compute_status="up",
+            vm_count=35,
+            amphora_count=0,
+            node_agent_ready=True,
+        ),
+        "cmp-gw01": NodeState(
+            k8s_name="cmp-gw01",
+            hypervisor="hv-gw01",
+            is_compute=True,
+            is_edge=True,
+            availability_zone="az-b",
+            aggregates=["edge"],
+            compute_status="up",
+            vm_count=16,
+            amphora_count=5,
+            node_agent_ready=True,
+        ),
+    }
+
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_pod_capacity_summary",
+        lambda auth=None: {
+            "cmp-a01": {"pods_allocatable": "110", "pod_count": 8},
+            "cmp-a02": {"pods_allocatable": "110", "pod_count": 33},
+            "cmp-gw01": {"pods_allocatable": "110", "pod_count": 18},
+        },
+    )
+
+    payload = web_server._build_placement_risk_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["etcd_risk"] == "high"
+    assert payload["report"]["summary"]["mariadb_hosts"] == 1
+    assert payload["report"]["summary"]["gateway_hosts"] == 1
+    assert payload["report"]["control_plane_items"][0]["risk"] == "high"
+    assert payload["report"]["edge_items"][0]["risk"] == "high"
+    assert payload["report"]["density_items"][0]["risk"] in {"medium", "high"}
+    assert payload["report"]["debug"]["counts"]["critical_nodes"] == 2
+
+
+def test_placement_risk_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_pod_capacity_summary",
+        lambda auth=None: {"cmp-a01": {"pods_allocatable": "110", "pod_count": 8}},
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["cmp-a01"] = NodeState(
+            k8s_name="cmp-a01",
+            hypervisor="hv-a01",
+            is_compute=True,
+            is_etcd=True,
+            availability_zone="az-a",
+            aggregates=["general"],
+            compute_status="disabled",
+            k8s_cordoned=True,
+            vm_count=14,
+            node_agent_ready=True,
+        )
+
+        report = client.get("/api/reports/placement-risk")
+        export = client.get("/api/reports/placement-risk.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["control_plane_items"][0]["node"] == "cmp-a01"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="placement-risk.csv"'
+    assert "cmp-a01" in export.text
