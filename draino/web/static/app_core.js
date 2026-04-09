@@ -282,11 +282,12 @@ function renderApiIssuesOverlay() {
           <div class="card-body api-issue-table-wrap">
             <table class="data-table api-issue-table">
               <thead>
-                <tr><th>Time</th><th>Service</th><th>Operation</th><th>Status</th><th>Message</th></tr>
+                <tr><th></th><th>Time</th><th>Service</th><th>Operation</th><th>Status</th><th>Message</th></tr>
               </thead>
               <tbody>
                 ${recent.map(issue => `
                   <tr>
+                    <td class="api-issue-severity-cell"><span class="api-issue-severity-dot ${esc(issue.severity || 'high')}" title="${esc((issue.severity || 'high').toUpperCase())}"></span></td>
                     <td class="mono">${esc(issue.at || '—')}</td>
                     <td>${esc(issue.service)}</td>
                     <td class="api-issue-mono">${esc(issue.operation || '—')}</td>

@@ -23,9 +23,17 @@ def _exc_request_id(exc: Exception) -> str | None:
     response = getattr(exc, "response", None)
     if response is not None:
         headers = getattr(response, "headers", None) or {}
-        for header in ("x-openstack-request-id", "x-compute-request-id"):
-            value = headers.get(header)
+        lowered = {str(key).lower(): value for key, value in headers.items()}
+        for header in (
+            "x-openstack-request-id",
+            "x-compute-request-id",
+            "x-request-id",
+            "openstack-request-id",
+        ):
+            value = lowered.get(header)
             if value:
+                if isinstance(value, (list, tuple)):
+                    return ", ".join(str(item) for item in value if item)
                 return str(value)
     return None
 

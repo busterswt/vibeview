@@ -967,13 +967,15 @@ body.no-hints .vmware-ref-card { display: none !important; }
 }
 .api-issues-overlay.open { display: flex; }
 .api-issues-panel {
-  width: min(920px, 100%);
+  width: min(70vw, 1180px);
+  max-width: 100%;
+  max-height: calc(100vh - 64px);
   background: var(--white);
   border: 1px solid #e4b9b9;
   border-top: 5px solid var(--red);
   border-radius: 8px;
   box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
-  overflow: hidden;
+  overflow: auto;
 }
 .api-issues-head {
   padding: 18px 22px 14px;
@@ -1051,6 +1053,29 @@ body.no-hints .vmware-ref-card { display: none !important; }
 }
 .api-issue-table-wrap { padding: 12px; }
 .api-issue-table { margin-bottom: 0; }
+.api-issue-severity-cell {
+  width: 28px;
+  text-align: center;
+}
+.api-issue-severity-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  vertical-align: middle;
+  box-shadow: 0 0 0 3px rgba(194, 52, 46, 0.08);
+}
+.api-issue-severity-dot.high {
+  background: #c2342e;
+}
+.api-issue-severity-dot.medium {
+  background: #c77800;
+  box-shadow: 0 0 0 3px rgba(199, 120, 0, 0.08);
+}
+.api-issue-severity-dot.low {
+  background: #2a7f62;
+  box-shadow: 0 0 0 3px rgba(42, 127, 98, 0.08);
+}
 .api-issues-actions {
   display: flex;
   justify-content: space-between;
@@ -1067,6 +1092,12 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .api-issues-btn-row {
   display: flex;
   gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .api-issues-panel {
+    width: min(100%, 980px);
+  }
 }
 
 @media print {
