@@ -312,7 +312,7 @@ def build_stress_environment(
         "defaults": {
             "image_id": default_image_id,
             "flavor_id": default_flavor_id,
-            "keypair_mode": "existing" if keypairs else "auto",
+            "keypair_mode": "auto",
             "keypair_name": default_keypair_name,
             "generated_keypair_name": STRESS_DEFAULT_KEYPAIR_NAME,
             "cidr_mode": "auto",
@@ -416,6 +416,7 @@ def _validate_cidr(cidr: str) -> str:
 
 def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
     vm_count = int(config["vm_count"])
+    server_key_name: dict[str, Any] | str
     resources: dict[str, Any] = {
         "stress_net": {
             "type": "OS::Neutron::Net",
@@ -470,6 +471,9 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
                 "save_private_key": False,
             },
         }
+        server_key_name = {"get_resource": "stress_keypair"}
+    else:
+        server_key_name = {"get_param": "key_name"}
     for index in range(1, vm_count + 1):
         suffix = f"{index:02d}"
         port_name = f"stress_port_{suffix}"
@@ -498,7 +502,7 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
                 },
                 "image": {"get_param": "image"},
                 "flavor": {"get_param": "flavor"},
-                "key_name": {"get_param": "key_name"},
+                "key_name": server_key_name,
                 "networks": [{"port": {"get_resource": port_name}}],
                 "metadata": {
                     "vibeview:stress-test": "true",

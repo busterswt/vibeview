@@ -30,7 +30,7 @@ function stressDraft(profileKey = stressState.profileKey) {
       imageId: '',
       flavorId: '',
       externalNetworkId: '',
-      keypairMode: 'existing',
+      keypairMode: 'auto',
       keypairName: '',
       cidrMode: 'auto',
       cidr: '',
@@ -48,7 +48,7 @@ function syncStressDraft(profileKey = stressState.profileKey) {
   draft.vmCount = draft.vmCount || profile?.default_vm_count || 1;
   draft.imageId = draft.imageId || env.defaults?.image_id || env.images?.[0]?.id || '';
   draft.externalNetworkId = draft.externalNetworkId || env.defaults?.external_network_id || env.external_networks?.[0]?.id || '';
-  draft.keypairMode = draft.keypairMode || env.defaults?.keypair_mode || 'existing';
+  draft.keypairMode = draft.keypairMode || env.defaults?.keypair_mode || 'auto';
   draft.keypairName = draft.keypairName || env.defaults?.keypair_name || env.defaults?.generated_keypair_name || '';
   draft.cidrMode = draft.cidrMode || env.defaults?.cidr_mode || 'auto';
   draft.cidr = draft.cidr || env.defaults?.cidr || '';
@@ -584,8 +584,8 @@ function renderStressLaunchCard() {
           <div class="field">
             <label>Keypair</label>
             <div class="stress-inline-toggle">
-              <button type="button" class="${draft?.keypairMode === 'existing' ? 'active' : ''}" onclick="setStressKeypairMode('existing')">Existing</button>
-              <button type="button" class="${draft?.keypairMode === 'auto' ? 'active' : ''}" onclick="setStressKeypairMode('auto')">Auto-generate</button>
+              <button type="button" class="btn${draft?.keypairMode === 'existing' ? ' active' : ''}" onclick="setStressKeypairMode('existing')">Existing</button>
+              <button type="button" class="btn${draft?.keypairMode === 'auto' ? ' active' : ''}" onclick="setStressKeypairMode('auto')">Auto-generate</button>
             </div>
             ${draft?.keypairMode === 'existing' ? `
               <select onchange="setStressKeypairName(this.value)">
@@ -600,14 +600,14 @@ function renderStressLaunchCard() {
           <div class="field">
             <label>CIDR</label>
             <div class="stress-inline-toggle">
-              <button type="button" class="${draft?.cidrMode === 'auto' ? 'active' : ''}" onclick="setStressCidrMode('auto')">Auto</button>
-              <button type="button" class="${draft?.cidrMode === 'manual' ? 'active' : ''}" onclick="setStressCidrMode('manual')">Custom</button>
+              <button type="button" class="btn${draft?.cidrMode === 'auto' ? ' active' : ''}" onclick="setStressCidrMode('auto')">Auto</button>
+              <button type="button" class="btn${draft?.cidrMode === 'manual' ? ' active' : ''}" onclick="setStressCidrMode('manual')">Custom</button>
             </div>
-            <input type="text" value="${esc(draft?.cidr || '')}" ${draft?.cidrMode === 'auto' ? 'readonly' : ''} oninput="setStressCidr(this.value)">
+            <input type="text" value="${esc(draft?.cidr || '')}" placeholder="10.24.18.0/24" ${draft?.cidrMode === 'auto' ? 'readonly' : ''} oninput="setStressCidr(this.value)">
           </div>
         </div>
         <div class="stress-launch-actions">
-          <button class="btn ${launchBlocked && !(stressState.actionLoading && stressState.actionKind === 'launch') ? 'disabled' : 'primary'}" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'launch' ? 'Launching…' : guardrailActive ? 'Launch Disabled' : 'Launch Test Stack'}</button>
+          <button class="btn${launchBlocked && !(stressState.actionLoading && stressState.actionKind === 'launch') ? '' : ' primary'}" type="button" onclick="launchStressTest()" ${launchBlocked ? 'disabled' : ''}>${stressState.actionLoading && stressState.actionKind === 'launch' ? 'Launching…' : guardrailActive ? 'Launch Disabled' : 'Launch Test Stack'}</button>
           <button class="btn" type="button" onclick="refreshStressView()" ${stressState.actionLoading ? 'disabled' : ''}>Refresh Status</button>
         </div>
         ${stressState.actionError ? `<div class="stress-action-error">${esc(stressState.actionError)}</div>` : ''}
@@ -667,7 +667,7 @@ function renderStressSummarySection(status) {
   const summary = status.summary || {};
   const deletePending = stressState.actionLoading || stressDeleteInProgress();
   return `
-    <section class="report-hero-grid">
+    <section class="report-hero-grid stress-hero-grid">
       ${renderCapacityHero('Stack Status', test.status || 'unknown', stressStatusTagClass(test.status) === 'red' ? 'bad' : stressStatusTagClass(test.status) === 'yellow' ? 'warn' : 'good', 'Heat stack lifecycle state')}
       ${renderCapacityHero('Plumbing Time', summary.plumbing_elapsed || '—', 'good', 'Network, subnet, router, and interface attachment')}
       ${renderCapacityHero('Avg VM Build', summary.avg_vm_build || '—', 'good', 'Server create requested to ACTIVE')}
@@ -814,7 +814,7 @@ function renderStressView() {
               <div class="report-launch-title">Unable to load stress templates</div>
               <div class="report-launch-text">${esc(stressState.catalogError)}</div>
               <div class="report-launch-actions">
-                <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Retry</button>
+                <button class="btn primary" type="button" onclick="loadStressCatalog(true)">Retry</button>
               </div>
             </div>
           </div>

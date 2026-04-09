@@ -945,6 +945,14 @@ body.no-hints .vmware-ref-card { display: none !important; }
   display: grid;
   gap: 16px;
 }
+.stress-hero-grid {
+  grid-template-columns: 1.3fr 0.9fr 0.9fr 0.9fr;
+}
+.stress-page .report-hero-value {
+  font-size: 24px;
+  line-height: 1.08;
+  white-space: nowrap;
+}
 .stress-workspace-card {
   background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
   border: 1px solid var(--border);
@@ -1023,6 +1031,15 @@ body.no-hints .vmware-ref-card { display: none !important; }
   gap: 14px;
   margin-top: 16px;
 }
+.stress-monitor-grid .report-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.stress-monitor-grid .report-table td,
+.stress-monitor-grid .report-table th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .stress-meta-grid { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 14px; }
 .stress-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .stress-form-grid .field { min-width: 0; }
@@ -1067,22 +1084,15 @@ body.no-hints .vmware-ref-card { display: none !important; }
 }
 .stress-inline-toggle { display: inline-flex; gap: 6px; margin-bottom: 8px; }
 .stress-inline-toggle button {
-  border: 1px solid #d4dde5;
-  background: #f8fbfd;
-  color: #476172;
   border-radius: 999px;
   height: 28px;
   padding: 0 12px;
-  cursor: pointer;
-  font: inherit;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  transition: border-color .15s ease, background-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
 .stress-inline-toggle button:hover {
-  border-color: #aabfce;
   background: #f1f7fb;
 }
 .stress-inline-toggle button.active {
@@ -1095,6 +1105,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .stress-launch-note { margin-top: 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
 .stress-info-note {
   margin-top: 10px;
+  margin-bottom: 14px;
   padding: 10px 12px;
   border-radius: 4px;
   background: #fff8e1;
