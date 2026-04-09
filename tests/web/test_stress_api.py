@@ -403,6 +403,72 @@ def test_stress_catalog_returns_action_trace(monkeypatch):
     assert body["catalog"]["trace"][1]["stage"] == "request_received"
 
 
+def test_launch_stress_stack_auto_keypair_supplies_public_key(monkeypatch):
+    monkeypatch.setattr(stress_helpers, "_stress_test_id", lambda: "20260409-210101")
+
+    class FakeOrchestration:
+        def __init__(self):
+            self.create_kwargs = None
+
+        def stacks(self):
+            return []
+
+        def create_stack(self, **kwargs):
+            self.create_kwargs = kwargs
+            return SimpleNamespace(id="stack-1")
+
+    class FakeConn:
+        def __init__(self):
+            self.orchestration = FakeOrchestration()
+            self.network = SimpleNamespace(
+                networks=lambda: [SimpleNamespace(id="ext-net-1", name="public", is_router_external=True, to_dict=lambda: {"router:external": True})],
+            )
+
+        def authorize(self):
+            return None
+
+        class image:
+            @staticmethod
+            def images():
+                return [SimpleNamespace(id="img-1", name="ubuntu", status="active", min_disk=10, min_ram=1024, disk_format="qcow2", visibility="public", properties={})]
+
+        class compute:
+            @staticmethod
+            def flavors():
+                return [SimpleNamespace(id="flavor-1", name="m1.small", vcpus=2, ram=2048, disk=20, ephemeral=0, swap=0, is_public=True)]
+
+            @staticmethod
+            def keypairs():
+                return [SimpleNamespace(name="ops-key", fingerprint="fp-1", type="ssh")]
+
+    fake_conn = FakeConn()
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: fake_conn)
+    monkeypatch.setattr(stress_helpers.openstack_ops, "_conn", lambda auth=None: fake_conn)
+    monkeypatch.setattr(stress_helpers, "get_stress_status", lambda auth=None, include_details=False: {"active": True, "details_included": include_details})
+
+    result = stress_helpers.launch_stress_stack(
+        auth=None,
+        compute_count=2,
+        payload={
+            "profile": "small-distribution",
+            "vm_count": 1,
+            "image_id": "img-1",
+            "flavor_id": "flavor-1",
+            "keypair_mode": "auto",
+            "cidr_mode": "manual",
+            "cidr": "10.77.71.0/24",
+            "external_network_id": "ext-net-1",
+        },
+    )
+
+    params = fake_conn.orchestration.create_kwargs["parameters"]
+    template = fake_conn.orchestration.create_kwargs["template"]
+    assert result["active"] is True
+    assert params["key_name"] == "vibe-stress-20260409-210101-key"
+    assert params["public_key"].startswith("ssh-rsa ")
+    assert "\"public_key\": {\"get_param\": \"public_key\"}" in template
+
+
 def test_stress_status_uses_heat_events_for_timing(monkeypatch):
     class FakeOrchestration:
         @staticmethod

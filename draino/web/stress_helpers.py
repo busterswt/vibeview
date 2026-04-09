@@ -10,6 +10,9 @@ from ipaddress import ip_network
 from statistics import mean
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
 from ..operations import openstack_ops
 
 STRESS_STACK_PREFIX = "vibe-stress-"
@@ -414,6 +417,20 @@ def _validate_cidr(cidr: str) -> str:
         raise ValueError("CIDR must be a valid network range") from exc
 
 
+def _generate_ssh_keypair() -> tuple[str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    ).decode("utf-8")
+    return private_pem, public_key
+
+
 def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
     vm_count = int(config["vm_count"])
     server_key_name: dict[str, Any] | str
@@ -468,6 +485,7 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
             "type": "OS::Nova::KeyPair",
             "properties": {
                 "name": {"get_param": "key_name"},
+                "public_key": {"get_param": "public_key"},
                 "save_private_key": False,
             },
         }
@@ -526,6 +544,7 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
         "image": {"type": "string"},
         "flavor": {"type": "string"},
         "key_name": {"type": "string"},
+        "public_key": {"type": "string", "default": ""},
         "key_mode": {"type": "string"},
         "vm_count": {"type": "number"},
         "network_cidr": {"type": "string"},
@@ -587,6 +606,10 @@ def _build_stack_payload(*, options: dict[str, Any], payload: dict[str, Any]) ->
     stack_name = f"{STRESS_STACK_PREFIX}{test_id}"
     name_prefix = stack_name
     generated_key_name = f"{stack_name}-key"
+    private_key = ""
+    public_key = ""
+    if keypair_mode == "auto":
+        private_key, public_key = _generate_ssh_keypair()
     return {
         "test_id": test_id,
         "stack_name": stack_name,
@@ -595,6 +618,8 @@ def _build_stack_payload(*, options: dict[str, Any], payload: dict[str, Any]) ->
         "image_id": image_id,
         "flavor_id": flavor_id,
         "key_name": generated_key_name if keypair_mode == "auto" else keypair_name,
+        "public_key": public_key,
+        "private_key": private_key,
         "keypair_mode": keypair_mode,
         "vm_count": vm_count,
         "cidr": cidr,
@@ -633,6 +658,7 @@ def launch_stress_stack(
         "image": stack_payload["image_id"],
         "flavor": stack_payload["flavor_id"],
         "key_name": stack_payload["key_name"],
+        "public_key": stack_payload["public_key"],
         "key_mode": stack_payload["keypair_mode"],
         "vm_count": stack_payload["vm_count"],
         "network_cidr": stack_payload["cidr"],
