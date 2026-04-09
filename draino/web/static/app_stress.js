@@ -146,6 +146,22 @@ function stopStressStatusPolling() {
   stressStatusTimer = null;
 }
 
+function ensureStressBootstrap() {
+  if (!stressState.profileKey) {
+    stressState.profileKey = localStorage.getItem(STRESS_PROFILE_STORAGE_KEY) || stressProfiles()[0]?.key || '';
+  }
+  if (!stressState.catalog && !stressState.catalogLoading) {
+    void loadStressCatalog();
+    return;
+  }
+  if (!stressState.env && !stressState.envLoading) {
+    void loadStressEnvironment();
+  }
+  if ((stressState.catalog?.guardrail?.active || stressState.env?.guardrail?.active) && !stressState.status && !stressState.statusLoading) {
+    void loadStressStatus(true);
+  }
+}
+
 async function loadStressCatalog(force = false) {
   if (stressState.catalogLoading) return;
   if (stressState.catalog && !force) {
@@ -169,6 +185,9 @@ async function loadStressCatalog(force = false) {
     }
     if (!stressState.profileKey) {
       stressState.profileKey = json.catalog?.profiles?.[0]?.key || '';
+    }
+    if (!stressState.env && !stressState.envLoading) {
+      void loadStressEnvironment();
     }
     if (stressState.catalog?.guardrail?.active) {
       await loadStressStatus(true);
@@ -266,6 +285,9 @@ function setStressProfile(profileKey) {
   const profile = stressProfileByKey(profileKey);
   const draft = stressDraft(profileKey);
   if (profile && draft && !draft.vmCount) draft.vmCount = profile.default_vm_count || 1;
+  if (!stressState.env && !stressState.envLoading) {
+    void loadStressEnvironment();
+  }
   renderStressView();
 }
 
@@ -604,9 +626,6 @@ function renderStressTemplateWorkspace() {
               <div class="stress-launch-note">
                 Draft target: ${esc(String(draft?.vmCount || profile?.default_vm_count || 1))} VMs across ${esc(String(stressState.catalog?.limits?.compute_count || 0))} visible compute hosts.
               </div>
-              <div class="stress-launch-actions">
-                <button class="btn" type="button" onclick="loadSelectedStressTemplate()" ${stressState.envLoading || stressState.catalogLoading ? 'disabled' : ''}>${stressState.envLoading || stressState.catalogLoading ? 'Loading Template Details…' : 'Load Template Details'}</button>
-              </div>
               ${stressState.envLoading || stressState.catalogLoading ? `
                 <div class="stress-template-note" aria-live="polite">
                   <span class="stress-action-spinner">↻</span>
@@ -761,45 +780,50 @@ function renderStressDistributionTable(distribution) {
 function renderStressView() {
   const wrap = document.getElementById('stress-wrap');
   if (!wrap) return;
+  ensureStressBootstrap();
   const scrollTop = wrap.scrollTop;
   if (stressState.catalogError && !stressState.catalog) {
     wrap.innerHTML = `
-      <section class="report-launch-card">
-        <div class="report-launch-shell">
-          <div class="report-launch-icon">⛔</div>
-          <div class="report-launch-copy">
-            <div class="report-launch-kicker">Stress Console</div>
-            <div class="report-launch-title">Unable to load stress templates</div>
-            <div class="report-launch-text">${esc(stressState.catalogError)}</div>
-            <div class="report-launch-actions">
-              <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Retry</button>
+      <div class="stress-page">
+        <section class="report-launch-card">
+          <div class="report-launch-shell">
+            <div class="report-launch-icon">⛔</div>
+            <div class="report-launch-copy">
+              <div class="report-launch-kicker">Stress Console</div>
+              <div class="report-launch-title">Unable to load stress templates</div>
+              <div class="report-launch-text">${esc(stressState.catalogError)}</div>
+              <div class="report-launch-actions">
+                <button class="report-launch-btn" type="button" onclick="loadStressCatalog(true)">Retry</button>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     `;
     wrap.scrollTop = scrollTop;
     return;
   }
   const status = stressState.status;
   wrap.innerHTML = `
-    ${renderStressTemplateWorkspace()}
-    <section class="stress-monitor-grid">
-      ${renderStressGuardrail()}
-      ${renderStressTrace()}
-    </section>
-    <section class="card">
-      <div class="card-title"><span>Notes</span></div>
-      <div class="card-body note">
-        Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
-        Timing and distribution are derived live from Heat resources and Nova server state.
-        Leaving Stress stops polling, but the current stack, action trace, and template drafts stay in browser state when you return.
-      </div>
-    </section>
-    ${status?.active ? renderStressSummarySection(status) : ''}
-    ${status?.active ? renderStressResourceTable(status.resources || []) : ''}
-    ${status?.active ? renderStressServerTable(status.servers || []) : ''}
-    ${status?.active ? renderStressDistributionTable(status.distribution || []) : ''}
+    <div class="stress-page">
+      ${renderStressTemplateWorkspace()}
+      <section class="stress-monitor-grid">
+        ${renderStressGuardrail()}
+        ${renderStressTrace()}
+      </section>
+      <section class="card">
+        <div class="card-title"><span>Notes</span></div>
+        <div class="card-body note">
+          Launches are orchestrated through a single Heat stack with clear naming and one-active-test guardrails.
+          Timing and distribution are derived live from Heat resources and Nova server state.
+          Leaving Stress stops polling, but the current stack, action trace, and template drafts stay in browser state when you return.
+        </div>
+      </section>
+      ${status?.active ? renderStressSummarySection(status) : ''}
+      ${status?.active ? renderStressResourceTable(status.resources || []) : ''}
+      ${status?.active ? renderStressServerTable(status.servers || []) : ''}
+      ${status?.active ? renderStressDistributionTable(status.distribution || []) : ''}
+    </div>
   `;
   wrap.scrollTop = scrollTop;
 }
