@@ -481,11 +481,12 @@ function renderStressLaunchCard() {
   const compatibleFlavors = getCompatibleStressFlavors();
   const image = stressImageById(draft?.imageId);
   const externalNetworks = env.external_networks || [];
+  const guardrailActive = Boolean(stressState.catalog?.guardrail?.active || env.guardrail?.active || stressState.status?.active);
   const flavorHint = image
     ? `Showing flavors with at least ${image.min_disk_gb} GB disk and ${Math.round((image.min_ram_mb || 0) / 1024)} GB RAM.`
     : 'Select an image to filter flavors.';
   const autoKeyName = env.defaults?.generated_keypair_name || 'vibe-stress-key';
-  const launchBlocked = Boolean(env.guardrail?.active) || stressState.actionLoading;
+  const launchBlocked = guardrailActive || stressState.actionLoading;
   return `
     <div class="card">
       <div class="card-title"><span>Launch Parameters</span></div>
@@ -791,8 +792,16 @@ function renderStressDistributionTable(distribution) {
 function renderStressView() {
   const wrap = document.getElementById('stress-wrap');
   if (!wrap) return;
+  const priorContent = wrap.querySelector('.stress-content');
+  const contentScrollTop = priorContent ? priorContent.scrollTop : 0;
+  const priorNav = wrap.querySelector('.stress-nav');
+  const navScrollTop = priorNav ? priorNav.scrollTop : 0;
   if (!stressState.catalog && !stressState.catalogLoading && !stressState.catalogError) {
     wrap.innerHTML = renderStressEmptyState();
+    const nextContent = wrap.querySelector('.stress-content');
+    if (nextContent) nextContent.scrollTop = contentScrollTop;
+    const nextNav = wrap.querySelector('.stress-nav');
+    if (nextNav) nextNav.scrollTop = navScrollTop;
     return;
   }
   if (stressState.catalogError && !stressState.catalog) {
@@ -811,6 +820,10 @@ function renderStressView() {
         </div>
       </section>
     `;
+    const nextContent = wrap.querySelector('.stress-content');
+    if (nextContent) nextContent.scrollTop = contentScrollTop;
+    const nextNav = wrap.querySelector('.stress-nav');
+    if (nextNav) nextNav.scrollTop = navScrollTop;
     return;
   }
   const env = stressState.env || {};
@@ -872,4 +885,8 @@ function renderStressView() {
       </div>
     </div>
   `;
+  const nextContent = wrap.querySelector('.stress-content');
+  if (nextContent) nextContent.scrollTop = contentScrollTop;
+  const nextNav = wrap.querySelector('.stress-nav');
+  if (nextNav) nextNav.scrollTop = navScrollTop;
 }
