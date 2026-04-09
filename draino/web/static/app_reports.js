@@ -22,6 +22,13 @@ const REPORT_META = {
     csvUrl: '/api/reports/k8s-node-health-density.csv',
     icon: '☸️',
   },
+  'k8s-pvc-workload': {
+    label: 'Kubernetes PVC Placement & Workload',
+    subtitle: 'PVCs, storage classes, replica placement, and consumer locality',
+    url: '/api/reports/k8s-pvc-workload',
+    csvUrl: '/api/reports/k8s-pvc-workload.csv',
+    icon: '🗄️',
+  },
   'project-placement': {
     label: 'Project Placement',
     subtitle: 'Tenant VM distribution across compute hosts',
@@ -681,6 +688,150 @@ function renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel) {
   `;
 }
 
+function renderK8sPvcWorkloadReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const items = report.items || [];
+  const storageItems = report.storage_items || [];
+  const replicaNodeItems = report.replica_node_items || [];
+  const totalPvcs = Number(report.scope?.pvcs ?? items.length) || 0;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Kubernetes live view</span>
+        <span class="meta-pill">CSI / PVC topology</span>
+        <span class="meta-pill">No stored history</span>
+        <span class="meta-pill">${esc(String(totalPvcs))} PVCs</span>
+        <span class="meta-pill">Generated ${esc(nowLabel)}</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Bound PVCs', String(summary.bound_pvcs ?? 0), 'good', summaryFoot.bound_pvcs || '')}
+      ${renderCapacityHero('Replica Skew', String(summary.replica_skew ?? 0), (summary.replica_skew ?? 0) > 0 ? 'warn' : 'good', summaryFoot.replica_skew || '')}
+      ${renderCapacityHero('Single-Node Attachments', String(summary.single_node_use ?? 0), (summary.single_node_use ?? 0) > 0 ? 'warn' : 'good', summaryFoot.single_node_use || '')}
+      ${renderCapacityHero('Orphan / Unbound', String(summary.orphan_unbound ?? 0), (summary.orphan_unbound ?? 0) > 0 ? 'bad' : 'good', summaryFoot.orphan_unbound || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Replica / Consumer Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('Replica Skew', summary.replica_skew ?? 0, totalPvcs, 'bad')}
+          ${renderReportBreakdownBar('Single-Node Use', summary.single_node_use ?? 0, totalPvcs, 'warn')}
+          ${renderReportBreakdownBar('Unbound / Orphan', summary.orphan_unbound ?? 0, totalPvcs, 'blue')}
+          ${renderReportBreakdownBar('Healthy Spread', Math.max(0, totalPvcs - ((summary.replica_skew ?? 0) + (summary.orphan_unbound ?? 0))), totalPvcs, 'good')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>PVC Workload Grid</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Namespace / PVC</th>
+              <th>Storage Class</th>
+              <th>Size</th>
+              <th>Access</th>
+              <th>Replicas</th>
+              <th>Replica Nodes</th>
+              <th>Consumer Pod</th>
+              <th>Consumer Node</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td class="mono">${esc(item.namespace || '')} / ${esc(item.name || '')}</td>
+                <td>${esc(item.storageclass || '—')}</td>
+                <td>${esc(item.capacity || '—')}</td>
+                <td>${esc(item.access_modes || '—')}</td>
+                <td>${item.replica_count != null ? esc(String(item.replica_count)) : '—'}</td>
+                <td class="mono report-wrap-cell">${esc(item.replica_nodes_label || '—')}</td>
+                <td class="mono report-wrap-cell">${esc(item.consumer_pod_label || '—')}</td>
+                <td class="mono report-wrap-cell">${esc(item.consumer_node_label || '—')}</td>
+                <td><span class="report-tag ${String(item.status || '').toLowerCase() === 'bound' ? 'green' : 'yellow'}">${esc(item.status || 'unknown')}</span></td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || 'low')}</span></td>
+                <td class="report-wrap-cell">${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="report-grid-two">
+      <div class="card">
+        <div class="card-title"><span>Storage Class Breakdown</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Storage Class</th>
+                <th>PVCs</th>
+                <th>Typical Replicas</th>
+                <th>Top Consumer Nodes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${storageItems.map(item => `
+                <tr>
+                  <td>${esc(item.storageclass || '—')}</td>
+                  <td>${esc(String(item.pvc_count ?? 0))}</td>
+                  <td>${item.typical_replicas != null ? esc(String(item.typical_replicas)) : '—'}</td>
+                  <td class="mono report-wrap-cell">${esc(item.top_consumer_nodes || '—')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>Replica Placement Risk</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>PVC Replicas</th>
+                <th>Active Consumers</th>
+                <th>Namespaces</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${replicaNodeItems.map(item => `
+                <tr>
+                  <td class="mono">${esc(item.node || '')}</td>
+                  <td>${esc(String(item.pvc_count ?? 0))}</td>
+                  <td>${esc(String(item.consumer_count ?? 0))}</td>
+                  <td>${esc(String(item.namespace_count ?? 0))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
 function renderPlacementRiskReport(activeMeta, report, nowLabel) {
   const summary = report.summary || {};
   const summaryFoot = report.summary_foot || {};
@@ -861,6 +1012,8 @@ function renderReportsView() {
       ? renderCapacityReport(activeMeta, report, nowLabel)
       : reportState.active === 'k8s-node-health-density'
         ? renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel)
+      : reportState.active === 'k8s-pvc-workload'
+        ? renderK8sPvcWorkloadReport(activeMeta, report, nowLabel)
       : reportState.active === 'placement-risk'
         ? renderPlacementRiskReport(activeMeta, report, nowLabel)
       : reportState.active === 'project-placement'

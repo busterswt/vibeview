@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Kubernetes PVC Placement & Workload Report</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --border: #d1d9e0;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+}
+
+.logo { color: white; font-weight: 700; }
+.logo-sub { font-size: 10px; font-weight: 400; color: #90a4ae; }
+
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.bc-link { color: var(--blue); }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#content {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.sub { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 860px; }
+.meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.hero-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.hero-foot.good { color: var(--green); }
+.hero-foot.warn { color: var(--yellow); }
+.hero-foot.bad { color: var(--red); }
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.card-title {
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 14px; }
+
+.finding-list { display: grid; gap: 8px; }
+.finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.finding-row:last-child { border-bottom: none; }
+
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sev.high { background: var(--red-bg); color: var(--red); }
+.sev.medium { background: var(--yellow-bg); color: var(--yellow); }
+.sev.low { background: var(--green-bg); color: var(--green); }
+.finding-text { font-size: 12px; line-height: 1.5; }
+
+.chart-strip { display: grid; gap: 10px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 62px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3eaf1;
+  overflow: hidden;
+}
+.bar-fill { height: 100%; border-radius: 999px; }
+.bar-fill.blue { background: var(--blue); }
+.bar-fill.red { background: var(--red); }
+.bar-fill.yellow { background: var(--yellow); }
+.bar-fill.green { background: var(--green); }
+.bar-value { color: var(--dim); font-size: 11px; text-align: right; }
+
+.table-wrap { padding: 12px; overflow-x: auto; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.data-table th {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  background: #fafbfc;
+}
+.data-table td.wrap { white-space: normal; min-width: 240px; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+.tag.green { background: var(--green-bg); color: var(--green); }
+.tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag.red { background: var(--red-bg); color: var(--red); }
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@media (max-width: 1100px) {
+  .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-two { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div>VibeView</div>
+      <div class="logo-sub">Mockup review layout</div>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Networks</a>
+      <a href="#">Routers</a>
+      <a href="#">Storage</a>
+      <a class="active" href="#">Reports</a>
+      <a href="#">Stress</a>
+    </div>
+    <div class="top-right">
+      <div class="mock-pill">MOCKUP</div>
+      <button class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span>/</span>
+    <span>Kubernetes PVC Placement & Workload</span>
+    <div class="bc-actions">
+      <button class="btn">Run Report</button>
+      <button class="btn">CSV</button>
+      <button class="btn">PDF</button>
+    </div>
+  </div>
+
+  <main id="content">
+    <section class="header-card">
+      <div class="title">Kubernetes PVC Placement & Workload</div>
+      <div class="sub">Live PVC inventory with storage class, replica placement, consuming workloads, and node locality so operators can spot replica skew, single-node concentration, and storage hotspots at a glance.</div>
+      <div class="meta-row">
+        <span class="meta-pill">Kubernetes live view</span>
+        <span class="meta-pill">CSI / PVC topology</span>
+        <span class="meta-pill">No stored history</span>
+        <span class="meta-pill">86 PVCs</span>
+        <span class="meta-pill">Generated 16:42:19</span>
+      </div>
+    </section>
+
+    <section class="hero-grid">
+      <div class="hero">
+        <div class="hero-label">Bound PVCs</div>
+        <div class="hero-value">82</div>
+        <div class="hero-foot good">82 / 86 claims are bound and in service</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Replica Skew</div>
+        <div class="hero-value">6</div>
+        <div class="hero-foot warn">Claims with replicas weighted to too few nodes</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Single-Node Attachments</div>
+        <div class="hero-value">11</div>
+        <div class="hero-foot warn">Consumer workload pinned to one node or host set</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Orphan / Unbound</div>
+        <div class="hero-value">4</div>
+        <div class="hero-foot bad">Claims needing cleanup or workload review</div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Highest-Risk Findings</div>
+        <div class="card-body">
+          <div class="finding-list">
+            <div class="finding-row">
+              <div><span class="sev high">High</span></div>
+              <div class="finding-text"><strong>db-primary/data-mariadb-0</strong> has <strong>3 replicas</strong> but all replica placement resolves to <code>cmp-a01</code> and <code>cmp-a02</code>.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev high">High</span></div>
+              <div class="finding-text"><strong>logging/loki-data-2</strong> is consumed by <code>loki-backend-2</code> on <code>cmp-d04</code> and is the only replica resident in that AZ.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev medium">Medium</span></div>
+              <div class="finding-text"><strong>backup/velero-cache</strong> is bound but has no consuming pod and no recent attachment locality.</div>
+            </div>
+            <div class="finding-row">
+              <div><span class="sev medium">Medium</span></div>
+              <div class="finding-text"><strong>monitoring/prometheus-db-prometheus-0</strong> uses <strong>RWX</strong> storage but all current consumers are running on <code>cmp-c01</code>.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Replica / Consumer Breakdown</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>Replica Skew</div>
+              <div class="bar-track"><div class="bar-fill red" style="width:7%"></div></div>
+              <div class="bar-value">6</div>
+            </div>
+            <div class="bar-row">
+              <div>Single-Node Use</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width:13%"></div></div>
+              <div class="bar-value">11</div>
+            </div>
+            <div class="bar-row">
+              <div>Unbound / Orphan</div>
+              <div class="bar-track"><div class="bar-fill blue" style="width:5%"></div></div>
+              <div class="bar-value">4</div>
+            </div>
+            <div class="bar-row">
+              <div>Healthy Spread</div>
+              <div class="bar-track"><div class="bar-fill green" style="width:82%"></div></div>
+              <div class="bar-value">71</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">PVC Workload Grid</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Namespace / PVC</th>
+              <th>Storage Class</th>
+              <th>Size</th>
+              <th>Access</th>
+              <th>Replicas</th>
+              <th>Replica Nodes</th>
+              <th>Consumer Pod</th>
+              <th>Consumer Node</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">db-primary / data-mariadb-0</td>
+              <td>longhorn-repl3</td>
+              <td>200Gi</td>
+              <td>RWO</td>
+              <td>3</td>
+              <td class="mono wrap">cmp-a01, cmp-a02, cmp-a02</td>
+              <td class="mono">mariadb-0</td>
+              <td class="mono">cmp-a01</td>
+              <td><span class="tag red">Bound</span></td>
+              <td><span class="tag red">High</span></td>
+              <td class="wrap">Replica placement is concentrated on two nodes for a quorum-sensitive workload.</td>
+            </tr>
+            <tr>
+              <td class="mono">logging / loki-data-2</td>
+              <td>rook-ceph-block</td>
+              <td>100Gi</td>
+              <td>RWO</td>
+              <td>3</td>
+              <td class="mono wrap">cmp-d04, cmp-d05, cmp-f01</td>
+              <td class="mono">loki-backend-2</td>
+              <td class="mono">cmp-d04</td>
+              <td><span class="tag red">Bound</span></td>
+              <td><span class="tag red">High</span></td>
+              <td class="wrap">Consumer and one replica share the same node while AZ spread is thin.</td>
+            </tr>
+            <tr>
+              <td class="mono">monitoring / prometheus-db-prometheus-0</td>
+              <td>nfs-rwx</td>
+              <td>80Gi</td>
+              <td>RWX</td>
+              <td>1</td>
+              <td class="mono wrap">storage-gw01</td>
+              <td class="mono">prometheus-k8s-0</td>
+              <td class="mono">cmp-c01</td>
+              <td><span class="tag yellow">Bound</span></td>
+              <td><span class="tag medium tag yellow">Medium</span></td>
+              <td class="wrap">Shared storage class but current workload locality is effectively single-node.</td>
+            </tr>
+            <tr>
+              <td class="mono">backup / velero-cache</td>
+              <td>rook-ceph-bucket</td>
+              <td>20Gi</td>
+              <td>RWO</td>
+              <td>3</td>
+              <td class="mono wrap">cmp-b01, cmp-b03, cmp-c02</td>
+              <td class="mono">—</td>
+              <td class="mono">—</td>
+              <td><span class="tag yellow">Bound</span></td>
+              <td><span class="tag yellow">Medium</span></td>
+              <td class="wrap">No active consumer pod detected for a bound claim.</td>
+            </tr>
+            <tr>
+              <td class="mono">team-a / api-cache</td>
+              <td>rook-ceph-block</td>
+              <td>15Gi</td>
+              <td>RWO</td>
+              <td>3</td>
+              <td class="mono wrap">cmp-e01, cmp-e02, cmp-e03</td>
+              <td class="mono">api-7d48c4b7c4-rv9ts</td>
+              <td class="mono">cmp-e02</td>
+              <td><span class="tag green">Bound</span></td>
+              <td><span class="tag green">Low</span></td>
+              <td class="wrap">Replica spread and consumer placement look healthy.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Storage Class Breakdown</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Storage Class</th>
+                <th>PVCs</th>
+                <th>Typical Replicas</th>
+                <th>Top Consumer Nodes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>rook-ceph-block</td>
+                <td>41</td>
+                <td>3</td>
+                <td class="mono">cmp-d04, cmp-c01, cmp-e02</td>
+              </tr>
+              <tr>
+                <td>longhorn-repl3</td>
+                <td>18</td>
+                <td>3</td>
+                <td class="mono">cmp-a01, cmp-a02, cmp-b01</td>
+              </tr>
+              <tr>
+                <td>nfs-rwx</td>
+                <td>9</td>
+                <td>1</td>
+                <td class="mono">cmp-c01, cmp-c02</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Replica Placement Risk</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>PVC Replicas</th>
+                <th>Active Consumers</th>
+                <th>Namespaces</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">cmp-a01</td>
+                <td>27</td>
+                <td>11</td>
+                <td>4</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-d04</td>
+                <td>21</td>
+                <td>9</td>
+                <td>5</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-c01</td>
+                <td>18</td>
+                <td>8</td>
+                <td>6</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

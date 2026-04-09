@@ -464,6 +464,133 @@ def test_k8s_node_health_density_reports_endpoints_return_json_and_csv(monkeypat
     assert "cmp-a03" in export.text
 
 
+def test_build_k8s_pvc_workload_report_summarises_live_pvc_state(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_pvc_workload_summary",
+        lambda auth=None: {
+            "items": [
+                {
+                    "namespace": "db-primary",
+                    "name": "data-mariadb-0",
+                    "status": "Bound",
+                    "capacity": "200Gi",
+                    "access_modes": "RWO",
+                    "storageclass": "longhorn-repl3",
+                    "replica_count": 3,
+                    "replica_nodes": ["cmp-a01", "cmp-a02", "cmp-a02"],
+                    "consumer_pods": ["mariadb-0"],
+                    "consumer_nodes": ["cmp-a01"],
+                    "consumer_count": 1,
+                },
+                {
+                    "namespace": "backup",
+                    "name": "velero-cache",
+                    "status": "Bound",
+                    "capacity": "20Gi",
+                    "access_modes": "RWO",
+                    "storageclass": "rook-ceph-bucket",
+                    "replica_count": 3,
+                    "replica_nodes": ["cmp-b01", "cmp-b03", "cmp-c02"],
+                    "consumer_pods": [],
+                    "consumer_nodes": [],
+                    "consumer_count": 0,
+                },
+            ],
+            "storage_classes": [
+                {"storageclass": "longhorn-repl3", "pvc_count": 1, "typical_replicas": 3.0, "top_consumer_nodes": "cmp-a01"},
+                {"storageclass": "rook-ceph-bucket", "pvc_count": 1, "typical_replicas": 3.0, "top_consumer_nodes": ""},
+            ],
+            "replica_nodes": [
+                {"node": "cmp-a01", "pvc_count": 1, "consumer_count": 1, "namespace_count": 1},
+                {"node": "cmp-a02", "pvc_count": 1, "consumer_count": 0, "namespace_count": 1},
+            ],
+            "error": None,
+        },
+    )
+
+    payload = web_server._build_k8s_pvc_workload_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["bound_pvcs"] == 2
+    assert payload["report"]["summary"]["replica_skew"] == 1
+    assert payload["report"]["summary"]["single_node_use"] == 1
+    assert payload["report"]["summary"]["orphan_unbound"] == 1
+    assert payload["report"]["items"][0]["risk"] == "high"
+    assert payload["report"]["items"][1]["risk"] == "medium"
+    assert payload["report"]["storage_items"][0]["storageclass"] == "longhorn-repl3"
+    assert payload["report"]["replica_node_items"][0]["node"] == "cmp-a01"
+
+
+def test_k8s_pvc_workload_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_pvc_workload_summary",
+        lambda auth=None: {
+            "items": [
+                {
+                    "namespace": "db-primary",
+                    "name": "data-mariadb-0",
+                    "status": "Bound",
+                    "capacity": "200Gi",
+                    "access_modes": "RWO",
+                    "storageclass": "longhorn-repl3",
+                    "replica_count": 3,
+                    "replica_nodes": ["cmp-a01", "cmp-a02", "cmp-a02"],
+                    "consumer_pods": ["mariadb-0"],
+                    "consumer_nodes": ["cmp-a01"],
+                    "consumer_count": 1,
+                },
+            ],
+            "storage_classes": [
+                {"storageclass": "longhorn-repl3", "pvc_count": 1, "typical_replicas": 3.0, "top_consumer_nodes": "cmp-a01"},
+            ],
+            "replica_nodes": [
+                {"node": "cmp-a01", "pvc_count": 1, "consumer_count": 1, "namespace_count": 1},
+            ],
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        report = client.get("/api/reports/k8s-pvc-workload")
+        export = client.get("/api/reports/k8s-pvc-workload.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["items"][0]["name"] == "data-mariadb-0"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="k8s-pvc-workload.csv"'
+    assert "data-mariadb-0" in export.text
+
+
 def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch, tmp_path):
     server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
     server.node_states = {

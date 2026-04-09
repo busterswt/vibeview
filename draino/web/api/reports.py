@@ -11,11 +11,13 @@ from .api_issues import build_api_issue
 from ..report_helpers import (
     build_capacity_headroom_report,
     build_k8s_node_health_density_report,
+    build_k8s_pvc_workload_report,
     build_maintenance_readiness_report,
     build_placement_risk_report,
     build_project_placement_report,
     render_capacity_headroom_csv,
     render_k8s_node_health_density_csv,
+    render_k8s_pvc_workload_csv,
     render_maintenance_readiness_csv,
     render_placement_risk_csv,
     render_project_placement_csv,
@@ -109,6 +111,31 @@ async def api_report_k8s_node_health_density_csv(request: Request):
         csv_text,
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="k8s-node-health-density.csv"'},
+    )
+
+
+@router.get("/api/reports/k8s-pvc-workload")
+async def api_report_k8s_pvc_workload(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        report = await loop.run_in_executor(None, build_k8s_pvc_workload_report, session.server)
+        report["api_issue"] = None
+        return report
+    except Exception as exc:
+        return {"report": None, "error": str(exc), "api_issue": None}
+
+
+@router.get("/api/reports/k8s-pvc-workload.csv")
+async def api_report_k8s_pvc_workload_csv(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, build_k8s_pvc_workload_report, session.server)
+    csv_text = await loop.run_in_executor(None, render_k8s_pvc_workload_csv, report["report"])
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="k8s-pvc-workload.csv"'},
     )
 
 

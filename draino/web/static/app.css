@@ -933,6 +933,10 @@ body.no-hints .vmware-ref-card { display: none !important; }
 #reports-wrap .report-grid-two { gap: 14px; }
 #reports-wrap .report-kv-stack .mrow { padding: 10px 0; }
 #reports-wrap .report-table-wrap { padding: 12px; overflow-x: auto; overflow-y: auto; }
+.report-wrap-cell {
+  white-space: normal;
+  min-width: 180px;
+}
 #stress-wrap {
   flex: 1;
   min-height: 0;

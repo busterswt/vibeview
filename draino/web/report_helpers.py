@@ -1120,3 +1120,148 @@ def render_k8s_node_health_density_csv(report: dict) -> str:
             item.get("reason", ""),
         ])
     return output.getvalue()
+
+
+def _pvc_report_risk(item: dict) -> tuple[str, str]:
+    status = item.get("status") or ""
+    replica_count = item.get("replica_count")
+    replica_nodes = item.get("replica_nodes") or []
+    consumer_count = int(item.get("consumer_count") or 0)
+    access_modes = item.get("access_modes") or ""
+    if status.lower() != "bound":
+        return ("high", "PVC is not bound")
+    if consumer_count == 0:
+        return ("medium", "No active consumer pod detected for a bound claim")
+    if replica_count and replica_count >= 2 and len(set(replica_nodes)) < replica_count:
+        return ("high", "Replica placement is concentrated on too few nodes")
+    if consumer_count == 1 and "RWX" not in access_modes and len(item.get("consumer_nodes") or []) == 1:
+        return ("medium", "Consumer workload is pinned to a single node")
+    if "RWX" in access_modes and len(item.get("consumer_nodes") or []) <= 1:
+        return ("medium", "Shared-access storage is effectively single-node in current use")
+    return ("low", "Replica spread and consumer placement look healthy")
+
+
+def build_k8s_pvc_workload_report(server: DrainoServer) -> dict:
+    started = time.perf_counter()
+    data_started = time.perf_counter()
+    summary = k8s_ops.get_k8s_pvc_workload_summary(auth=server.k8s_auth)
+    data_ms = (time.perf_counter() - data_started) * 1000.0
+    if summary.get("error"):
+        return {"report": None, "error": summary["error"]}
+
+    raw_items = summary.get("items", [])
+    items: list[dict] = []
+    findings: list[dict] = []
+    bound_count = 0
+    replica_skew = 0
+    single_node_use = 0
+    orphan_count = 0
+
+    for raw in raw_items:
+        item = {
+            **raw,
+            "full_name": f"{raw.get('namespace', '')} / {raw.get('name', '')}",
+            "replica_nodes_label": ", ".join(raw.get("replica_nodes") or []) or "—",
+            "consumer_pod_label": ", ".join((raw.get("consumer_pods") or [])[:2]) or "—",
+            "consumer_node_label": ", ".join(raw.get("consumer_nodes") or []) or "—",
+        }
+        risk, reason = _pvc_report_risk(item)
+        item["risk"] = risk
+        item["reason"] = reason
+        items.append(item)
+
+        if str(item.get("status", "")).lower() == "bound":
+            bound_count += 1
+        if item.get("replica_count") and len(set(item.get("replica_nodes") or [])) < int(item.get("replica_count") or 0):
+            replica_skew += 1
+        if int(item.get("consumer_count") or 0) <= 1 and item.get("consumer_nodes"):
+            single_node_use += 1
+        if str(item.get("status", "")).lower() != "bound" or int(item.get("consumer_count") or 0) == 0:
+            orphan_count += 1
+        if risk != "low":
+            findings.append({
+                "severity": "high" if risk == "high" else "medium",
+                "node": item["full_name"],
+                "message": reason,
+            })
+
+    storage_items = summary.get("storage_classes", [])
+    replica_node_items = summary.get("replica_nodes", [])[:10]
+    findings = sorted(findings, key=lambda item: (0 if item["severity"] == "high" else 1, item["node"]))[:4]
+    total = len(items)
+    total_ms = (time.perf_counter() - started) * 1000.0
+
+    return {
+        "report": {
+            "key": "k8s-pvc-workload",
+            "title": "Kubernetes PVC Placement & Workload",
+            "subtitle": "Live PVC inventory with storage class, replica placement, consuming workloads, and node locality so operators can spot replica skew, single-node concentration, and storage hotspots at a glance.",
+            "source": "Kubernetes",
+            "scope": {
+                "pvcs": total,
+            },
+            "summary": {
+                "bound_pvcs": bound_count,
+                "replica_skew": replica_skew,
+                "single_node_use": single_node_use,
+                "orphan_unbound": orphan_count,
+            },
+            "summary_foot": {
+                "bound_pvcs": f"{bound_count} / {total} claims are bound and in service",
+                "replica_skew": "Claims with replicas weighted to too few nodes",
+                "single_node_use": "Consumer workload pinned to one node or host set",
+                "orphan_unbound": "Claims needing cleanup or workload review",
+            },
+            "findings": findings,
+            "items": items,
+            "storage_items": storage_items,
+            "replica_node_items": replica_node_items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "k8s_pvc_workload_summary": round(data_ms, 1),
+                },
+                "counts": {
+                    "pvcs": total,
+                    "storage_classes": len(storage_items),
+                    "replica_nodes": len(summary.get("replica_nodes", [])),
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def render_k8s_pvc_workload_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "namespace",
+        "name",
+        "storageclass",
+        "capacity",
+        "access_modes",
+        "replica_count",
+        "replica_nodes",
+        "consumer_pods",
+        "consumer_nodes",
+        "status",
+        "risk",
+        "reason",
+    ])
+    for item in report.get("items", []):
+        writer.writerow([
+            item.get("namespace", ""),
+            item.get("name", ""),
+            item.get("storageclass", ""),
+            item.get("capacity", ""),
+            item.get("access_modes", ""),
+            item.get("replica_count", ""),
+            ",".join(item.get("replica_nodes", [])),
+            ",".join(item.get("consumer_pods", [])),
+            ",".join(item.get("consumer_nodes", [])),
+            item.get("status", ""),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    return output.getvalue()
