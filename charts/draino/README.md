@@ -93,7 +93,7 @@ that agent over HTTPS after the node has already been cordoned and drained.
 
 Default behavior:
 
-- one privileged agent pod per labeled OpenStack infrastructure node
+- one unprivileged agent pod per labeled OpenStack infrastructure node
 - one headless Service for per-node HTTPS discovery
 - one generated Secret containing the agent TLS material and bearer token
 - the web pod uses in-cluster RBAC only to find the correct agent pod for the selected node
@@ -106,6 +106,31 @@ By default the DaemonSet is scheduled only on nodes labeled with one of:
 - `openstack-storage-node=enabled`
 
 This intentionally excludes generic worker nodes unless you override `nodeAgent.affinity`.
+
+Node-agent privilege mode is configurable through `nodeAgent.profile`:
+
+```yaml
+nodeAgent:
+  profile: unprivileged
+```
+
+Supported values:
+
+- `privileged`
+  - `hostPID: true`
+  - privileged/root container
+  - required for host reboot operations
+- `unprivileged`
+  - `hostPID: false`
+  - non-root, non-privileged container
+  - useful when you want node-local HTTPS discovery and lightweight agent endpoints without granting reboot-capable privileges
+
+Example:
+
+```yaml
+nodeAgent:
+  profile: unprivileged
+```
 
 The DaemonSet rollout strategy is configurable through `nodeAgent.updateStrategy`. The
 default allows up to `2` node-agent pods to be unavailable during a rolling update:
@@ -122,11 +147,12 @@ Both the web `Deployment` and the node-agent `DaemonSet` also carry a pod-templa
 annotation based on the Helm release revision. That means a normal `helm upgrade` will
 trigger a rollout even when the image tag and other pod settings are unchanged.
 
-This is still a privileged design because the agent can reboot its host.
+When `nodeAgent.profile=privileged`, this is still a privileged design because the agent
+can reboot its host.
 
 Security concerns to understand before deployment:
 
-- the agent is privileged on every managed node
+- the agent is privileged on every managed node when `nodeAgent.profile=privileged`
 - the web pod can discover and call every agent
 - the current implementation uses shared in-cluster trust material for agent access
 - this is safer than shared SSH keys, but it is not equivalent to a strongly isolated

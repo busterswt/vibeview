@@ -23,7 +23,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      hostPID: {{ .Values.nodeAgent.hostPID }}
+      {{- $nodeAgentProfile := default "privileged" .Values.nodeAgent.profile }}
+      {{- $nodeAgentHostPID := ternary .Values.nodeAgent.privilegedHostPID .Values.nodeAgent.unprivilegedHostPID (eq $nodeAgentProfile "privileged") }}
+      {{- $nodeAgentSecurityContext := ternary .Values.nodeAgent.privilegedSecurityContext .Values.nodeAgent.unprivilegedSecurityContext (eq $nodeAgentProfile "privileged") }}
+      hostPID: {{ $nodeAgentHostPID }}
       automountServiceAccountToken: false
       subdomain: {{ include "draino.nodeAgentName" . }}
       {{- with .Values.imagePullSecrets }}
@@ -57,7 +60,7 @@ spec:
               path: /readyz
               port: https
           securityContext:
-            {{- toYaml .Values.nodeAgent.securityContext | nindent 12 }}
+            {{- toYaml $nodeAgentSecurityContext | nindent 12 }}
           env:
             - name: DRAINO_NODE_NAME
               valueFrom:
