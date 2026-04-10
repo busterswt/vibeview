@@ -65,7 +65,17 @@ const expandedPortIdByInstance = {}; // instance_id -> port_id
 // Node network config cache (configure tab)
 // node_name → { annLoading, annotations, ifacesLoading, ifaces, ifacesError }
 const nodeNetworkCache = {};
-let appRuntimeState = { loading: false, current: null, history: [], requests: {}, limits: {}, restart_count: null };
+let appRuntimeState = {
+  loading: false,
+  current: null,
+  history: [],
+  requests: {},
+  limits: {},
+  restart_count: null,
+  diagnostics: null,
+  diagnosticsAction: '',
+  diagnosticsError: null,
+};
 
 // Working edit state for the currently-open Configure tab
 const netEdit = {
@@ -436,6 +446,11 @@ function fmtLatencyMs(value) {
   return `${ms.toFixed(0)} ms`;
 }
 
+function fmtCount(value) {
+  if (value == null) return '—';
+  return String(value);
+}
+
 function fmtNetRate(bytesPerSecond) {
   if (bytesPerSecond == null) return 'warming up';
   const bitsPerSecond = Number(bytesPerSecond) * 8;
@@ -489,6 +504,11 @@ function renderMonitorView() {
   const current = state.current || {};
   const requests = state.requests || {};
   const limits = state.limits || {};
+  const diagnostics = state.diagnostics || {};
+  const sessions = diagnostics.sessions || {};
+  const currentSession = diagnostics.current_session || {};
+  const allSessions = diagnostics.all_sessions || {};
+  const globalCaches = diagnostics.global_caches || {};
   const latencyLabels = {
     node_list_refresh: 'Node refresh',
     node_detail: 'Node detail',
@@ -556,6 +576,56 @@ function renderMonitorView() {
         </div>
       </div>
     </div>
+    <div class="tab-section-title" style="margin-bottom:10px"><span>Memory &amp; Cache Diagnostics</span></div>
+    ${state.diagnosticsError ? `<div class="etcd-alert danger">${esc(state.diagnosticsError)}</div>` : ''}
+    <div class="app-runtime-grid">
+      <div class="card">
+        <div class="card-title">Sessions</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">TTL</span><span class="mv">${fmtSeconds(sessions.ttl_seconds)}</span></div>
+          <div class="mrow"><span class="ml">Active sessions</span><span class="mv">${fmtCount(sessions.active_count)}</span></div>
+          <div class="mrow"><span class="ml">Stored records</span><span class="mv">${fmtCount(sessions.stored_count)}</span></div>
+          <div class="mrow"><span class="ml">Expired still stored</span><span class="mv">${fmtCount(sessions.expired_count)}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Current Session Cache</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">Tracked nodes</span><span class="mv">${fmtCount(currentSession.node_count)}</span></div>
+          <div class="mrow"><span class="ml">Node detail cache</span><span class="mv">${fmtCount(currentSession.node_detail_entries)}</span></div>
+          <div class="mrow"><span class="ml">Node metrics cache</span><span class="mv">${fmtCount(currentSession.node_metrics_entries)}</span></div>
+          <div class="mrow"><span class="ml">Host signal cache</span><span class="mv">${fmtCount(currentSession.host_signal_entries)}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">All Session Caches</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">Tracked nodes</span><span class="mv">${fmtCount(allSessions.node_count)}</span></div>
+          <div class="mrow"><span class="ml">Node detail entries</span><span class="mv">${fmtCount(allSessions.node_detail_entries)}</span></div>
+          <div class="mrow"><span class="ml">Node metrics entries</span><span class="mv">${fmtCount(allSessions.node_metrics_entries)}</span></div>
+          <div class="mrow"><span class="ml">Connected clients</span><span class="mv">${fmtCount(allSessions.client_count)}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Shared Runtime Caches</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">Node-agent endpoints</span><span class="mv">${fmtCount(globalCaches.node_agent_endpoint_cache)}</span></div>
+          <div class="mrow"><span class="ml">Flavor cache</span><span class="mv">${fmtCount(globalCaches.openstack_flavor_cache)}</span></div>
+          <div class="mrow"><span class="ml">Runtime samples</span><span class="mv">${fmtCount(globalCaches.runtime_history_samples)}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Clear Actions</div>
+        <div class="card-body">
+          <div class="runtime-note" style="margin-bottom:10px">Use these to reduce retained runtime state without restarting the pod.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" ${state.diagnosticsAction ? 'disabled' : ''} onclick="clearRuntimeDiagnostics('clear_current_session_caches')">${state.diagnosticsAction === 'clear_current_session_caches' ? 'Clearing…' : 'Clear Current Session Caches'}</button>
+            <button class="btn" ${state.diagnosticsAction ? 'disabled' : ''} onclick="clearRuntimeDiagnostics('sweep_expired_sessions')">${state.diagnosticsAction === 'sweep_expired_sessions' ? 'Sweeping…' : 'Sweep Expired Sessions'}</button>
+            <button class="btn" ${state.diagnosticsAction ? 'disabled' : ''} onclick="clearRuntimeDiagnostics('clear_global_runtime_caches')">${state.diagnosticsAction === 'clear_global_runtime_caches' ? 'Clearing…' : 'Clear Shared Caches'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="tab-section-title" style="margin-bottom:10px"><span>Events &amp; Alarms</span></div>
     <div class="event-list" id="monitor-log"></div>
   `;
@@ -567,9 +637,45 @@ async function refreshAppRuntime() {
   try {
     const resp = await fetch('/api/app-runtime');
     if (!resp.ok) return;
-    appRuntimeState = await resp.json();
+    appRuntimeState = {
+      ...appRuntimeState,
+      ...(await resp.json()),
+      diagnosticsAction: '',
+      diagnosticsError: null,
+    };
     if (activeView === 'monitor') renderMonitorView();
   } catch (_) {}
+}
+
+async function clearRuntimeDiagnostics(action) {
+  appRuntimeState = { ...appRuntimeState, diagnosticsAction: action, diagnosticsError: null };
+  if (activeView === 'monitor') renderMonitorView();
+  try {
+    const resp = await fetch('/api/app-runtime/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const payload = await resp.json();
+    if (!resp.ok || payload.ok === false) {
+      throw new Error(payload.detail || payload.error || 'Failed to clear runtime diagnostics');
+    }
+    appRuntimeState = {
+      ...appRuntimeState,
+      diagnostics: payload.diagnostics || appRuntimeState.diagnostics,
+      diagnosticsAction: '',
+      diagnosticsError: null,
+    };
+    if (activeView === 'monitor') renderMonitorView();
+    refreshAppRuntime();
+  } catch (e) {
+    appRuntimeState = {
+      ...appRuntimeState,
+      diagnosticsAction: '',
+      diagnosticsError: String(e),
+    };
+    if (activeView === 'monitor') renderMonitorView();
+  }
 }
 
 async function bootstrapSession() {

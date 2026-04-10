@@ -120,6 +120,82 @@ _runtime_prev_sample: tuple[float, float] | None = None
 _sessions = SessionStore()
 
 
+def _clear_global_runtime_caches() -> dict:
+    cleared = {
+        "node_agent_endpoint_cache": len(node_agent_client._endpoint_cache),
+        "openstack_flavor_cache": len(openstack_ops._flavor_cache),
+    }
+    with node_agent_client._cache_lock:
+        node_agent_client._endpoint_cache.clear()
+    with openstack_ops._flavor_cache_lock:
+        openstack_ops._flavor_cache.clear()
+    return cleared
+
+
+def _get_runtime_diagnostics(record: SessionRecord) -> dict:
+    session_stats = _sessions.stats()
+    current_cache_stats = record.server.cache_stats()
+    all_session_cache_stats = {
+        "node_detail_entries": 0,
+        "node_metrics_entries": 0,
+        "host_signal_entries": 0,
+        "openstack_summary_caches": 0,
+        "ovn_edge_caches": 0,
+        "mariadb_node_caches": 0,
+        "node_count": 0,
+        "client_count": 0,
+    }
+    with _sessions._lock:
+        records = list(_sessions._sessions.values())
+    for item in records:
+        stats = item.server.cache_stats()
+        all_session_cache_stats["node_detail_entries"] += stats["node_detail_entries"]
+        all_session_cache_stats["node_metrics_entries"] += stats["node_metrics_entries"]
+        all_session_cache_stats["host_signal_entries"] += stats["host_signal_entries"]
+        all_session_cache_stats["openstack_summary_caches"] += 1 if stats["has_openstack_summary_cache"] else 0
+        all_session_cache_stats["ovn_edge_caches"] += 1 if stats["has_ovn_edge_cache"] else 0
+        all_session_cache_stats["mariadb_node_caches"] += 1 if stats["has_mariadb_node_cache"] else 0
+        all_session_cache_stats["node_count"] += stats["node_count"]
+        all_session_cache_stats["client_count"] += stats["client_count"]
+
+    with node_agent_client._cache_lock:
+        node_agent_cache_size = len(node_agent_client._endpoint_cache)
+    with openstack_ops._flavor_cache_lock:
+        flavor_cache_size = len(openstack_ops._flavor_cache)
+    with _runtime_lock:
+        runtime_history_samples = len(_runtime_history)
+
+    return {
+        "sessions": session_stats,
+        "current_session": current_cache_stats,
+        "all_sessions": all_session_cache_stats,
+        "global_caches": {
+            "node_agent_endpoint_cache": node_agent_cache_size,
+            "openstack_flavor_cache": flavor_cache_size,
+            "runtime_history_samples": runtime_history_samples,
+        },
+    }
+
+
+def _clear_runtime_diagnostics(record: SessionRecord, action: str) -> dict:
+    if action == "clear_current_session_caches":
+        return {
+            "action": action,
+            "cleared": record.server.clear_runtime_caches(),
+        }
+    if action == "sweep_expired_sessions":
+        return {
+            "action": action,
+            "cleared": {"expired_sessions": _sessions.sweep_expired()},
+        }
+    if action == "clear_global_runtime_caches":
+        return {
+            "action": action,
+            "cleared": _clear_global_runtime_caches(),
+        }
+    raise HTTPException(status_code=400, detail=f"Unsupported runtime clear action: {action}")
+
+
 def _normalise_image_digest(image_id: str | None) -> str | None:
     if not image_id:
         return None
@@ -405,6 +481,8 @@ fastapi_app = create_fastapi_app(
     get_app_update_status=lambda: _get_app_update_status,
     get_public_version_status=lambda: _get_public_version_status,
     get_app_runtime=lambda: _get_app_runtime,
+    get_runtime_diagnostics=lambda: _get_runtime_diagnostics,
+    clear_runtime_diagnostics=lambda: _clear_runtime_diagnostics,
     get_network_detail=lambda: _get_network_detail,
 )
 

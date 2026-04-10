@@ -240,6 +240,16 @@ def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
             "restart_count": 1,
         },
     )
+    monkeypatch.setattr(
+        web_server,
+        "_get_runtime_diagnostics",
+        lambda record: {
+            "sessions": {"ttl_seconds": 28800, "active_count": 1, "stored_count": 1, "expired_count": 0},
+            "current_session": {"node_count": 2, "node_detail_entries": 1, "node_metrics_entries": 1, "host_signal_entries": 1},
+            "all_sessions": {"node_count": 2, "node_detail_entries": 1, "node_metrics_entries": 1, "client_count": 0},
+            "global_caches": {"node_agent_endpoint_cache": 1, "openstack_flavor_cache": 2, "runtime_history_samples": 3},
+        },
+    )
 
     payload = {
         "kubernetes": {
@@ -266,6 +276,58 @@ def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):
     assert runtime.status_code == 200
     assert runtime.json()["current"]["cpu_percent"] == 12.5
     assert runtime.json()["limits"]["memory"] == "1Gi"
+    assert runtime.json()["diagnostics"]["sessions"]["ttl_seconds"] == 28800
+
+
+def test_app_runtime_clear_endpoint_returns_updated_diagnostics(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    captured = {"action": None}
+    monkeypatch.setattr(
+        web_server,
+        "_clear_runtime_diagnostics",
+        lambda record, action: captured.__setitem__("action", action) or {"action": action, "cleared": {"expired_sessions": 2}},
+    )
+    monkeypatch.setattr(
+        web_server,
+        "_get_runtime_diagnostics",
+        lambda record: {
+            "sessions": {"ttl_seconds": 28800, "active_count": 1, "stored_count": 1, "expired_count": 0},
+            "current_session": {"node_count": 0, "node_detail_entries": 0, "node_metrics_entries": 0, "host_signal_entries": 0},
+            "all_sessions": {"node_count": 0, "node_detail_entries": 0, "node_metrics_entries": 0, "client_count": 0},
+            "global_caches": {"node_agent_endpoint_cache": 0, "openstack_flavor_cache": 0, "runtime_history_samples": 0},
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        cleared = client.post("/api/app-runtime/clear", json={"action": "sweep_expired_sessions"})
+
+    assert cleared.status_code == 200
+    assert captured["action"] == "sweep_expired_sessions"
+    assert cleared.json()["ok"] is True
+    assert cleared.json()["result"]["cleared"]["expired_sessions"] == 2
 
 
 def test_get_app_runtime_includes_latency_summary():

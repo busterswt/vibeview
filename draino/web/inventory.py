@@ -102,3 +102,32 @@ class DrainoServer(InventoryRefreshMixin, InventoryActionsMixin):
         def cb(event: str, detail: str = "") -> None:
             self._audit.log(action, node_name, event, detail)
         return cb
+
+    def cache_stats(self) -> dict:
+        return {
+            "node_count": len(self.node_states),
+            "node_detail_entries": len(self._node_detail_cache),
+            "node_metrics_entries": len(self._node_metrics_cache),
+            "host_signal_entries": len(self._host_signal_refresh_at),
+            "has_openstack_summary_cache": self._openstack_summary_cache is not None,
+            "has_ovn_edge_cache": self._ovn_edge_cache is not None,
+            "has_mariadb_node_cache": self._mariadb_node_cache is not None,
+            "client_count": len(self._clients),
+        }
+
+    def clear_runtime_caches(self) -> dict:
+        cleared = {
+            "node_detail_entries": len(self._node_detail_cache),
+            "node_metrics_entries": len(self._node_metrics_cache),
+            "host_signal_entries": len(self._host_signal_refresh_at),
+            "openstack_summary_cache": 1 if self._openstack_summary_cache is not None else 0,
+            "ovn_edge_cache": 1 if self._ovn_edge_cache is not None else 0,
+            "mariadb_node_cache": 1 if self._mariadb_node_cache is not None else 0,
+        }
+        self._node_detail_cache.clear()
+        self._node_metrics_cache.clear()
+        self._host_signal_refresh_at.clear()
+        self._openstack_summary_cache = None
+        self._ovn_edge_cache = None
+        self._mariadb_node_cache = None
+        return cleared

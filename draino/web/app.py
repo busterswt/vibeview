@@ -31,6 +31,8 @@ def create_fastapi_app(
     get_app_update_status: Callable[[], Callable[[], dict]],
     get_public_version_status: Callable[[], Callable[[], dict]],
     get_app_runtime: Callable[[], Callable[[], dict]],
+    get_runtime_diagnostics: Callable[[], Callable[[object], dict]],
+    clear_runtime_diagnostics: Callable[[], Callable[[object, str], dict]],
     get_network_detail: Callable[[], Callable[[str, object | None], dict]],
 ) -> FastAPI:
     current_loop: asyncio.AbstractEventLoop | None = None
@@ -55,6 +57,8 @@ def create_fastapi_app(
         get_app_update_status=get_app_update_status,
         get_public_version_status=get_public_version_status,
         get_app_runtime=get_app_runtime,
+        get_runtime_diagnostics=get_runtime_diagnostics,
+        clear_runtime_diagnostics=clear_runtime_diagnostics,
     )
     nodes_api.configure(
         get_session_record=get_session_record,

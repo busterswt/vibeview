@@ -11,7 +11,7 @@ from fastapi import HTTPException, Request, WebSocket, status
 if TYPE_CHECKING:
     from .inventory import DrainoServer
 
-SESSION_TTL = 60 * 60 * 12
+SESSION_TTL = 60 * 60 * 8
 
 
 @dataclass(slots=True)
@@ -34,6 +34,7 @@ class SessionStore:
 
     def put(self, record: SessionRecord) -> None:
         with self._lock:
+            self._sweep_expired_locked(time.time())
             self._sessions[record.session_id] = record
 
     def get(self, session_id: str | None) -> SessionRecord | None:
@@ -55,6 +56,45 @@ class SessionStore:
             return
         with self._lock:
             self._sessions.pop(session_id, None)
+
+    def sweep_expired(self, now: float | None = None) -> int:
+        check_time = time.time() if now is None else now
+        with self._lock:
+            return self._sweep_expired_locked(check_time)
+
+    def stats(self, now: float | None = None) -> dict:
+        check_time = time.time() if now is None else now
+        with self._lock:
+            expired = 0
+            oldest_age_seconds = 0.0
+            newest_age_seconds = 0.0
+            for record in self._sessions.values():
+                age = max(0.0, check_time - record.last_seen)
+                if age > self._ttl_seconds:
+                    expired += 1
+                oldest_age_seconds = max(oldest_age_seconds, age)
+                if newest_age_seconds == 0.0:
+                    newest_age_seconds = age
+                else:
+                    newest_age_seconds = min(newest_age_seconds, age)
+            return {
+                "ttl_seconds": self._ttl_seconds,
+                "stored_count": len(self._sessions),
+                "expired_count": expired,
+                "active_count": max(0, len(self._sessions) - expired),
+                "oldest_age_seconds": oldest_age_seconds if self._sessions else 0.0,
+                "newest_age_seconds": newest_age_seconds if self._sessions else 0.0,
+            }
+
+    def _sweep_expired_locked(self, check_time: float) -> int:
+        expired_ids = [
+            session_id
+            for session_id, record in self._sessions.items()
+            if (check_time - record.last_seen) > self._ttl_seconds
+        ]
+        for session_id in expired_ids:
+            self._sessions.pop(session_id, None)
+        return len(expired_ids)
 
 
 def get_session_record(request: Request, sessions: SessionStore, cookie_name: str) -> SessionRecord:
