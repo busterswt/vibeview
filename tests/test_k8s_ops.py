@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from kubernetes.client.exceptions import ApiException
 
-from draino.operations import k8s_ops
+from draino.operations import k8s_inventory_ops, k8s_ops
 
 
 def _pod(
@@ -114,3 +114,81 @@ def test_drain_node_fails_on_timeout_with_stuck_terminating_pods(monkeypatch):
 
     with pytest.raises(RuntimeError, match="stuck terminating: default/app-1"):
         k8s_ops.drain_node("node-1", logs.append, timeout=10)
+
+
+def test_get_k8s_pvc_workload_summary_cross_references_longhorn_replicas(monkeypatch):
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(namespace="db", name="mariadb-0"),
+        spec=SimpleNamespace(
+            node_name="cmp-a01",
+            volumes=[
+                SimpleNamespace(
+                    persistent_volume_claim=SimpleNamespace(claim_name="data-mariadb-0"),
+                ),
+            ],
+        ),
+        status=SimpleNamespace(phase="Running"),
+    )
+    pvc = SimpleNamespace(
+        metadata=SimpleNamespace(namespace="db", name="data-mariadb-0"),
+        spec=SimpleNamespace(volume_name="pvc-123", storage_class_name="longhorn-repl3", access_modes=["RWO"]),
+        status=SimpleNamespace(phase="Bound", capacity={"storage": "200Gi"}),
+    )
+    pv = SimpleNamespace(
+        metadata=SimpleNamespace(name="pvc-123", annotations={}),
+        spec=SimpleNamespace(
+            storage_class_name="longhorn-repl3",
+            csi=SimpleNamespace(driver="driver.longhorn.io", volume_handle="vol-longhorn-1", volume_attributes={}),
+            node_affinity=None,
+        ),
+    )
+
+    class FakeCore:
+        def list_pod_for_all_namespaces(self):
+            return SimpleNamespace(items=[pod])
+
+        def list_persistent_volume_claim_for_all_namespaces(self):
+            return SimpleNamespace(items=[pvc])
+
+        def list_persistent_volume(self):
+            return SimpleNamespace(items=[pv])
+
+    class FakeCustom:
+        def list_namespaced_custom_object(self, group, version, namespace, plural):
+            assert group == "longhorn.io"
+            assert namespace == "longhorn-system"
+            if plural == "volumes":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"name": "vol-longhorn-1"},
+                            "spec": {"numberOfReplicas": 2},
+                            "status": {
+                                "kubernetesStatus": {
+                                    "pvName": "pvc-123",
+                                    "pvcName": "data-mariadb-0",
+                                    "namespace": "db",
+                                },
+                            },
+                        },
+                    ],
+                }
+            if plural == "replicas":
+                return {
+                    "items": [
+                        {"spec": {"volumeName": "vol-longhorn-1", "nodeID": "cmp-a01"}},
+                        {"spec": {"volumeName": "vol-longhorn-1", "nodeID": "cmp-a02"}},
+                    ],
+                }
+            return {"items": []}
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CoreV1Api", lambda api_client: FakeCore())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    payload = k8s_inventory_ops.get_k8s_pvc_workload_summary()
+
+    assert payload["error"] is None
+    assert payload["items"][0]["replica_count"] == 2
+    assert payload["items"][0]["replica_nodes"] == ["cmp-a01", "cmp-a02"]
+    assert payload["replica_nodes"][0]["node"] == "cmp-a01"

@@ -393,9 +393,26 @@ def _extract_replica_details(pv) -> tuple[int | None, list[str]]:
     return replica_count, replica_nodes
 
 
+def _list_longhorn_custom_objects(api, plural: str) -> list[dict]:
+    for version in ("v1beta2", "v1beta1"):
+        try:
+            payload = api.list_namespaced_custom_object(
+                group="longhorn.io",
+                version=version,
+                namespace="longhorn-system",
+                plural=plural,
+            )
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return list(payload.get("items", []) or [])
+    return []
+
+
 def get_k8s_pvc_workload_summary(auth: K8sAuth | None = None) -> dict:
     """Return live PVC workload and placement data for reporting."""
-    v1 = client.CoreV1Api(_api_client(auth))
+    api_client = _api_client(auth)
+    v1 = client.CoreV1Api(api_client)
     result = {
         "items": [],
         "storage_classes": [],
@@ -409,6 +426,44 @@ def get_k8s_pvc_workload_summary(auth: K8sAuth | None = None) -> dict:
     except Exception as exc:
         result["error"] = str(exc)
         return result
+
+    longhorn_volumes: dict[str, dict] = {}
+    longhorn_volume_by_pv: dict[str, str] = {}
+    longhorn_volume_by_pvc: dict[tuple[str, str], str] = {}
+    longhorn_replica_nodes: dict[str, list[str]] = {}
+    try:
+        custom = client.CustomObjectsApi(api_client)
+        for item in _list_longhorn_custom_objects(custom, "volumes"):
+            metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
+            spec = item.get("spec", {}) if isinstance(item, dict) else {}
+            status = item.get("status", {}) if isinstance(item, dict) else {}
+            volume_name = metadata.get("name") or ""
+            if not volume_name:
+                continue
+            kube_status = status.get("kubernetesStatus", {}) or {}
+            pv_name = kube_status.get("pvName") or ""
+            pvc_name = kube_status.get("pvcName") or ""
+            pvc_namespace = kube_status.get("namespace") or kube_status.get("pvcNamespace") or ""
+            longhorn_volumes[volume_name] = {
+                "name": volume_name,
+                "pv_name": pv_name,
+                "pvc_name": pvc_name,
+                "pvc_namespace": pvc_namespace,
+                "replica_count": _parse_replica_count(spec.get("numberOfReplicas")),
+            }
+            if pv_name:
+                longhorn_volume_by_pv[pv_name] = volume_name
+            if pvc_namespace and pvc_name:
+                longhorn_volume_by_pvc[(pvc_namespace, pvc_name)] = volume_name
+        for item in _list_longhorn_custom_objects(custom, "replicas"):
+            spec = item.get("spec", {}) if isinstance(item, dict) else {}
+            volume_name = spec.get("volumeName") or ""
+            node_id = spec.get("nodeID") or spec.get("nodeId") or spec.get("node") or ""
+            if not volume_name or not node_id:
+                continue
+            longhorn_replica_nodes.setdefault(volume_name, []).append(str(node_id))
+    except Exception:
+        pass
 
     pv_map = {pv.metadata.name: pv for pv in raw_pvs.items}
     pvc_consumers: dict[tuple[str, str], list[dict]] = {}
@@ -443,6 +498,22 @@ def get_k8s_pvc_workload_summary(auth: K8sAuth | None = None) -> dict:
         consumer_nodes = sorted({item["node"] for item in consumers if item.get("node")})
         consumer_pods = [item["pod"] for item in consumers if item.get("pod")]
         replica_count, replica_nodes = _extract_replica_details(pv) if pv else (None, [])
+        csi = getattr(getattr(pv, "spec", None), "csi", None) if pv else None
+        csi_driver = getattr(csi, "driver", None) or ""
+        volume_handle = getattr(csi, "volume_handle", None) or getattr(csi, "volumeHandle", None) or ""
+        longhorn_volume_name = ""
+        if volume_handle and volume_handle in longhorn_volumes:
+            longhorn_volume_name = volume_handle
+        elif volume_name and volume_name in longhorn_volume_by_pv:
+            longhorn_volume_name = longhorn_volume_by_pv[volume_name]
+        elif key in longhorn_volume_by_pvc:
+            longhorn_volume_name = longhorn_volume_by_pvc[key]
+        elif "longhorn" in str(storageclass).lower() or "longhorn" in str(csi_driver).lower():
+            longhorn_volume_name = volume_handle or longhorn_volume_by_pv.get(volume_name, "")
+        if longhorn_volume_name:
+            replica_nodes = longhorn_replica_nodes.get(longhorn_volume_name, []) or replica_nodes
+            longhorn_count = longhorn_volumes.get(longhorn_volume_name, {}).get("replica_count")
+            replica_count = len(replica_nodes) or longhorn_count or replica_count
         item = {
             "namespace": namespace,
             "name": name,
