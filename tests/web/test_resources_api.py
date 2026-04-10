@@ -85,3 +85,46 @@ def test_networks_endpoint_reads_request_id_from_response_headers(monkeypatch):
     body = resp.json()
     assert resp.status_code == 200
     assert body["api_issue"]["request_id"] == "req-neutron-header-1"
+
+
+def test_repair_metadata_port_endpoint_returns_created_port(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "repair_subnet_metadata_port",
+        lambda network_id, subnet_id, auth=None: {
+            "port_id": "port-1",
+            "ip_address": "10.0.0.2",
+            "status": "ok",
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.post("/api/networks/net-1/subnets/subnet-1/repair-metadata-port")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["metadata_port"]["status"] == "ok"
+    assert body["metadata_port"]["port_id"] == "port-1"

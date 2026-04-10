@@ -241,6 +241,50 @@ def test_get_network_detail_includes_metadata_port_for_matching_subnet(monkeypat
     assert item["subnets"][1]["metadata_port"]["status"] == "missing"
 
 
+def test_repair_subnet_metadata_port_creates_distributed_ovnmeta_port(monkeypatch):
+    created = {}
+
+    class FakeSubnet:
+        project_id = "proj-1"
+
+    class FakePort:
+        id = "port-1"
+        fixed_ips = [{"subnet_id": "subnet-1", "ip_address": "10.0.0.2"}]
+
+        def to_dict(self):
+            return {}
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return FakeSubnet()
+
+        @staticmethod
+        def create_port(**kwargs):
+            created.update(kwargs)
+            return FakePort()
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    item = web_server._repair_subnet_metadata_port("net-1", "subnet-1", auth=None)
+
+    assert created == {
+        "name": "metadata-port-repaired-by-vibeview",
+        "network_id": "net-1",
+        "fixed_ips": [{"subnet_id": "subnet-1"}],
+        "device_owner": "network:distributed",
+        "device_id": "ovnmeta-net-1",
+        "project_id": "proj-1",
+    }
+    assert item["status"] == "ok"
+    assert item["port_id"] == "port-1"
+    assert item["ip_address"] == "10.0.0.2"
+
+
 def test_serialise_includes_k8s_taints():
     state = NodeState(k8s_name="node-1", hypervisor="hv-1")
     state.k8s_taints = [{"key": "key", "value": "value", "effect": "NoSchedule"}]

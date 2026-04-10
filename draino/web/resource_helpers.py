@@ -119,6 +119,33 @@ def get_network_detail(network_id: str, auth: openstack_ops.OpenStackAuth | None
     return {"subnets": subnets, "segments": segments}
 
 
+def repair_subnet_metadata_port(network_id: str, subnet_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    """Create a missing metadata port for a subnet using the OpenStack SDK."""
+    conn = openstack_ops._conn(auth=auth)
+    subnet = conn.network.get_subnet(subnet_id)
+    project_id = getattr(subnet, "project_id", None) or ""
+    port = conn.network.create_port(
+        name="metadata-port-repaired-by-vibeview",
+        network_id=network_id,
+        fixed_ips=[{"subnet_id": subnet_id}],
+        device_owner="network:distributed",
+        device_id=f"ovnmeta-{network_id}",
+        project_id=project_id,
+    )
+    port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+    fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+    ip_address = ""
+    for item in fixed_ips:
+        if item.get("subnet_id") == subnet_id:
+            ip_address = item.get("ip_address", "") or ""
+            break
+    return {
+        "port_id": getattr(port, "id", None) or port_data.get("id") or "",
+        "ip_address": ip_address,
+        "status": "ok",
+    }
+
+
 def _lookup_network_name(conn, network_id: str, cache: dict[str, str]) -> str:
     if not network_id:
         return ""

@@ -84,7 +84,15 @@ let _annWarnPending = null;  // {key, value, successCb}
 // Networking view state
 const netState       = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedNetwork  = null;
-const netDetailState   = { loading: false, data: null, selectedSubnet: null, ovn: { loading: false, data: null, error: null }, ovnSelectedPort: null, ovnPortCache: {} };
+const netDetailState   = {
+  loading: false,
+  data: null,
+  selectedSubnet: null,
+  ovn: { loading: false, data: null, error: null },
+  ovnSelectedPort: null,
+  ovnPortCache: {},
+  metadataRepair: { subnetId: null, loading: false, message: '', error: null },
+};
 
 // Router view state
 const routerState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };

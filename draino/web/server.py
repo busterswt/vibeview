@@ -70,6 +70,7 @@ from .resource_helpers import (
     coerce_bool as _coerce_bool,
     get_network_detail as _get_network_detail,
     get_networks as _get_networks,
+    repair_subnet_metadata_port as _repair_subnet_metadata_port,
     get_router_detail as _get_router_detail,
     get_routers as _get_routers,
     get_volumes as _get_volumes,

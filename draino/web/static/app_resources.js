@@ -109,6 +109,7 @@ async function selectNetwork(id) {
   netDetailState.ovn = { loading: false, data: null, error: null };
   netDetailState.ovnSelectedPort = null;
   netDetailState.ovnPortCache = {};
+  netDetailState.metadataRepair = { subnetId: null, loading: false, message: '', error: null };
   // Highlight row in list (immediately, before async fetch)
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => {
     r.classList.toggle('selected', r.dataset.netId === id);
@@ -136,6 +137,33 @@ async function selectNetwork(id) {
   loadNetworkOvn(id);
 }
 
+async function refreshSelectedNetworkDetail(options = {}) {
+  const { keepSelectedSubnet = true, preserveLoading = false } = options;
+  if (!selectedNetwork) return;
+  const previousSubnet = keepSelectedSubnet ? netDetailState.selectedSubnet : null;
+  if (!preserveLoading) {
+    netDetailState.loading = true;
+    renderNetworkDetail();
+  }
+  try {
+    const resp = await fetch(`/api/networks/${encodeURIComponent(selectedNetwork)}`);
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    const meta = netState.data?.find(n => n.id === selectedNetwork) || {};
+    netDetailState.data = { ...meta, ...json.network };
+    netDetailState.selectedSubnet = previousSubnet;
+  } catch (e) {
+    netDetailState.data = { error: String(e) };
+  } finally {
+    if (!preserveLoading) {
+      netDetailState.loading = false;
+    }
+    renderNetworkDetail();
+  }
+}
+
 async function loadNetworkOvn(id) {
   netDetailState.ovn = { loading: true, data: null, error: null };
   renderNetworkDetail();
@@ -157,6 +185,7 @@ function closeNetworkDetail() {
   netDetailState.ovn = { loading: false, data: null, error: null };
   netDetailState.ovnSelectedPort = null;
   netDetailState.ovnPortCache = {};
+  netDetailState.metadataRepair = { subnetId: null, loading: false, message: '', error: null };
   document.getElementById('net-detail-wrap').classList.remove('open');
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
 }
@@ -314,9 +343,11 @@ function selectSubnet(id) {
 
 function renderSubnetDetail(sub) {
   const metadataPort = sub.metadata_port || { status: 'missing', port_id: '', ip_address: '' };
+  const repairState = netDetailState.metadataRepair || {};
+  const repairActive = repairState.subnetId === sub.id && repairState.loading;
   const metadataLabel = metadataPort.status === 'ok'
     ? `<span class="mv green">OK</span>`
-    : `<span class="mv red">NotFound</span> <span title="Metadata port not found and must be recreated." style="cursor:help">?</span>`;
+    : `<span class="mv red">NotFound</span>`;
   const metadataParts = [];
   if (metadataPort.port_id) {
     const networkId = String(selectedNetwork || '');
@@ -329,6 +360,11 @@ function renderSubnetDetail(sub) {
     metadataParts.push(`<span style="font-family:monospace">${esc(metadataPort.ip_address)}</span>`);
   }
   metadataParts.push(metadataLabel);
+  if (metadataPort.status !== 'ok') {
+    metadataParts.push(
+      `<button class="btn" type="button" onclick="repairSubnetMetadataPort('${escAttr(sub.id)}')" ${repairActive ? 'disabled' : ''}>${repairActive ? 'Repairing…' : 'Repair'}</button>`,
+    );
+  }
   let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
     <div class="card-title" style="color:var(--blue)">Subnet: ${esc(sub.name || sub.cidr)}</div>
     <div class="card-body">
@@ -337,6 +373,12 @@ function renderSubnetDetail(sub) {
       <div class="mrow"><span class="ml">Gateway</span><span class="mv" style="font-family:monospace">${esc(sub.gateway_ip) || '—'}</span></div>
       <div class="mrow"><span class="ml">DHCP</span><span class="mv ${sub.enable_dhcp ? 'green' : ''}">${sub.enable_dhcp ? 'Enabled' : 'Disabled'}</span></div>`;
   h += `<div class="mrow"><span class="ml">Metadata Port</span><span class="mv">${metadataParts.join(' · ')}</span></div>`;
+  if (repairState.subnetId === sub.id && repairState.message) {
+    h += `<div class="mrow"><span class="ml">Repair</span><span class="mv">${repairState.loading ? '<span class="spinner">⟳</span> ' : ''}${esc(repairState.message)}</span></div>`;
+  }
+  if (repairState.subnetId === sub.id && repairState.error) {
+    h += `<div class="mrow"><span class="ml">Repair</span><span class="mv red">${esc(repairState.error)}</span></div>`;
+  }
   if (sub.allocation_pools?.length) {
     const pools = sub.allocation_pools.map(p => `${p.start}–${p.end}`).join(', ');
     h += `<div class="mrow"><span class="ml">Alloc pools</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(pools)}</span></div>`;
@@ -350,6 +392,61 @@ function renderSubnetDetail(sub) {
   }
   h += `</div></div>`;
   return h;
+}
+
+async function repairSubnetMetadataPort(subnetId) {
+  if (!selectedNetwork || !subnetId || netDetailState.metadataRepair.loading) return;
+  netDetailState.metadataRepair = {
+    subnetId,
+    loading: true,
+    message: 'Creating metadata port…',
+    error: null,
+  };
+  renderNetworkDetail();
+  try {
+    const resp = await fetch(
+      `/api/networks/${encodeURIComponent(selectedNetwork)}/subnets/${encodeURIComponent(subnetId)}/repair-metadata-port`,
+      { method: 'POST' },
+    );
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    netDetailState.metadataRepair.message = 'Metadata port created. Refreshing subnet details…';
+    renderNetworkDetail();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await refreshSelectedNetworkDetail({ keepSelectedSubnet: true, preserveLoading: true });
+      const subnets = netDetailState.data?.subnets || [];
+      const refreshed = subnets.find(item => item.id === subnetId);
+      if (refreshed?.metadata_port?.status === 'ok') {
+        netDetailState.metadataRepair = {
+          subnetId,
+          loading: false,
+          message: 'Metadata port repaired.',
+          error: null,
+        };
+        renderNetworkDetail();
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      netDetailState.metadataRepair.message = 'Waiting for metadata port to appear…';
+      renderNetworkDetail();
+    }
+    netDetailState.metadataRepair = {
+      subnetId,
+      loading: false,
+      message: 'Repair requested. Metadata port is not visible yet.',
+      error: null,
+    };
+  } catch (e) {
+    netDetailState.metadataRepair = {
+      subnetId,
+      loading: false,
+      message: '',
+      error: String(e),
+    };
+  }
+  renderNetworkDetail();
 }
 
 async function selectOvnPort(portId) {
