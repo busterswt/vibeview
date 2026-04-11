@@ -150,6 +150,47 @@ def test_stress_environment_endpoint_returns_shared_cloud_options(monkeypatch):
     assert body["environment"]["external_networks"][0]["id"] == "ext-net-1"
 
 
+def test_stress_catalog_includes_lb_nginx_e2e_profile(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+        class orchestration:
+            @staticmethod
+            def stacks():
+                return []
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/stress/catalog")
+
+    body = resp.json()
+    profile = next((item for item in body["catalog"]["profiles"] if item["key"] == "lb-nginx-e2e"), None)
+    assert resp.status_code == 200
+    assert profile is not None
+    assert profile["label"] == "LB Nginx E2E"
+    assert profile["default_vm_count"] == 3
+
+
 def test_stress_options_endpoint_reports_active_stack(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
@@ -467,6 +508,81 @@ def test_launch_stress_stack_auto_keypair_supplies_public_key(monkeypatch):
     assert params["key_name"] == "vibe-stress-20260409-210101-key"
     assert params["public_key"].startswith("ssh-rsa ")
     assert "\"public_key\": {\"get_param\": \"public_key\"}" in template
+
+
+def test_launch_lb_nginx_e2e_stack_builds_octavia_resources(monkeypatch):
+    monkeypatch.setattr(stress_helpers, "_stress_test_id", lambda: "20260411-200000")
+
+    class FakeOrchestration:
+        def __init__(self):
+            self.create_kwargs = None
+
+        def stacks(self):
+            return []
+
+        def create_stack(self, **kwargs):
+            self.create_kwargs = kwargs
+            return SimpleNamespace(id="stack-lb-1")
+
+    class FakeConn:
+        def __init__(self):
+            self.orchestration = FakeOrchestration()
+            self.network = SimpleNamespace(
+                networks=lambda: [SimpleNamespace(id="ext-net-1", name="public", is_router_external=True, to_dict=lambda: {"router:external": True})],
+            )
+
+        def authorize(self):
+            return None
+
+        class image:
+            @staticmethod
+            def images():
+                return [SimpleNamespace(id="img-1", name="ubuntu", status="active", min_disk=10, min_ram=1024, disk_format="qcow2", visibility="public", properties={})]
+
+        class compute:
+            @staticmethod
+            def flavors():
+                return [SimpleNamespace(id="flavor-1", name="m1.small", vcpus=2, ram=2048, disk=20, ephemeral=0, swap=0, is_public=True)]
+
+            @staticmethod
+            def keypairs():
+                return [SimpleNamespace(name="ops-key", fingerprint="fp-1", type="ssh")]
+
+    fake_conn = FakeConn()
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: fake_conn)
+    monkeypatch.setattr(stress_helpers.openstack_ops, "_conn", lambda auth=None: fake_conn)
+    monkeypatch.setattr(stress_helpers, "get_stress_status", lambda auth=None, include_details=False: {"active": True, "details_included": include_details})
+
+    result = stress_helpers.launch_stress_stack(
+        auth=None,
+        compute_count=3,
+        payload={
+            "profile": "lb-nginx-e2e",
+            "vm_count": 3,
+            "image_id": "img-1",
+            "flavor_id": "flavor-1",
+            "keypair_mode": "auto",
+            "cidr_mode": "manual",
+            "cidr": "10.88.44.0/24",
+            "external_network_id": "ext-net-1",
+        },
+    )
+
+    params = fake_conn.orchestration.create_kwargs["parameters"]
+    template = fake_conn.orchestration.create_kwargs["template"]
+    assert result["active"] is True
+    assert params["profile"] == "lb-nginx-e2e"
+    assert params["loadbalancer_name"] == "vibe-stress-20260411-200000-lb"
+    assert params["listener_name"] == "vibe-stress-20260411-200000-listener-http"
+    assert params["pool_name"] == "vibe-stress-20260411-200000-pool-http"
+    assert "\"OS::Octavia::LoadBalancer\"" in template
+    assert "\"OS::Octavia::Listener\"" in template
+    assert "\"OS::Octavia::Pool\"" in template
+    assert "\"OS::Octavia::PoolMember\"" in template
+    assert "\"OS::Neutron::FloatingIP\"" in template
+    assert "\"load_balancer_floating_ip\"" in template
+    assert "\"port_range_min\": 80" in template
+    assert "nginx" in template
 
 
 def test_stress_status_uses_heat_events_for_timing(monkeypatch):

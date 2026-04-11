@@ -4,12 +4,14 @@ const STRESS_PROFILE_META = {
   'full-host-spread': { icon: '🧭' },
   'burst': { icon: '⚡' },
   'small-distribution': { icon: '🧪' },
+  'lb-nginx-e2e': { icon: '🌐' },
 };
 const STRESS_PROFILE_STORAGE_KEY = 'vibeviewStressProfile';
 const STRESS_FALLBACK_PROFILES = [
   { key: 'full-host-spread', label: 'Full Host Spread', description: 'Best-effort one VM per compute host for scheduler and placement validation.', icon: '🧭', default_vm_count: 1 },
   { key: 'burst', label: 'Burst', description: 'High-count VM launch test against shared network plumbing.', icon: '⚡', default_vm_count: 20 },
   { key: 'small-distribution', label: 'Small Distribution', description: 'Quick scheduler sanity test with a small spread set.', icon: '🧪', default_vm_count: 5 },
+  { key: 'lb-nginx-e2e', label: 'LB Nginx E2E', description: 'Build nginx web servers behind an Octavia load balancer with a floating IP for end-to-end validation.', icon: '🌐', default_vm_count: 3 },
 ];
 
 function stressProfiles() {

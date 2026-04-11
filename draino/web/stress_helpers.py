@@ -55,6 +55,17 @@ STRESS_PROFILES: tuple[dict[str, Any], ...] = (
         "supports_auto_cidr": True,
         "supports_auto_keypair": True,
     },
+    {
+        "key": "lb-nginx-e2e",
+        "label": "LB Nginx E2E",
+        "description": "Build nginx web servers behind an Octavia load balancer with a floating IP for end-to-end validation.",
+        "icon": "🌐",
+        "default_vm_count": 3,
+        "min_vm_count": 2,
+        "max_vm_count": 10,
+        "supports_auto_cidr": True,
+        "supports_auto_keypair": True,
+    },
 )
 
 
@@ -433,6 +444,8 @@ def _generate_ssh_keypair() -> tuple[str, str]:
 
 def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
     vm_count = int(config["vm_count"])
+    profile_key = str(config.get("profile") or "")
+    is_lb_e2e = profile_key == "lb-nginx-e2e"
     server_key_name: dict[str, Any] | str
     resources: dict[str, Any] = {
         "stress_net": {
@@ -480,6 +493,16 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+    if is_lb_e2e:
+        resources["stress_secgroup"]["properties"]["rules"].append(
+            {
+                "direction": "ingress",
+                "ethertype": "IPv4",
+                "protocol": "tcp",
+                "port_range_min": 80,
+                "port_range_max": 80,
+            },
+        )
     if config["keypair_mode"] == "auto":
         resources["stress_keypair"] = {
             "type": "OS::Nova::KeyPair",
@@ -492,6 +515,29 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
         server_key_name = {"get_resource": "stress_keypair"}
     else:
         server_key_name = {"get_param": "key_name"}
+
+    user_data_template = None
+    if is_lb_e2e:
+        user_data_template = "\n".join([
+            "#!/bin/bash",
+            "set -euxo pipefail",
+            "if command -v apt-get >/dev/null 2>&1; then",
+            "  export DEBIAN_FRONTEND=noninteractive",
+            "  apt-get update",
+            "  apt-get install -y nginx",
+            "elif command -v dnf >/dev/null 2>&1; then",
+            "  dnf install -y nginx",
+            "elif command -v yum >/dev/null 2>&1; then",
+            "  yum install -y nginx",
+            "fi",
+            "mkdir -p /var/www/html",
+            "cat > /var/www/html/index.html <<'EOF'",
+            "<html><body><h1>VibeView LB Test</h1><p>${HOST_MESSAGE}</p></body></html>",
+            "EOF",
+            "systemctl enable nginx",
+            "systemctl restart nginx",
+        ])
+
     for index in range(1, vm_count + 1):
         suffix = f"{index:02d}"
         port_name = f"stress_port_{suffix}"
@@ -530,12 +576,94 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
                 },
             },
         }
+        if is_lb_e2e and user_data_template is not None:
+            resources[server_name]["properties"]["user_data_format"] = "RAW"
+            resources[server_name]["properties"]["user_data"] = {
+                "str_replace": {
+                    "template": user_data_template,
+                    "params": {
+                        "${HOST_MESSAGE}": {
+                            "str_replace": {
+                                "template": "served by $SERVER on stack $STACK",
+                                "params": {
+                                    "$SERVER": {"get_resource": server_name},
+                                    "$STACK": {"get_param": "stack_name"},
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+
+    if is_lb_e2e:
+        resources["stress_lb"] = {
+            "type": "OS::Octavia::LoadBalancer",
+            "properties": {
+                "name": {"get_param": "loadbalancer_name"},
+                "vip_subnet": {"get_resource": "stress_subnet"},
+            },
+        }
+        resources["stress_listener_http"] = {
+            "type": "OS::Octavia::Listener",
+            "properties": {
+                "name": {"get_param": "listener_name"},
+                "loadbalancer": {"get_resource": "stress_lb"},
+                "protocol": "HTTP",
+                "protocol_port": 80,
+            },
+        }
+        resources["stress_pool_http"] = {
+            "type": "OS::Octavia::Pool",
+            "properties": {
+                "name": {"get_param": "pool_name"},
+                "listener": {"get_resource": "stress_listener_http"},
+                "protocol": "HTTP",
+                "lb_algorithm": "ROUND_ROBIN",
+            },
+        }
+        resources["stress_monitor_http"] = {
+            "type": "OS::Octavia::HealthMonitor",
+            "properties": {
+                "pool": {"get_resource": "stress_pool_http"},
+                "type": "HTTP",
+                "delay": 5,
+                "timeout": 3,
+                "max_retries": 3,
+                "url_path": "/",
+                "http_method": "GET",
+                "expected_codes": "200",
+            },
+        }
+        for index in range(1, vm_count + 1):
+            suffix = f"{index:02d}"
+            member_name = f"stress_pool_member_{suffix}"
+            port_name = f"stress_port_{suffix}"
+            resources[member_name] = {
+                "type": "OS::Octavia::PoolMember",
+                "properties": {
+                    "pool": {"get_resource": "stress_pool_http"},
+                    "subnet": {"get_resource": "stress_subnet"},
+                    "address": {"get_attr": [port_name, "fixed_ips", 0, "ip_address"]},
+                    "protocol_port": 80,
+                },
+            }
+        resources["stress_lb_fip"] = {
+            "type": "OS::Neutron::FloatingIP",
+            "properties": {
+                "floating_network": {"get_param": "external_network_id"},
+                "port_id": {"get_attr": ["stress_lb", "vip_port_id"]},
+            },
+        }
+
     outputs = {
         "test_id": {"value": {"get_param": "test_id"}},
         "stack_name": {"value": {"get_param": "stack_name"}},
         "profile": {"value": {"get_param": "profile"}},
         "requested_vms": {"value": {"get_param": "vm_count"}},
     }
+    if is_lb_e2e:
+        outputs["load_balancer_vip"] = {"value": {"get_attr": ["stress_lb", "vip_address"]}}
+        outputs["load_balancer_floating_ip"] = {"value": {"get_attr": ["stress_lb_fip", "floating_ip_address"]}}
     parameters = {
         "test_id": {"type": "string"},
         "stack_name": {"type": "string"},
@@ -554,6 +682,10 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
         "security_group_name": {"type": "string"},
         "external_network_id": {"type": "string"},
     }
+    if is_lb_e2e:
+        parameters["loadbalancer_name"] = {"type": "string"}
+        parameters["listener_name"] = {"type": "string"}
+        parameters["pool_name"] = {"type": "string"}
     return {
         "heat_template_version": "2018-08-31",
         "description": "VibeView Heat stress test stack",
@@ -596,7 +728,7 @@ def _build_stack_payload(*, options: dict[str, Any], payload: dict[str, Any]) ->
     if cidr_mode == "manual":
         cidr = _validate_cidr(str(payload.get("cidr") or "").strip())
     else:
-        cidr = str(options["defaults"]["cidr"] or suggest_stress_cidr(None))
+        cidr = str(options["defaults"]["cidr"] or suggest_stress_cidr())
 
     external_network_id = str(payload.get("external_network_id") or options["defaults"]["external_network_id"] or "").strip()
     if not external_network_id or not any(item["id"] == external_network_id for item in options["external_networks"]):
@@ -628,6 +760,9 @@ def _build_stack_payload(*, options: dict[str, Any], payload: dict[str, Any]) ->
         "subnet_name": f"{name_prefix}-subnet",
         "router_name": f"{name_prefix}-router",
         "security_group_name": f"{name_prefix}-secgroup",
+        "loadbalancer_name": f"{name_prefix}-lb",
+        "listener_name": f"{name_prefix}-listener-http",
+        "pool_name": f"{name_prefix}-pool-http",
     }
 
 
@@ -668,6 +803,10 @@ def launch_stress_stack(
         "security_group_name": stack_payload["security_group_name"],
         "external_network_id": stack_payload["external_network_id"],
     }
+    if stack_payload["profile"] == "lb-nginx-e2e":
+        parameters["loadbalancer_name"] = stack_payload["loadbalancer_name"]
+        parameters["listener_name"] = stack_payload["listener_name"]
+        parameters["pool_name"] = stack_payload["pool_name"]
     try:
         record_stress_action("launch", "calling_heat", message="Calling Heat create_stack", detail=stack_payload["stack_name"])
         conn.orchestration.create_stack(
