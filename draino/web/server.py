@@ -332,7 +332,7 @@ def _get_app_update_status(force: bool = False) -> dict:
 
 
 def _get_public_version_status() -> dict:
-    meta = _get_app_update_status()
+    meta = _get_app_update_status(force=True)
     digest = meta.get("current_digest")
     short_sha = ""
     latest_digest = meta.get("latest_digest")
