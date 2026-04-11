@@ -584,9 +584,10 @@ def _build_stress_template(config: dict[str, Any]) -> dict[str, Any]:
                     "params": {
                         "${HOST_MESSAGE}": {
                             "str_replace": {
-                                "template": "served by $SERVER on stack $STACK",
+                                "template": "served by $PREFIX-vm-$SUFFIX on stack $STACK",
                                 "params": {
-                                    "$SERVER": {"get_resource": server_name},
+                                    "$PREFIX": {"get_param": "name_prefix"},
+                                    "$SUFFIX": suffix,
                                     "$STACK": {"get_param": "stack_name"},
                                 },
                             },
