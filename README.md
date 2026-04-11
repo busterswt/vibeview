@@ -39,6 +39,26 @@ pip install .
 
 Requires Python 3.11+.
 
+### Local test tooling
+
+To run the local validation commands used in this repo, install:
+
+| Tool | Purpose |
+|---|---|
+| Python 3.11+ | runtime, unit tests, helper scripts |
+| `pytest` | Python test suite |
+| `helm` | render and validate the Helm chart locally |
+| `node` | JavaScript syntax checks via `node --check` |
+
+Typical local checks:
+
+```bash
+pytest -q tests/web
+pytest -q
+helm template test charts/draino
+node --check draino/web/static/app_resources.js
+```
+
 ### Dependencies
 
 | Dependency | Purpose |

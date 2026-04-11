@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from ...operations import k8s_ops
 from .api_issues import build_api_issue
 from ..resource_helpers import (
+    get_load_balancer_detail,
+    get_load_balancers,
     get_network_detail,
     get_networks,
     get_router_detail,
@@ -53,6 +55,28 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None, "api_issue": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc), "api_issue": None}
+
+
+@router.get("/api/load-balancers")
+async def api_load_balancers(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_load_balancers, session.server.openstack_auth)
+        return {"load_balancers": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"load_balancers": [], "error": str(exc), "api_issue": build_api_issue("Octavia", "GET /v2/lbaas/loadbalancers", exc)}
+
+
+@router.get("/api/load-balancers/{lb_id}")
+async def api_load_balancer_detail(lb_id: str, request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_load_balancer_detail, lb_id, session.server.openstack_auth)
+        return {"load_balancer": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"load_balancer": None, "error": str(exc), "api_issue": build_api_issue("Octavia", f"GET /v2/lbaas/loadbalancers/{lb_id}", exc)}
 
 
 @router.post("/api/networks/{network_id}/subnets/{subnet_id}/repair-metadata-port")

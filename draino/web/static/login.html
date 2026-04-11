@@ -624,6 +624,7 @@ function renderVersion(meta) {
   if (!pill) return;
   const runningSha = meta?.short_sha || '';
   const latestSha = meta?.latest_short_sha || '';
+  const versionError = meta?.error || '';
   if (!runningSha && !latestSha) {
     pill.classList.remove('visible');
     pill.innerHTML = '';
@@ -635,7 +636,7 @@ function renderVersion(meta) {
   `;
   const digest = meta?.current_digest || '';
   const latestDigest = meta?.latest_digest || '';
-  pill.title = [digest, latestDigest].filter(Boolean).join('\n');
+  pill.title = [digest, latestDigest, versionError].filter(Boolean).join('\n');
   pill.classList.add('visible');
 }
 

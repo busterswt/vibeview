@@ -68,6 +68,8 @@ from .inventory import DrainoServer, _serialise
 from .latency import get_latency_summary
 from .resource_helpers import (
     coerce_bool as _coerce_bool,
+    get_load_balancer_detail as _get_load_balancer_detail,
+    get_load_balancers as _get_load_balancers,
     get_network_detail as _get_network_detail,
     get_networks as _get_networks,
     repair_subnet_metadata_port as _repair_subnet_metadata_port,
@@ -346,6 +348,7 @@ def _get_public_version_status() -> dict:
         "short_sha": short_sha,
         "latest_digest": latest_digest,
         "latest_short_sha": latest_short_sha,
+        "error": meta.get("error"),
         "current_tag": meta.get("current_tag"),
         "current_digest_source": meta.get("current_digest_source"),
         "update_available": meta.get("update_available"),

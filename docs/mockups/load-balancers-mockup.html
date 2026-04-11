@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Load Balancers</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-lt: #1e88e5;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --sidebar: #f4f6f8;
+  --border: #d1d9e0;
+  --sel: #bbdefb;
+  --hover: #e8f4fd;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --purple: #6a1b9a;
+  --purple-bg: #f3e5f5;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+  flex-shrink: 0;
+}
+
+.logo { display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; }
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+.logo-sub { font-size: 10px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+#subnav-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.subnav-group {
+  display: flex;
+  gap: 2px;
+  padding: 0 14px;
+  align-items: center;
+  height: 34px;
+}
+
+.subnav-group a {
+  color: var(--dim);
+  text-decoration: none;
+  padding: 5px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.subnav-group a.active {
+  background: var(--blue-bg);
+  color: var(--blue);
+  font-weight: 700;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.bc-link { color: var(--blue); }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#body { display: flex; flex: 1; overflow: hidden; }
+
+.data-view-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.data-view-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.data-view-toolbar h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hint { color: var(--dim); font-size: 11px; font-weight: 400; }
+
+.dv-filter {
+  margin-left: auto;
+  width: 280px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 4px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.data-table thead th {
+  background: #f8fafc;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table tbody tr { border-bottom: 1px solid #f0f2f5; }
+.data-table tbody tr:hover { background: var(--hover); }
+.data-table td { padding: 7px 10px; font-size: 12px; vertical-align: top; }
+.data-table tbody tr.selected td { background: var(--sel); }
+
+.st-active { color: var(--green); font-weight: 700; }
+.st-pending { color: var(--yellow); font-weight: 700; }
+.st-error { color: var(--red); font-weight: 700; }
+.uuid-short { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--dim); }
+
+#lb-detail-wrap {
+  width: 400px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--white);
+  overflow-y: auto;
+}
+
+.lb-detail-inner { padding: 14px; }
+.lb-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--white);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.card-title {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+.card-body { padding: 12px; }
+.mrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+.mrow:last-child { border-bottom: none; }
+.ml { color: var(--dim); }
+.mv { font-weight: 500; text-align: right; }
+
+.tree-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.tree-badge.good { background: var(--green-bg); color: var(--green); }
+.tree-badge.warn { background: var(--yellow-bg); color: var(--yellow); }
+.tree-badge.err { background: var(--red-bg); color: var(--red); }
+.tree-badge.purple { background: var(--purple-bg); color: var(--purple); }
+
+.amp-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.amp-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fbfcfd;
+  padding: 10px 11px;
+}
+
+.amp-card h4 {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.amp-meta {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.listener-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.listener-row:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div class="logo-icon">D</div>
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Vibing Cloud Infrastructure Since 2026</div>
+      </div>
+    </div>
+    <nav class="top-nav">
+      <a>Infrastructure</a>
+      <a>Monitor</a>
+      <a>Kubernetes</a>
+      <a class="active">Networking</a>
+      <a>Storage</a>
+      <a>Stress</a>
+      <a>Reports</a>
+    </nav>
+    <div class="top-right">
+      <div class="mock-pill">MOCKUP</div>
+    </div>
+  </div>
+
+  <div id="subnav-bar">
+    <div class="subnav-group">
+      <a>Networks</a>
+      <a>Routers</a>
+      <a class="active">Load Balancers</a>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">VibeView</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Load Balancers</span>
+    <div class="bc-actions">
+      <button class="btn">⟳ Refresh Load Balancers</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <div class="data-view-wrap">
+      <div class="data-view-toolbar">
+        <h2>Load Balancers <span class="hint">LBaaS / Octavia</span></h2>
+        <input class="dv-filter" type="text" value="tenant" />
+        <span style="font-size:11px;color:var(--dim)">12 of 18 load balancers</span>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Provisioning</th>
+            <th>VIP</th>
+            <th>Floating IP</th>
+            <th>Project</th>
+            <th>Listeners</th>
+            <th>Pools</th>
+            <th>Amphorae</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="selected">
+            <td>
+              tenant-api-public
+              <div class="uuid-short">8f8d5d26…d0be</div>
+            </td>
+            <td><span class="st-active">ONLINE</span></td>
+            <td><span class="st-active">ACTIVE</span></td>
+            <td>203.0.113.18</td>
+            <td>198.51.100.18</td>
+            <td class="uuid-short" title="35faf43af7744a768db76e8ac4120dcc">35faf43a</td>
+            <td>2</td>
+            <td>2</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td>
+              tenant-api-internal
+              <div class="uuid-short">2c719aba…84ec</div>
+            </td>
+            <td><span class="st-active">ONLINE</span></td>
+            <td><span class="st-active">ACTIVE</span></td>
+            <td>10.88.12.41</td>
+            <td><span style="color:var(--dim)">—</span></td>
+            <td class="uuid-short">35faf43a</td>
+            <td>1</td>
+            <td>1</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td>
+              tenant-web-edge
+              <div class="uuid-short">7e4f7a1f…f602</div>
+            </td>
+            <td><span class="st-pending">DEGRADED</span></td>
+            <td><span class="st-pending">PENDING_UPDATE</span></td>
+            <td>203.0.113.44</td>
+            <td>198.51.100.44</td>
+            <td class="uuid-short">35faf43a</td>
+            <td>2</td>
+            <td>3</td>
+            <td>1</td>
+          </tr>
+          <tr>
+            <td>
+              billing-public
+              <div class="uuid-short">11ddca6e…1c44</div>
+            </td>
+            <td><span class="st-error">ERROR</span></td>
+            <td><span class="st-error">ERROR</span></td>
+            <td>198.51.100.22</td>
+            <td>203.0.113.22</td>
+            <td class="uuid-short">af45bdc1</td>
+            <td>1</td>
+            <td>1</td>
+            <td>2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="lb-detail-wrap">
+      <div class="lb-detail-inner">
+        <div class="lb-detail-head">
+          <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px">tenant-api-public</strong>
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+            <span class="st-active" style="font-size:11px">ACTIVE</span>
+            <button class="btn" style="padding:1px 7px;font-size:11px">✕</button>
+          </div>
+        </div>
+        <div class="uuid-short" style="word-break:break-all;margin-bottom:10px">8f8d5d26-5077-4e07-a2cf-18291e85d0be</div>
+
+        <div class="card">
+          <div class="card-title">Properties</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Operating status</span><span class="mv st-active">ONLINE</span></div>
+            <div class="mrow"><span class="ml">Provisioning status</span><span class="mv st-active">ACTIVE</span></div>
+            <div class="mrow"><span class="ml">VIP address</span><span class="mv">203.0.113.18</span></div>
+            <div class="mrow"><span class="ml">VIP subnet</span><span class="mv uuid-short">2b5fa27e-a5b4-4fdc-bc31-b329c5503932</span></div>
+            <div class="mrow"><span class="ml">Project</span><span class="mv uuid-short">35faf43af7744a768db76e8ac4120dcc</span></div>
+            <div class="mrow"><span class="ml">Flavor</span><span class="mv">amphora-small</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Listeners</div>
+          <div class="card-body">
+            <div class="listener-row">
+              <div>
+                <div style="font-weight:600">public-https</div>
+                <div class="uuid-short">TCP / 443</div>
+                <div class="uuid-short">8eb7b6f0-1f03-4a4f-b729-62765e6c9e5a</div>
+              </div>
+              <span class="tree-badge good">2 pools</span>
+            </div>
+            <div class="listener-row">
+              <div>
+                <div style="font-weight:600">public-http</div>
+                <div class="uuid-short">TCP / 80</div>
+                <div class="uuid-short">3c2c7d1b-28ce-4492-b6e8-cad5a0f547ec</div>
+              </div>
+              <span class="tree-badge warn">redirect</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Pools</div>
+          <div class="card-body">
+            <div class="listener-row">
+              <div>
+                <div style="font-weight:600">api-backend</div>
+                <div class="uuid-short">5d131f43-fc17-4f72-a3b6-7c176908d3c7</div>
+              </div>
+              <span class="tree-badge good">ACTIVE</span>
+            </div>
+            <div class="mrow"><span class="ml">Protocol</span><span class="mv">TCP</span></div>
+            <div class="mrow"><span class="ml">Algorithm</span><span class="mv">ROUND_ROBIN</span></div>
+            <div class="mrow"><span class="ml">Members</span><span class="mv">3</span></div>
+            <div class="mrow"><span class="ml">Admin state</span><span class="mv st-active">UP</span></div>
+            <div class="mrow"><span class="ml">Health monitor</span><span class="mv" style="display:grid;gap:2px;text-align:right"><span>TCP</span><span>delay 5</span><span>timeout 3</span><span>max retries 3</span></span></div>
+            <div class="mrow"><span class="ml">Session persistence</span><span class="mv">SOURCE_IP</span></div>
+            <div class="mrow"><span class="ml">TLS enabled</span><span class="mv">No</span></div>
+
+            <div style="height:10px"></div>
+
+            <div class="listener-row">
+              <div>
+                <div style="font-weight:600">api-canary</div>
+                <div class="uuid-short">4e2df6cb-3b1e-4d26-ac2c-a1557ffb4768</div>
+              </div>
+              <span class="tree-badge warn">DEGRADED</span>
+            </div>
+            <div class="mrow"><span class="ml">Protocol</span><span class="mv">TCP</span></div>
+            <div class="mrow"><span class="ml">Algorithm</span><span class="mv">LEAST_CONNECTIONS</span></div>
+            <div class="mrow"><span class="ml">Members</span><span class="mv">1</span></div>
+            <div class="mrow"><span class="ml">Admin state</span><span class="mv st-active">UP</span></div>
+            <div class="mrow"><span class="ml">Health monitor</span><span class="mv" style="display:grid;gap:2px;text-align:right"><span>TCP</span><span>delay 5</span><span>timeout 3</span><span>max retries 3</span></span></div>
+            <div class="mrow"><span class="ml">Session persistence</span><span class="mv">None</span></div>
+            <div class="mrow"><span class="ml">TLS enabled</span><span class="mv">No</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Amphorae</div>
+          <div class="card-body">
+            <div class="amp-grid">
+              <div class="amp-card">
+                <h4>amphora-1 <span class="tree-badge good">MASTER</span></h4>
+                <div class="amp-meta">
+                  <div>Compute host: <strong>1277287-tenant-dev.iad3.ohthree.com</strong></div>
+                  <div>IP: 172.24.4.18</div>
+                  <div>Status: ACTIVE / ALLOCATED</div>
+                  <div>Image: amphora-x64-v2</div>
+                </div>
+              </div>
+              <div class="amp-card">
+                <h4>amphora-2 <span class="tree-badge purple">BACKUP</span></h4>
+                <div class="amp-meta">
+                  <div>Compute host: <strong>1277274-tenant-dev.iad3.ohthree.com</strong></div>
+                  <div>IP: 172.24.4.19</div>
+                  <div>Status: ACTIVE / STANDBY</div>
+                  <div>Image: amphora-x64-v2</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Placement</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Distinct hosts</span><span class="mv">2</span></div>
+            <div class="mrow"><span class="ml">Distinct AZs</span><span class="mv">2</span></div>
+            <div class="mrow"><span class="ml">Failover posture</span><span class="mv"><span class="tree-badge good">HA spread OK</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

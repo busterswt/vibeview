@@ -109,6 +109,11 @@ const routerState = { data: null, loading: false, page: 1, pageSize: 25, filter:
 let   selectedRouter = null;
 const routerDetailState = { loading: false, data: null, ovn: { loading: false, data: null, error: null } };
 
+// Load balancer view state
+const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+let   selectedLoadBalancer = null;
+const lbDetailState = { loading: false, data: null };
+
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
 

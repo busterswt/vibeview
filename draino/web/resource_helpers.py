@@ -228,6 +228,246 @@ def get_routers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     return result
 
 
+def _lookup_floating_ip_by_port_or_address(conn, vip_port_id: str, vip_address: str, cache: dict[str, str]) -> str:
+    cache_key = f"{vip_port_id}:{vip_address}"
+    if cache_key in cache:
+        return cache[cache_key]
+    floating_ip = ""
+    try:
+        if vip_port_id:
+            for item in conn.network.ips(port_id=vip_port_id):
+                address = getattr(item, "floating_ip_address", None) or ""
+                if address:
+                    floating_ip = address
+                    break
+        if not floating_ip and vip_address:
+            for item in conn.network.ips():
+                fixed_ip = getattr(item, "fixed_ip_address", None) or ""
+                if fixed_ip == vip_address:
+                    address = getattr(item, "floating_ip_address", None) or ""
+                    if address:
+                        floating_ip = address
+                        break
+    except Exception:
+        floating_ip = ""
+    cache[cache_key] = floating_ip
+    return floating_ip
+
+
+def _lb_listener_ids(lb, data: dict) -> list[str]:
+    listeners = data.get("listeners") or getattr(lb, "listeners", None) or []
+    ids: list[str] = []
+    for item in listeners:
+        if isinstance(item, dict):
+            listener_id = item.get("id") or ""
+        else:
+            listener_id = getattr(item, "id", None) or ""
+        if listener_id:
+            ids.append(listener_id)
+    return ids
+
+
+def _lb_pool_ids(lb, data: dict) -> list[str]:
+    pools = data.get("pools") or getattr(lb, "pools", None) or []
+    ids: list[str] = []
+    for item in pools:
+        if isinstance(item, dict):
+            pool_id = item.get("id") or ""
+        else:
+            pool_id = getattr(item, "id", None) or ""
+        if pool_id:
+            ids.append(pool_id)
+    return ids
+
+
+def get_load_balancers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    """Return all Octavia load balancers visible to the configured credential."""
+    conn = openstack_ops._conn(auth=auth)
+    fip_cache: dict[str, str] = {}
+    result = []
+    for lb in conn.load_balancer.load_balancers():
+        data = lb.to_dict() if hasattr(lb, "to_dict") else {}
+        vip_address = getattr(lb, "vip_address", None) or data.get("vip_address") or ""
+        vip_port_id = getattr(lb, "vip_port_id", None) or data.get("vip_port_id") or ""
+        project_id = getattr(lb, "project_id", None) or data.get("project_id") or ""
+        listener_ids = _lb_listener_ids(lb, data)
+        pool_ids = _lb_pool_ids(lb, data)
+        amphora_count = 0
+        try:
+            amphora_count = sum(
+                1 for amp in conn.load_balancer.amphorae()
+                if (getattr(amp, "loadbalancer_id", None) or "") == lb.id
+            )
+        except Exception:
+            amphora_count = 0
+        result.append({
+            "id": lb.id,
+            "name": getattr(lb, "name", None) or "(unnamed)",
+            "operating_status": getattr(lb, "operating_status", None) or data.get("operating_status") or "UNKNOWN",
+            "provisioning_status": getattr(lb, "provisioning_status", None) or data.get("provisioning_status") or "UNKNOWN",
+            "vip_address": vip_address,
+            "floating_ip": _lookup_floating_ip_by_port_or_address(conn, vip_port_id, vip_address, fip_cache),
+            "vip_port_id": vip_port_id,
+            "project_id": project_id,
+            "listener_count": len(listener_ids),
+            "pool_count": len(pool_ids),
+            "amphora_count": amphora_count,
+        })
+    result.sort(key=lambda item: (item["name"], item["id"]))
+    return result
+
+
+def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    """Return listeners, pools, and amphora detail for a single Octavia load balancer."""
+    conn = openstack_ops._conn(auth=auth)
+    lb = conn.load_balancer.get_load_balancer(lb_id)
+    lb_data = lb.to_dict() if hasattr(lb, "to_dict") else {}
+    vip_port_id = getattr(lb, "vip_port_id", None) or lb_data.get("vip_port_id") or ""
+    vip_address = getattr(lb, "vip_address", None) or lb_data.get("vip_address") or ""
+    project_id = getattr(lb, "project_id", None) or lb_data.get("project_id") or ""
+    floating_ip = _lookup_floating_ip_by_port_or_address(conn, vip_port_id, vip_address, {})
+
+    listeners_by_id: dict[str, object] = {}
+    try:
+        for item in conn.load_balancer.listeners():
+            listeners_by_id[getattr(item, "id", None) or ""] = item
+    except Exception:
+        pass
+    pools_by_id: dict[str, object] = {}
+    try:
+        for item in conn.load_balancer.pools():
+            pools_by_id[getattr(item, "id", None) or ""] = item
+    except Exception:
+        pass
+
+    listeners = []
+    for listener_id in _lb_listener_ids(lb, lb_data):
+        listener = listeners_by_id.get(listener_id)
+        if listener is None:
+            try:
+                listener = conn.load_balancer.get_listener(listener_id)
+            except Exception:
+                listener = None
+        if listener is None:
+            continue
+        listener_data = listener.to_dict() if hasattr(listener, "to_dict") else {}
+        listeners.append({
+            "id": getattr(listener, "id", None) or listener_id,
+            "name": getattr(listener, "name", None) or listener_data.get("name") or "(unnamed)",
+            "protocol": getattr(listener, "protocol", None) or listener_data.get("protocol") or "",
+            "protocol_port": getattr(listener, "protocol_port", None) or listener_data.get("protocol_port"),
+            "default_pool_id": getattr(listener, "default_pool_id", None) or listener_data.get("default_pool_id") or "",
+        })
+
+    pools = []
+    for pool_id in _lb_pool_ids(lb, lb_data):
+        pool = pools_by_id.get(pool_id)
+        if pool is None:
+            try:
+                pool = conn.load_balancer.get_pool(pool_id)
+            except Exception:
+                pool = None
+        if pool is None:
+            continue
+        pool_data = pool.to_dict() if hasattr(pool, "to_dict") else {}
+        member_count = 0
+        try:
+            member_count = len(list(conn.load_balancer.members(pool.id)))
+        except Exception:
+            member_count = 0
+        hm_text = ""
+        healthmonitor_id = getattr(pool, "healthmonitor_id", None) or pool_data.get("healthmonitor_id") or ""
+        if healthmonitor_id:
+            try:
+                hm = conn.load_balancer.get_health_monitor(healthmonitor_id)
+                hm_data = hm.to_dict() if hasattr(hm, "to_dict") else {}
+                monitor_type = getattr(hm, "type", None) or hm_data.get("type") or ""
+                delay = getattr(hm, "delay", None) or hm_data.get("delay")
+                timeout = getattr(hm, "timeout", None) or hm_data.get("timeout")
+                retries = getattr(hm, "max_retries", None) or hm_data.get("max_retries")
+                parts = [monitor_type] if monitor_type else []
+                if delay is not None:
+                    parts.append(f"delay {delay}")
+                if timeout is not None:
+                    parts.append(f"timeout {timeout}")
+                if retries is not None:
+                    parts.append(f"max retries {retries}")
+                hm_text = "\n".join(parts)
+            except Exception:
+                hm_text = ""
+        persistence = getattr(pool, "session_persistence", None) or pool_data.get("session_persistence") or {}
+        if isinstance(persistence, dict):
+            persistence = persistence.get("type") or ""
+        tls_enabled = bool(
+            getattr(pool, "tls_enabled", None)
+            or pool_data.get("tls_enabled")
+            or getattr(pool, "tls_container_ref", None)
+            or pool_data.get("tls_container_ref")
+        )
+        pools.append({
+            "id": getattr(pool, "id", None) or pool_id,
+            "name": getattr(pool, "name", None) or pool_data.get("name") or "(unnamed)",
+            "protocol": getattr(pool, "protocol", None) or pool_data.get("protocol") or "",
+            "lb_algorithm": getattr(pool, "lb_algorithm", None) or pool_data.get("lb_algorithm") or "",
+            "member_count": member_count,
+            "admin_state_up": bool(getattr(pool, "is_admin_state_up", pool_data.get("admin_state_up", False))),
+            "operating_status": getattr(pool, "operating_status", None) or pool_data.get("operating_status") or "UNKNOWN",
+            "healthmonitor": hm_text,
+            "session_persistence": persistence or "None",
+            "tls_enabled": tls_enabled,
+        })
+
+    amphorae = []
+    amphora_hosts: set[str] = set()
+    for amp in conn.load_balancer.amphorae():
+        if (getattr(amp, "loadbalancer_id", None) or "") != lb_id:
+            continue
+        compute_id = getattr(amp, "compute_id", None) or ""
+        compute_host = ""
+        image_id = ""
+        if compute_id:
+            try:
+                server = conn.compute.get_server(compute_id)
+                compute_host = openstack_ops._server_host(server) or ""
+                image = getattr(server, "image", None) or {}
+                if isinstance(image, dict):
+                    image_id = image.get("id") or ""
+            except Exception:
+                compute_host = ""
+        if compute_host:
+            amphora_hosts.add(compute_host)
+        amp_data = amp.to_dict() if hasattr(amp, "to_dict") else {}
+        amphorae.append({
+            "id": getattr(amp, "id", None) or amp_data.get("id") or "",
+            "role": getattr(amp, "role", None) or amp_data.get("role") or "",
+            "status": getattr(amp, "status", None) or amp_data.get("status") or "",
+            "compute_id": compute_id,
+            "compute_host": compute_host,
+            "lb_network_ip": getattr(amp, "lb_network_ip", None) or amp_data.get("lb_network_ip") or "",
+            "ha_ip": getattr(amp, "ha_ip", None) or amp_data.get("ha_ip") or "",
+            "vrrp_ip": getattr(amp, "vrrp_ip", None) or amp_data.get("vrrp_ip") or "",
+            "image_id": image_id,
+        })
+
+    return {
+        "id": lb.id,
+        "name": getattr(lb, "name", None) or "(unnamed)",
+        "operating_status": getattr(lb, "operating_status", None) or lb_data.get("operating_status") or "UNKNOWN",
+        "provisioning_status": getattr(lb, "provisioning_status", None) or lb_data.get("provisioning_status") or "UNKNOWN",
+        "vip_address": vip_address,
+        "floating_ip": floating_ip,
+        "vip_port_id": vip_port_id,
+        "vip_subnet_id": getattr(lb, "vip_subnet_id", None) or lb_data.get("vip_subnet_id") or "",
+        "project_id": project_id,
+        "flavor_id": getattr(lb, "flavor_id", None) or lb_data.get("flavor_id") or "",
+        "listeners": listeners,
+        "pools": pools,
+        "amphorae": amphorae,
+        "distinct_host_count": len(amphora_hosts),
+        "ha_summary": "HA spread OK" if len(amphora_hosts) >= 2 else ("Single host" if amphorae else "Unknown"),
+    }
+
+
 def get_router_detail(router_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
     """Return connected subnet, route, and gateway detail for one router."""
     conn = openstack_ops._conn(auth=auth)

@@ -209,6 +209,7 @@ def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
             "short_sha": "1234567890ab",
             "latest_digest": "sha256:abcdef1234567890",
             "latest_short_sha": "abcdef123456",
+            "error": None,
             "current_tag": "main",
             "current_digest_source": "running_pod",
         },
@@ -220,6 +221,7 @@ def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
     assert version.status_code == 200
     assert version.json()["short_sha"] == "1234567890ab"
     assert version.json()["latest_short_sha"] == "abcdef123456"
+    assert version.json()["error"] is None
 
 
 def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):

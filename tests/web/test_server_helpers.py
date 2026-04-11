@@ -347,3 +347,210 @@ def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
     assert status["latest_digest"] == "sha256:new"
     assert status["update_available"] is True
     assert status["update_repository"] == "ghcr.io/upstream/draino"
+
+
+def test_get_load_balancers_includes_floating_ip_and_counts(monkeypatch):
+    class FakeLB:
+        def __init__(self):
+            self.id = "lb-1"
+            self.name = "public-lb"
+            self.operating_status = "ONLINE"
+            self.provisioning_status = "ACTIVE"
+            self.vip_address = "10.10.0.5"
+            self.vip_port_id = "vip-port-1"
+            self.project_id = "proj-1"
+            self.listeners = [{"id": "listener-1"}, {"id": "listener-2"}]
+            self.pools = [{"id": "pool-1"}]
+
+        def to_dict(self):
+            return {}
+
+    class FakeAmphora:
+        def __init__(self, lb_id):
+            self.loadbalancer_id = lb_id
+
+    class FakeFip:
+        floating_ip_address = "198.51.100.25"
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def ips(port_id=None):
+            assert port_id == "vip-port-1"
+            return [FakeFip()]
+
+    class FakeLoadBalancerAPI:
+        @staticmethod
+        def load_balancers():
+            return [FakeLB()]
+
+        @staticmethod
+        def amphorae():
+            return [FakeAmphora("lb-1"), FakeAmphora("lb-1"), FakeAmphora("lb-2")]
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+        load_balancer = FakeLoadBalancerAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    items = web_server._get_load_balancers(auth=None)
+
+    assert items == [{
+        "id": "lb-1",
+        "name": "public-lb",
+        "operating_status": "ONLINE",
+        "provisioning_status": "ACTIVE",
+        "vip_address": "10.10.0.5",
+        "floating_ip": "198.51.100.25",
+        "vip_port_id": "vip-port-1",
+        "project_id": "proj-1",
+        "listener_count": 2,
+        "pool_count": 1,
+        "amphora_count": 2,
+    }]
+
+
+def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypatch):
+    class FakeLB:
+        id = "lb-1"
+        name = "public-lb"
+        operating_status = "ONLINE"
+        provisioning_status = "ACTIVE"
+        vip_address = "10.10.0.5"
+        vip_port_id = "vip-port-1"
+        vip_subnet_id = "subnet-1"
+        project_id = "proj-1"
+        flavor_id = "flavor-1"
+        listeners = [{"id": "listener-1"}]
+        pools = [{"id": "pool-1"}]
+
+        def to_dict(self):
+            return {}
+
+    class FakeListener:
+        id = "listener-1"
+        name = "https"
+        protocol = "TERMINATED_HTTPS"
+        protocol_port = 443
+        default_pool_id = "pool-1"
+
+        def to_dict(self):
+            return {}
+
+    class FakePool:
+        id = "pool-1"
+        name = "web-pool"
+        protocol = "HTTP"
+        lb_algorithm = "ROUND_ROBIN"
+        is_admin_state_up = True
+        operating_status = "ONLINE"
+        healthmonitor_id = "hm-1"
+        session_persistence = {"type": "SOURCE_IP"}
+        tls_enabled = True
+
+        def to_dict(self):
+            return {}
+
+    class FakeHealthMonitor:
+        type = "TCP"
+        delay = 5
+        timeout = 3
+        max_retries = 3
+
+        def to_dict(self):
+            return {}
+
+    class FakeMember:
+        pass
+
+    class FakeAmphora:
+        def __init__(self, amp_id, role, compute_id, status, lb_ip):
+            self.id = amp_id
+            self.role = role
+            self.compute_id = compute_id
+            self.status = status
+            self.loadbalancer_id = "lb-1"
+            self.lb_network_ip = lb_ip
+            self.ha_ip = "192.0.2.11"
+            self.vrrp_ip = "192.0.2.12"
+
+        def to_dict(self):
+            return {}
+
+    class FakeServer:
+        def __init__(self, host, image_id):
+            self.compute_host = host
+            self.image = {"id": image_id}
+
+    class FakeFip:
+        floating_ip_address = "198.51.100.25"
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def ips(port_id=None):
+            assert port_id == "vip-port-1"
+            return [FakeFip()]
+
+    class FakeComputeAPI:
+        @staticmethod
+        def get_server(server_id):
+            hosts = {
+                "server-1": FakeServer("compute-a.example", "image-1"),
+                "server-2": FakeServer("compute-b.example", "image-2"),
+            }
+            return hosts[server_id]
+
+    class FakeLoadBalancerAPI:
+        @staticmethod
+        def get_load_balancer(lb_id):
+            assert lb_id == "lb-1"
+            return FakeLB()
+
+        @staticmethod
+        def listeners():
+            return [FakeListener()]
+
+        @staticmethod
+        def pools():
+            return [FakePool()]
+
+        @staticmethod
+        def members(pool_id):
+            assert pool_id == "pool-1"
+            return [FakeMember(), FakeMember()]
+
+        @staticmethod
+        def get_health_monitor(hm_id):
+            assert hm_id == "hm-1"
+            return FakeHealthMonitor()
+
+        @staticmethod
+        def amphorae():
+            return [
+                FakeAmphora("amp-1", "MASTER", "server-1", "ALLOCATED", "192.0.2.10"),
+                FakeAmphora("amp-2", "BACKUP", "server-2", "ALLOCATED", "192.0.2.20"),
+            ]
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+        compute = FakeComputeAPI()
+        load_balancer = FakeLoadBalancerAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "_server_host", lambda server: getattr(server, "compute_host", ""))
+
+    item = web_server._get_load_balancer_detail("lb-1", auth=None)
+
+    assert item["id"] == "lb-1"
+    assert item["floating_ip"] == "198.51.100.25"
+    assert item["vip_subnet_id"] == "subnet-1"
+    assert item["listeners"][0]["id"] == "listener-1"
+    assert item["listeners"][0]["protocol_port"] == 443
+    assert item["pools"][0]["member_count"] == 2
+    assert item["pools"][0]["healthmonitor"] == "TCP\ndelay 5\ntimeout 3\nmax retries 3"
+    assert item["pools"][0]["session_persistence"] == "SOURCE_IP"
+    assert item["pools"][0]["tls_enabled"] is True
+    assert len(item["amphorae"]) == 2
+    assert item["amphorae"][0]["compute_host"] == "compute-a.example"
+    assert item["distinct_host_count"] == 2
+    assert item["ha_summary"] == "HA spread OK"
