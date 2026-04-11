@@ -163,19 +163,29 @@ body {
 }
 .version-pill {
   display: none;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: 10px;
   background: #eef5fb;
   color: #35546c;
   border: 1px solid #bfdbf8;
   font-size: 11px;
   font-weight: 700;
-  white-space: nowrap;
 }
 .version-pill.visible {
   display: inline-flex;
+}
+.version-pill-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.version-pill .label {
+  color: #607d8b;
+  font-weight: 600;
 }
 
 .auth-title {
@@ -603,14 +613,20 @@ function setAuthMessage(msg = '', kind = '') {
 function renderVersion(meta) {
   const pill = document.getElementById('version-pill');
   if (!pill) return;
-  const sha = meta?.short_sha || '';
-  if (!sha) {
+  const runningSha = meta?.short_sha || '';
+  const latestSha = meta?.latest_short_sha || '';
+  if (!runningSha && !latestSha) {
     pill.classList.remove('visible');
+    pill.innerHTML = '';
     return;
   }
-  pill.textContent = `Running ${sha}`;
+  pill.innerHTML = `
+    <div class="version-pill-line"><span class="label">Running</span><span>${esc(runningSha || 'unknown')}</span></div>
+    <div class="version-pill-line"><span class="label">Latest</span><span>${esc(latestSha || 'unknown')}</span></div>
+  `;
   const digest = meta?.current_digest || '';
-  pill.title = digest || '';
+  const latestDigest = meta?.latest_digest || '';
+  pill.title = [digest, latestDigest].filter(Boolean).join('\n');
   pill.classList.add('visible');
 }
 

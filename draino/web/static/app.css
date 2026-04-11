@@ -66,22 +66,6 @@ body {
 }
 .top-search::placeholder { color: #78909c; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
-.update-pill {
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: #fff8e1;
-  color: #e65100;
-  border: 1px solid #ffcc80;
-  font-size: 11px;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.update-pill.visible { display: inline-flex; }
-.update-pill:hover { background: #ffecb3; }
 #clock  { color: #90a4ae; font-size: 12px; }
 #ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
 #ws-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--red-lt); transition: background 0.3s; }

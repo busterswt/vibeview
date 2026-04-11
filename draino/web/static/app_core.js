@@ -15,7 +15,6 @@ let activeView   = 'infrastructure';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
-let appMetaTimer = null;
 let appRuntimeTimer = null;
 let nodeMonitorTimer = null;
 let nodeNetStatsTimer = null;
@@ -371,40 +370,10 @@ function setAuthenticatedUI(info) {
   document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
   wsSetStatus('connecting');
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
-  refreshAppMeta();
-  if (!appMetaTimer) appMetaTimer = setInterval(refreshAppMeta, 300000);
   refreshAppRuntime();
   if (!appRuntimeTimer) appRuntimeTimer = setInterval(refreshAppRuntime, 15000);
   if (!nodeMonitorTimer) nodeMonitorTimer = setInterval(refreshSelectedNodeMetrics, 30000);
   if (!nodeNetStatsTimer) nodeNetStatsTimer = setInterval(refreshSelectedNodeNetworkStats, 3000);
-}
-
-function renderAppMeta(meta) {
-  const pill = document.getElementById('update-pill');
-  if (!pill) return;
-  const currentTag = meta?.current_tag || 'unknown';
-  const currentDigest = meta?.current_digest ? meta.current_digest.slice(0, 12) : 'unknown';
-
-  if (!meta?.update_available) {
-    pill.classList.remove('visible');
-    pill.removeAttribute('title');
-    return;
-  }
-  pill.classList.add('visible');
-  pill.href = meta.update_url || '#';
-  pill.textContent = 'Update Available';
-  const availableTrack = meta.track || 'main';
-  const latestDigest  = meta.latest_digest ? meta.latest_digest.slice(0, 12) : 'unknown';
-  pill.title = `Running ${currentTag} @ ${currentDigest}; upstream ${availableTrack} @ ${latestDigest}`;
-}
-
-async function refreshAppMeta() {
-  try {
-    const resp = await fetch('/api/app-meta');
-    if (!resp.ok) return;
-    const meta = await resp.json();
-    renderAppMeta(meta);
-  } catch (_) {}
 }
 
 function fmtBytes(bytes) {

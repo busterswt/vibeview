@@ -335,13 +335,20 @@ def _get_public_version_status() -> dict:
     meta = _get_app_update_status()
     digest = meta.get("current_digest")
     short_sha = ""
+    latest_digest = meta.get("latest_digest")
+    latest_short_sha = ""
     if isinstance(digest, str) and digest.startswith("sha256:"):
         short_sha = digest[len("sha256:"):][:12]
+    if isinstance(latest_digest, str) and latest_digest.startswith("sha256:"):
+        latest_short_sha = latest_digest[len("sha256:"):][:12]
     return {
         "current_digest": digest,
         "short_sha": short_sha,
+        "latest_digest": latest_digest,
+        "latest_short_sha": latest_short_sha,
         "current_tag": meta.get("current_tag"),
         "current_digest_source": meta.get("current_digest_source"),
+        "update_available": meta.get("update_available"),
     }
 
 
