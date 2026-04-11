@@ -20,8 +20,7 @@
     <a data-view="infrastructure" class="active" onclick="switchView('infrastructure')">Infrastructure</a>
     <a data-view="monitor"                       onclick="switchView('monitor')">Monitor</a>
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
-    <a data-view="networking"                    onclick="switchView('networking')">Networks</a>
-    <a data-view="routers"                       onclick="switchView('routers')">Routers</a>
+    <a data-view="networking"                    onclick="switchView(activeNetworkingView || 'networking')">Networking</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
     <a data-view="stress"                        onclick="switchView('stress')">Stress</a>
     <a data-view="reports"                       onclick="switchView('reports')">Reports</a>
@@ -51,6 +50,14 @@
   </div>
 </div>
 
+<div id="subnav-bar">
+  <div class="subnav-group" id="networking-subnav">
+    <a data-networking-view="networking" class="active" onclick="switchNetworkingSection('networking')">Networks</a>
+    <a data-networking-view="routers" onclick="switchNetworkingSection('routers')">Routers</a>
+    <a data-networking-view="loadbalancers" onclick="switchNetworkingSection('loadbalancers')">Load Balancers</a>
+  </div>
+</div>
+
 <!-- ═══ BREADCRUMB BAR ═══ -->
 <div id="breadcrumb-bar">
   <span class="bc-link" id="bc-root" onclick="handleBcRoot()">All Nodes</span>
@@ -73,6 +80,9 @@
   </div>
   <div class="bc-actions" id="bc-router-actions" style="display:none">
     <button class="btn" onclick="loadRouters(true)">⟳ Refresh Routers</button>
+  </div>
+  <div class="bc-actions" id="bc-lb-actions" style="display:none">
+    <button class="btn" onclick="loadLoadBalancers(true)">⟳ Refresh Load Balancers</button>
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="loadVolumes(true)">⟳ Refresh Volumes</button>
@@ -219,6 +229,13 @@
       <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading routers…</div>
     </div>
     <div id="router-detail-wrap"></div>
+  </div>
+
+  <!-- ── Load Balancers view ── -->
+  <div class="view" id="view-loadbalancers">
+    <div class="data-view-wrap" id="lb-wrap">
+      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading load balancers…</div>
+    </div>
   </div>
 
   <!-- ── Storage view ── -->

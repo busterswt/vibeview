@@ -4,15 +4,33 @@
 // § VIEW SWITCHING (top nav)
 // ════════════════════════════════════════════════════════════════════════════
 
+function topLevelView(name) {
+  if (['networking', 'routers', 'loadbalancers'].includes(name)) return 'networking';
+  return name;
+}
+
+function switchNetworkingSection(name) {
+  if (!['networking', 'routers', 'loadbalancers'].includes(name)) return;
+  activeNetworkingView = name;
+  switchView(name);
+}
+
 function switchView(name) {
   if (activeView === 'stress' && name !== 'stress' && typeof stopStressStatusPolling === 'function') {
     stopStressStatusPolling();
+  }
+  if (['networking', 'routers', 'loadbalancers'].includes(name)) {
+    activeNetworkingView = name;
   }
   activeView = name;
 
   // Top nav highlight
   document.querySelectorAll('.top-nav a').forEach(a => {
-    a.classList.toggle('active', a.dataset.view === name);
+    a.classList.toggle('active', a.dataset.view === topLevelView(name));
+  });
+  document.getElementById('subnav-bar')?.classList.toggle('open', topLevelView(name) === 'networking');
+  document.querySelectorAll('#networking-subnav a').forEach(a => {
+    a.classList.toggle('active', a.dataset.networkingView === activeNetworkingView);
   });
 
   // Show / hide body views
@@ -27,6 +45,7 @@ function switchView(name) {
   document.getElementById('bc-k8s-actions').style.display   = name === 'kubernetes'     ? '' : 'none';
   document.getElementById('bc-net-actions').style.display   = name === 'networking'     ? '' : 'none';
   document.getElementById('bc-router-actions').style.display = name === 'routers'       ? '' : 'none';
+  document.getElementById('bc-lb-actions').style.display    = name === 'loadbalancers'  ? '' : 'none';
   document.getElementById('bc-report-actions').style.display = name === 'reports'       ? '' : 'none';
   document.getElementById('bc-stress-actions').style.display = name === 'stress'        ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display   = name === 'storage'        ? '' : 'none';
@@ -50,6 +69,8 @@ function switchView(name) {
         ? 'Networks'
         : name === 'routers'
           ? 'Routers'
+        : name === 'loadbalancers'
+          ? 'Load Balancers'
         : name === 'stress'
           ? 'Stress'
         : name === 'reports'
@@ -71,6 +92,7 @@ function switchView(name) {
     if (name === 'monitor') renderMonitorView();
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
+    if (name === 'loadbalancers') loadLoadBalancers();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'stress') {
       renderStressView();

@@ -103,6 +103,30 @@ function appendNetError(msg) {
   onLog({ node: '-', message: `Networks API error: ${msg}`, color: 'error' });
 }
 
+function loadLoadBalancers(force = false) {
+  renderLoadBalancersView();
+}
+
+function renderLoadBalancersView() {
+  const wrap = document.getElementById('lb-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="data-view-toolbar">
+      <h2>Load Balancers <span class="hint">LBaaS / Octavia</span></h2>
+      <span style="font-size:11px;color:var(--dim)">Section reserved for a future load balancer inventory view.</span>
+    </div>
+    <div class="card">
+      <div class="card-title">Overview</div>
+      <div class="card-body">
+        <div style="color:var(--dim);line-height:1.6">
+          Networking navigation now groups <strong>Networks</strong>, <strong>Routers</strong>, and <strong>Load Balancers</strong> together.
+          The load balancer section is ready for the next implementation slice.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function selectNetwork(id) {
   selectedNetwork = id;
   netDetailState.selectedSubnet = null;

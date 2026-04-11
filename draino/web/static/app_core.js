@@ -12,6 +12,7 @@ let hideSucceeded = true;
 let lastPodsCache = null;       // { node, pods[] }
 let activeTab    = 'summary';
 let activeView   = 'infrastructure';
+let activeNetworkingView = 'networking';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
