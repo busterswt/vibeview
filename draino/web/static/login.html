@@ -600,6 +600,15 @@ body {
 const authMode = { k8s: 'token', os: 'password' };
 const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
 
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setAuthMessage(msg = '', kind = '') {
   const el = document.getElementById('auth-msg');
   el.textContent = msg || '';
