@@ -295,14 +295,11 @@ function selectNode(name) {
   }
 
   selectedNode  = name;
-  showPods      = false;
   lastPodsCache = null;
 
   // Highlight new item directly (avoids rebuilding whole sidebar)
   const el = document.querySelector(`[data-node="${escAttr(name)}"]`);
   if (el) el.classList.add('selected');
-
-  syncPodsButton();
 
   const nd = nodes[name];
   if (nd) {
@@ -315,6 +312,7 @@ function selectNode(name) {
     if (shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
     _ensureNetworkDataLoaded(name);
   }
+  if (activeTab === 'pods') actionPodsInline();
   // Load network config data if Configure tab is active
   if (activeTab === 'configure') _ensureNetworkDataLoaded(name);
   renderInfraDetail();
@@ -535,10 +533,11 @@ function restoreFocusedInput(container, state) {
 
 function showTab(name) {
   activeTab = name;
-  ['summary','instances','monitor','configure'].forEach(t => {
+  ['summary','instances','pods','monitor','configure'].forEach(t => {
     document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
+  if (name === 'pods' && selectedNode && lastPodsCache?.node !== selectedNode) actionPodsInline();
   if (name === 'monitor' && selectedNode && shouldLoadNodeMetrics(selectedNode)) loadNodeMetrics(selectedNode);
   if (name === 'monitor' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
@@ -548,6 +547,7 @@ function showTab(name) {
 function renderActiveTab(nd) {
   if (activeTab === 'summary')   renderSummaryTab(nd);
   if (activeTab === 'instances') renderInstancesTab(nd);
+  if (activeTab === 'pods')      renderPodsTab(nd);
   if (activeTab === 'monitor')   renderNodeMonitorTab(nd);
   if (activeTab === 'configure') renderConfigureTab(nd);
 }
@@ -798,7 +798,9 @@ function renderSummaryTab(nd) {
   h += `</div>`;
 
   if (nd.is_compute && nd.phase === 'idle' && (!nd.steps || !nd.steps.length)) {
-    h += `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow. See the <strong>Instances &amp; Pods</strong> tab for workloads on this hypervisor.</div>`;
+    h += hasOpenStackAuth()
+      ? `<div class="idle-hint">Click <strong>Evacuate</strong> to begin the full evacuation workflow. Use the <strong>Instances</strong> and <strong>Pods</strong> tabs to inspect workloads on this hypervisor.</div>`
+      : `<div class="idle-hint">OpenStack credentials are required for instance evacuation workflows. Use the <strong>Instances</strong> and <strong>Pods</strong> tabs to inspect workloads on this hypervisor.</div>`;
     if (nd.k8s_cordoned || nd.compute_status === 'disabled')
       h += `<div class="idle-hint">Node is partially drained — click <strong>Drain (Undrain)</strong> to re-enable.</div>`;
   }
@@ -954,6 +956,7 @@ function renderNodeMonitorTab(nd) {
 
 function renderInstancesTab(nd) {
   const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  const showEvacuate = hasOpenStackAuth();
   const expandedId = expandedInstanceIdByNode[nd.k8s_name] || '';
   const instanceRefreshPill = nd.preflight_loading
     ? `<span class="node-refresh-indicator active" title="Refreshing VM list">
@@ -962,9 +965,7 @@ function renderInstancesTab(nd) {
       </span>`
     : '<span class="node-refresh-indicator instances-refresh-slot" aria-hidden="true"></span>';
   let h = `<div class="inst-toolbar">
-    <button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>
-    <button class="btn ${drained?'warning':''}" onclick="actionDrainOrUndrain()">${drained ? '↺ Undrain' : '▽ Drain'}</button>
-    <button class="btn" id="inst-pods-btn" onclick="actionPodsInline()">${podsButtonText()}</button>
+    ${showEvacuate ? `<button class="btn primary" onclick="actionEvacuate()">▶ Evacuate <span class="hint">Enter Maintenance</span></button>` : ''}
     <span style="flex:1"></span>
     <input class="toolbar-filter" type="text" placeholder="Filter instances…" id="inst-filter" oninput="filterInstTable()">
   </div>`;
@@ -1027,21 +1028,29 @@ function renderInstancesTab(nd) {
       <div style="color:var(--dim);font-size:12px;padding:4px 0">Non-compute node.</div>`;
   }
 
-  // Pods section
+  document.getElementById('instances-content').innerHTML = h;
+}
+
+function renderPodsTab(nd) {
+  const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
+  let h = `<div class="inst-toolbar">
+    <button class="btn ${drained?'warning':''}" onclick="actionDrainOrUndrain()">${drained ? '↺ Undrain' : '▽ Drain'}</button>
+    <span style="flex:1"></span>
+    <span style="color:var(--dim);font-size:11px">Succeeded pods can be hidden below.</span>
+  </div>`;
+
   h += `<div class="tab-section-title" style="margin-top:10px">
     <span>Kubernetes Pods <span class="hint">Containerised Workloads</span></span>
   </div>
   <div id="pods-section">`;
-  if (showPods && lastPodsCache?.node === nd.k8s_name) {
+  if (lastPodsCache?.node === nd.k8s_name) {
     h += buildPodsTableHtml(lastPodsCache.pods);
-  } else if (showPods) {
-    h += `<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
   } else {
-    h += `<div style="color:var(--dim);font-size:12px">Click <strong>Load Pods</strong> above to fetch current pods on this node.</div>`;
+    h += `<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
   }
   h += `</div>`;
 
-  document.getElementById('instances-content').innerHTML = h;
+  document.getElementById('pods-content').innerHTML = h;
 }
 
 function renderInstanceDetailPanel(nodeName, instanceId) {

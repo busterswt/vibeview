@@ -27,6 +27,7 @@ function updateActionButtons(nd) {
   evBtn.textContent = phase === 'running'    ? '▶ Evacuating…' : '▶ Evacuate';
   evBtn.disabled    = busy || !nd.is_compute;
   evBtn.className   = 'btn primary';
+  evBtn.style.display = hasOpenStackAuth() ? '' : 'none';
 
   drBtn.textContent = phase === 'undraining' ? '↺ Undraining…' : drained ? '↺ Undrain' : '▽ Drain';
   drBtn.disabled    = busy;
@@ -83,21 +84,6 @@ async function actionToggleNoSchedule() {
   }
 }
 
-function podsButtonText() {
-  if (!showPods)           return '⬡ Pods';
-  if (!lastPodsCache)      return '⟳ Pods…';
-  return '⟳ Refresh Pods';
-}
-
-/** Keep both pod buttons (breadcrumb bar + instances tab toolbar) in sync. */
-function syncPodsButton() {
-  const txt = podsButtonText();
-  const bc  = document.getElementById('bc-pods');
-  const tb  = document.getElementById('inst-pods-btn');
-  if (bc) bc.textContent = txt;
-  if (tb) tb.textContent = txt;
-}
-
 function migrateInstance(instanceId) {
   if (!selectedNode) return;
   const nd   = nodes[selectedNode];
@@ -121,17 +107,10 @@ function actionDrainOrUndrain() {
   wsSend({ action, node: selectedNode });
 }
 
-function actionPods() {
-  showTab('instances');
-  actionPodsInline();
-}
-
 function actionPodsInline() {
   if (!selectedNode) return;
-  showPods      = true;
   lastPodsCache = null;
   wsSend({ action: 'get_pods', node: selectedNode });
-  syncPodsButton();
   const sec = document.getElementById('pods-section');
   if (sec) sec.innerHTML = `<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Fetching pods…</div>`;
 }

@@ -137,7 +137,8 @@
 
       <div id="tabs-bar">
         <div class="tab active" id="tab-btn-summary"   onclick="showTab('summary')">Summary</div>
-        <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances &amp; Pods <span class="hint">VMs</span></div>
+        <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances <span class="hint">VMs</span></div>
+        <div class="tab"        id="tab-btn-pods"      onclick="showTab('pods')">Pods <span class="hint">K8s</span></div>
         <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Metrics</div>
         <div class="tab"        id="tab-btn-configure" onclick="showTab('configure')">Configure</div>
       </div>
@@ -150,7 +151,12 @@
         </div>
         <div id="tab-instances" style="display:none">
           <div id="instances-content">
-            <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its instances and pods.</div>
+            <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its instances.</div>
+          </div>
+        </div>
+        <div id="tab-pods" style="display:none">
+          <div id="pods-content">
+            <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node to view its pods.</div>
           </div>
         </div>
         <div id="tab-monitor" style="display:none">

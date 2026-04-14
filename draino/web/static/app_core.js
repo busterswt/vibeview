@@ -7,7 +7,6 @@
 let nodes        = {};          // nodeName → NodeDict (from server)
 let selectedNode = null;
 let pendingReboot = null;
-let showPods     = false;
 let hideSucceeded = true;
 let lastPodsCache = null;       // { node, pods[] }
 let activeTab    = 'summary';
@@ -278,6 +277,10 @@ function retryApiIssuesNow() {
       const instanceId = expandedInstanceIdByNode[selectedNode];
       if (instanceId) return loadInstanceDetail(selectedNode, instanceId, true);
       if (typeof actionRefreshNode === 'function') return actionRefreshNode();
+      return;
+    }
+    if (activeTab === 'pods') {
+      if (typeof actionPodsInline === 'function') return actionPodsInline();
       return;
     }
   }
@@ -906,8 +909,7 @@ function onRebootBlocked(msg) {
 function onPods(msg) {
   if (selectedNode !== msg.node) return;
   lastPodsCache = { node: msg.node, pods: msg.pods || [] };
-  syncPodsButton();
-  if (activeTab === 'instances') {
+  if (activeTab === 'pods') {
     const sec = document.getElementById('pods-section');
     if (sec) sec.innerHTML = buildPodsTableHtml(lastPodsCache.pods);
   }
