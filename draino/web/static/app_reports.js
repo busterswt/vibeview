@@ -33,6 +33,14 @@ const REPORT_META = {
     icon: '🗄️',
     requiresOpenStack: false,
   },
+  'k8s-rollout-health': {
+    label: 'Kubernetes Rollout Health',
+    subtitle: 'Broken rollouts, recent restarts, fatal signals, and daemonset coverage',
+    url: '/api/reports/k8s-rollout-health',
+    csvUrl: '/api/reports/k8s-rollout-health.csv',
+    icon: '🚦',
+    requiresOpenStack: false,
+  },
   'project-placement': {
     label: 'Project Placement',
     subtitle: 'Tenant VM distribution across compute hosts',
@@ -871,6 +879,170 @@ function renderK8sPvcWorkloadReport(activeMeta, report, nowLabel) {
   `;
 }
 
+function renderK8sRolloutHealthReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const workloadItems = report.workload_items || [];
+  const restartItems = report.restart_items || [];
+  const fatalItems = report.fatal_items || [];
+  const totalWorkloads = Number(report.scope?.workloads ?? workloadItems.length) || 0;
+  const podsWithSignals = Number(report.scope?.pods_with_restart_signals ?? restartItems.length) || 0;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Kubernetes live view</span>
+        <span class="meta-pill">Stateless restart signals</span>
+        <span class="meta-pill">${esc(String(totalWorkloads))} workloads</span>
+        <span class="meta-pill">${esc(String(podsWithSignals))} pods with restart signal</span>
+        <span class="meta-pill">Generated ${esc(nowLabel)}</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="report-hero-grid">
+      ${renderCapacityHero('Broken Rollouts', String(summary.broken_rollouts ?? 0), (summary.broken_rollouts ?? 0) > 0 ? 'bad' : 'good', summaryFoot.broken_rollouts || '')}
+      ${renderCapacityHero('Recent Restarts', String(summary.recent_restarts ?? 0), (summary.recent_restarts ?? 0) > 0 ? 'warn' : 'good', summaryFoot.recent_restarts || '')}
+      ${renderCapacityHero('Fatal Signals', String(summary.fatal_signals ?? 0), (summary.fatal_signals ?? 0) > 0 ? 'bad' : 'good', summaryFoot.fatal_signals || '')}
+      ${renderCapacityHero('Coverage Gaps', String(summary.misscheduled_coverage ?? 0), (summary.misscheduled_coverage ?? 0) > 0 ? 'warn' : 'good', summaryFoot.misscheduled_coverage || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Rollout / Restart Breakdown</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('At-risk workloads', summary.broken_rollouts ?? 0, totalWorkloads, 'bad')}
+          ${renderReportBreakdownBar('Recent restarts', summary.recent_restarts ?? 0, Math.max(podsWithSignals, summary.recent_restarts ?? 0), 'warn')}
+          ${renderReportBreakdownBar('Fatal signals', summary.fatal_signals ?? 0, Math.max(podsWithSignals, summary.fatal_signals ?? 0), 'bad')}
+          ${renderReportBreakdownBar('Coverage gaps', summary.misscheduled_coverage ?? 0, totalWorkloads, 'blue')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Rollout Standouts</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Namespace</th>
+              <th>Workload</th>
+              <th>Kind</th>
+              <th>Ready</th>
+              <th>Updated</th>
+              <th>Available</th>
+              <th>Unavailable</th>
+              <th>Revision Drift</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${workloadItems.map(item => `
+              <tr>
+                <td class="dim">${esc(item.namespace || '')}</td>
+                <td>${esc(item.name || '')}</td>
+                <td><span class="report-tag blue">${esc(item.kind || '')}</span></td>
+                <td class="mono">${esc(`${item.ready ?? 0}/${item.desired ?? 0}`)}</td>
+                <td>${esc(String(item.updated ?? 0))}</td>
+                <td>${esc(String(item.available ?? 0))}</td>
+                <td${(Number(item.unavailable ?? 0) > 0) ? ' class="bad"' : ''}>${esc(String(item.unavailable ?? 0))}</td>
+                <td class="mono report-wrap-cell">${esc(item.revision_drift || '—')}</td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'}">${esc(item.risk || 'low')}</span></td>
+                <td class="report-wrap-cell">${esc(item.reason || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Recent Pod Restarts</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Namespace</th>
+              <th>Pod</th>
+              <th>Owner</th>
+              <th>Node</th>
+              <th>Restart Count</th>
+              <th>Window</th>
+              <th>Last Reason</th>
+              <th>Last Exit</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${restartItems.map(item => `
+              <tr>
+                <td class="dim">${esc(item.namespace || '')}</td>
+                <td>${esc(item.pod || '')}</td>
+                <td>${esc(`${item.owner_name || ''} / ${item.owner_kind || ''}`)}</td>
+                <td class="mono">${esc(item.node || '—')}</td>
+                <td>${esc(String(item.restart_count ?? 0))}</td>
+                <td><span class="report-tag ${item.window === '5m' ? 'red' : item.window === '15m' ? 'yellow' : 'blue'}">${esc(item.window || '—')}</span></td>
+                <td>${esc(item.last_reason || 'Unknown')}</td>
+                <td class="mono">${esc(item.last_exit_code || '—')}</td>
+                <td><span class="report-tag ${item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'blue'}">${esc(item.risk || 'info')}</span></td>
+              </tr>
+            `).join('') || `
+              <tr>
+                <td colspan="9" class="card-note">No recent restart signals detected from current pod status.</td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="report-grid-two">
+      <div class="card">
+        <div class="card-title"><span>Fatal Reason Breakdown</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Reason</th>
+                <th>Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${fatalItems.map(item => `
+                <tr>
+                  <td>${esc(item.reason || '')}</td>
+                  <td>${esc(String(item.count ?? 0))}</td>
+                </tr>
+              `).join('') || `
+                <tr>
+                  <td colspan="2" class="card-note">No fatal restart reasons in the current snapshot.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>Collection Notes</span></div>
+        <div class="card-body">
+          <div class="card-note">Recent restart windows are derived from current container status only. This stays stateless and low-cost, but older restart events may no longer be visible if kubelet status has rotated.</div>
+        </div>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
 function renderPlacementRiskReport(activeMeta, report, nowLabel) {
   const summary = report.summary || {};
   const summaryFoot = report.summary_foot || {};
@@ -1055,6 +1227,8 @@ function renderReportsView() {
         ? renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel)
       : reportState.active === 'k8s-pvc-workload'
         ? renderK8sPvcWorkloadReport(activeMeta, report, nowLabel)
+      : reportState.active === 'k8s-rollout-health'
+        ? renderK8sRolloutHealthReport(activeMeta, report, nowLabel)
       : reportState.active === 'placement-risk'
         ? renderPlacementRiskReport(activeMeta, report, nowLabel)
       : reportState.active === 'project-placement'

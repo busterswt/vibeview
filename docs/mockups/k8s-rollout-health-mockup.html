@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Kubernetes Rollout Health</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --header: #1a2332;
+  --border: #d1d9e0;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --blue-bg: #e3f2fd;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+}
+
+.logo { color: white; font-weight: 700; }
+.logo-sub { font-size: 10px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.bc-link { color: var(--blue); }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#content {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.sub { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 860px; }
+.meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.hero-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.hero-foot.good { color: var(--green); }
+.hero-foot.warn { color: var(--yellow); }
+.hero-foot.bad { color: var(--red); }
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.card-title {
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 14px; }
+
+.finding-list { display: grid; gap: 8px; }
+.finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.finding-row:last-child { border-bottom: none; }
+
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sev.high { background: var(--red-bg); color: var(--red); }
+.sev.medium { background: var(--yellow-bg); color: var(--yellow); }
+.sev.low { background: var(--green-bg); color: var(--green); }
+.finding-text { font-size: 12px; line-height: 1.5; }
+
+.chart-strip { display: grid; gap: 10px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) 72px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.bar-track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: #ecf1f6;
+  overflow: hidden;
+}
+.bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+.bar-fill.good { background: var(--green); }
+.bar-fill.warn { background: var(--yellow); }
+.bar-fill.bad { background: var(--red); }
+.bar-fill.info { background: var(--blue); }
+.bar-num {
+  text-align: right;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  padding: 14px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1080px;
+}
+
+th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--dim);
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 10px 8px 10px 0;
+  border-bottom: 1px solid #edf1f5;
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.dim { color: var(--dim); }
+.good { color: var(--green); }
+.warn { color: var(--yellow); }
+.bad { color: var(--red); }
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-badge.good { background: var(--green-bg); color: var(--green); }
+.status-badge.warn { background: var(--yellow-bg); color: var(--yellow); }
+.status-badge.bad { background: var(--red-bg); color: var(--red); }
+.status-badge.info { background: var(--blue-bg); color: var(--blue); }
+
+.note {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">VibeView <span class="logo-sub">Operator Mockup</span></div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Kubernetes</a>
+      <a href="#" class="active">Reports</a>
+    </div>
+    <div class="top-right">
+      <span class="mock-pill">MOCKUP</span>
+      <button class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Reports</span>
+    <span>›</span>
+    <span>Kubernetes Rollout Health</span>
+    <div class="bc-actions">
+      <button class="btn">Download CSV</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <section class="header-card">
+      <div class="title">Kubernetes Rollout Health</div>
+      <div class="sub">Live workload risk view for operators. Highlights broken rollouts, stalled updates, recent restart spikes, and fatal restart reasons without turning into a raw inventory dump.</div>
+      <div class="meta-row">
+        <span class="meta-pill">Kubernetes Live View</span>
+        <span class="meta-pill">No Stored History</span>
+        <span class="meta-pill">312 workloads</span>
+        <span class="meta-pill">Pods sampled once across all namespaces</span>
+      </div>
+    </section>
+
+    <section class="hero-grid">
+      <div class="hero">
+        <div class="hero-label">Broken Rollouts</div>
+        <div class="hero-value bad">9</div>
+        <div class="hero-foot bad">Unavailable replicas or stalled progress</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Recent Restarts</div>
+        <div class="hero-value warn">17</div>
+        <div class="hero-foot warn">Pods restarted within the last 15 minutes</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Fatal Signals</div>
+        <div class="hero-value bad">6</div>
+        <div class="hero-foot bad">OOMKilled, Error, CrashLoopBackOff, ImagePullBackOff</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Misscheduled Coverage</div>
+        <div class="hero-value warn">3</div>
+        <div class="hero-foot warn">DaemonSets with gaps or misscheduled pods</div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Highest-Risk Findings</div>
+        <div class="card-body finding-list">
+          <div class="finding-row">
+            <div><span class="sev high">High</span></div>
+            <div class="finding-text"><strong>payments / api</strong> deployment has <span class="mono">2 unavailable</span> replicas and updated rollout is stuck below desired count.</div>
+          </div>
+          <div class="finding-row">
+            <div><span class="sev high">High</span></div>
+            <div class="finding-text"><strong>db / mariadb</strong> statefulset shows revision drift: current <span class="mono">rev-a</span>, target <span class="mono">rev-b</span>, ready <span class="mono">2/3</span>.</div>
+          </div>
+          <div class="finding-row">
+            <div><span class="sev medium">Medium</span></div>
+            <div class="finding-text"><strong>logging / fluentbit</strong> daemonset has <span class="mono">1 misscheduled</span> pod and <span class="mono">2 unavailable</span> nodes of coverage.</div>
+          </div>
+          <div class="finding-row">
+            <div><span class="sev high">High</span></div>
+            <div class="finding-text"><strong>web / frontend-76cc7</strong> restarted twice in the last 5 minutes with <span class="mono bad">OOMKilled</span> on node <span class="mono">cmp-a03</span>.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Standout Breakdown</div>
+        <div class="card-body chart-strip">
+          <div class="bar-row">
+            <div>Deployments At Risk</div>
+            <div class="bar-track"><div class="bar-fill bad" style="width: 34%"></div></div>
+            <div class="bar-num">6 / 18</div>
+          </div>
+          <div class="bar-row">
+            <div>StatefulSets With Drift</div>
+            <div class="bar-track"><div class="bar-fill warn" style="width: 22%"></div></div>
+            <div class="bar-num">2 / 9</div>
+          </div>
+          <div class="bar-row">
+            <div>DaemonSets With Gaps</div>
+            <div class="bar-track"><div class="bar-fill warn" style="width: 19%"></div></div>
+            <div class="bar-num">3 / 16</div>
+          </div>
+          <div class="bar-row">
+            <div>Pods Restarted In 15m</div>
+            <div class="bar-track"><div class="bar-fill info" style="width: 41%"></div></div>
+            <div class="bar-num">17 pods</div>
+          </div>
+          <div class="bar-row">
+            <div>Fatal Restart Reasons</div>
+            <div class="bar-track"><div class="bar-fill bad" style="width: 27%"></div></div>
+            <div class="bar-num">6 pods</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Rollout Standouts</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Namespace</th>
+              <th>Workload</th>
+              <th>Kind</th>
+              <th>Ready</th>
+              <th>Updated</th>
+              <th>Available</th>
+              <th>Unavailable</th>
+              <th>Revision Drift</th>
+              <th>Risk</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="dim">payments</td>
+              <td>api</td>
+              <td><span class="status-badge info">Deployment</span></td>
+              <td class="mono">3/5</td>
+              <td class="mono">4</td>
+              <td class="mono">3</td>
+              <td class="mono bad">2</td>
+              <td class="dim">—</td>
+              <td><span class="status-badge bad">High</span></td>
+              <td>Rollout below desired count with unavailable replicas</td>
+            </tr>
+            <tr>
+              <td class="dim">db</td>
+              <td>mariadb</td>
+              <td><span class="status-badge info">StatefulSet</span></td>
+              <td class="mono">2/3</td>
+              <td class="mono">2</td>
+              <td class="mono">2</td>
+              <td class="mono bad">1</td>
+              <td class="mono bad">rev-a → rev-b</td>
+              <td><span class="status-badge bad">High</span></td>
+              <td>Revision drift with one pod not on target update revision</td>
+            </tr>
+            <tr>
+              <td class="dim">logging</td>
+              <td>fluentbit</td>
+              <td><span class="status-badge info">DaemonSet</span></td>
+              <td class="mono">24/26</td>
+              <td class="mono">—</td>
+              <td class="mono">24</td>
+              <td class="mono warn">2</td>
+              <td class="dim">—</td>
+              <td><span class="status-badge warn">Medium</span></td>
+              <td>Node coverage gap plus one misscheduled pod</td>
+            </tr>
+            <tr>
+              <td class="dim">web</td>
+              <td>frontend</td>
+              <td><span class="status-badge info">Deployment</span></td>
+              <td class="mono">8/8</td>
+              <td class="mono">8</td>
+              <td class="mono">8</td>
+              <td class="mono">0</td>
+              <td class="dim">—</td>
+              <td><span class="status-badge warn">Medium</span></td>
+              <td>Healthy rollout but pods restarted recently</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Recent Pod Restarts</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Namespace</th>
+              <th>Pod</th>
+              <th>Owner</th>
+              <th>Node</th>
+              <th>Restart Count</th>
+              <th>Window</th>
+              <th>Last Reason</th>
+              <th>Last Exit</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="dim">web</td>
+              <td>frontend-76cc7fd8f9-j7khm</td>
+              <td>frontend / Deployment</td>
+              <td class="mono">cmp-a03</td>
+              <td class="mono">2</td>
+              <td><span class="status-badge bad">5m</span></td>
+              <td class="bad">OOMKilled</td>
+              <td class="mono bad">137</td>
+              <td><span class="status-badge bad">High</span></td>
+            </tr>
+            <tr>
+              <td class="dim">ingress</td>
+              <td>envoy-gateway-9b7d7</td>
+              <td>envoy-gateway / Deployment</td>
+              <td class="mono">cmp-b02</td>
+              <td class="mono">1</td>
+              <td><span class="status-badge warn">15m</span></td>
+              <td class="warn">Error</td>
+              <td class="mono warn">1</td>
+              <td><span class="status-badge warn">Medium</span></td>
+            </tr>
+            <tr>
+              <td class="dim">backup</td>
+              <td>restic-backup-28411325-x9msp</td>
+              <td>restic-backup / Job</td>
+              <td class="mono">cmp-c01</td>
+              <td class="mono">1</td>
+              <td><span class="status-badge info">30m</span></td>
+              <td class="dim">Completed retry</td>
+              <td class="mono dim">0</td>
+              <td><span class="status-badge info">Info</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Fatal Reason Breakdown</div>
+        <div class="card-body chart-strip">
+          <div class="bar-row">
+            <div>OOMKilled</div>
+            <div class="bar-track"><div class="bar-fill bad" style="width: 52%"></div></div>
+            <div class="bar-num">3</div>
+          </div>
+          <div class="bar-row">
+            <div>CrashLoopBackOff</div>
+            <div class="bar-track"><div class="bar-fill bad" style="width: 34%"></div></div>
+            <div class="bar-num">2</div>
+          </div>
+          <div class="bar-row">
+            <div>ImagePullBackOff</div>
+            <div class="bar-track"><div class="bar-fill warn" style="width: 18%"></div></div>
+            <div class="bar-num">1</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Collection Notes</div>
+        <div class="card-body">
+          <div class="note">
+            To avoid hammering the control plane, the first version should derive most signals from:
+            one workload list, one pod list, and current container status. “Restarted in the last 5 / 15 / 30 minutes”
+            is only precise if we use each container’s <span class="mono">lastState.terminated.finishedAt</span> or
+            current waiting/terminated timestamps. That avoids requiring broad event scraping as a first step.
+          </div>
+          <div class="note" style="margin-top:10px">
+            If container status timestamps are missing or overwritten, we can degrade gracefully to:
+            “has restarted recently” or “restart count increased since last refresh” once we decide whether in-memory
+            sampling is acceptable.
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

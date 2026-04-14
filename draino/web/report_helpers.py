@@ -1265,3 +1265,121 @@ def render_k8s_pvc_workload_csv(report: dict) -> str:
             item.get("reason", ""),
         ])
     return output.getvalue()
+
+
+def build_k8s_rollout_health_report(server: DrainoServer) -> dict:
+    started = time.perf_counter()
+    data_started = time.perf_counter()
+    summary = k8s_ops.get_k8s_rollout_health_summary(auth=server.k8s_auth)
+    data_ms = (time.perf_counter() - data_started) * 1000.0
+    if summary.get("error"):
+        return {"report": None, "error": summary["error"]}
+
+    workloads = summary.get("workloads", [])
+    recent_restarts = summary.get("recent_restarts", [])
+    fatal_counts = summary.get("fatal_counts", {})
+    counts = summary.get("counts", {})
+
+    broken_rollouts = int(counts.get("broken_rollouts") or 0)
+    recent_restart_15m = sum(1 for item in recent_restarts if item.get("window") in {"5m", "15m"})
+    fatal_signals = int(counts.get("fatal_signals") or 0)
+    misscheduled_coverage = sum(1 for item in workloads if item.get("kind") == "DaemonSet" and ((item.get("misscheduled") or 0) > 0 or (item.get("unavailable") or 0) > 0))
+
+    findings: list[dict] = []
+    for item in workloads:
+        if item.get("risk") not in {"high", "medium"}:
+            continue
+        findings.append({
+            "severity": "high" if item.get("risk") == "high" else "medium",
+            "node": f"{item.get('namespace', '')} / {item.get('name', '')}",
+            "message": item.get("reason") or "Rollout risk detected",
+        })
+    for item in recent_restarts:
+        if item.get("risk") not in {"high", "medium"}:
+            continue
+        findings.append({
+            "severity": "high" if item.get("risk") == "high" else "medium",
+            "node": f"{item.get('namespace', '')} / {item.get('pod', '')}",
+            "message": f"{item.get('last_reason') or 'restart'} in the last {item.get('window') or 'unknown window'}",
+        })
+    findings = sorted(findings, key=lambda item: (0 if item["severity"] == "high" else 1, item["node"]))[:4]
+
+    fatal_items = [{"reason": reason, "count": count} for reason, count in fatal_counts.items()]
+    total_workloads = len(workloads)
+    total_ms = (time.perf_counter() - started) * 1000.0
+
+    return {
+        "report": {
+            "key": "k8s-rollout-health",
+            "title": "Kubernetes Rollout Health",
+            "subtitle": "Live workload risk view for operators, highlighting broken rollouts, stalled updates, recent restarts, and fatal restart reasons without requiring stored state.",
+            "source": "Kubernetes",
+            "scope": {
+                "workloads": total_workloads,
+                "pods_with_restart_signals": len(recent_restarts),
+            },
+            "summary": {
+                "broken_rollouts": broken_rollouts,
+                "recent_restarts": recent_restart_15m,
+                "fatal_signals": fatal_signals,
+                "misscheduled_coverage": misscheduled_coverage,
+            },
+            "summary_foot": {
+                "broken_rollouts": "Unavailable replicas or rollout progress below desired state",
+                "recent_restarts": "Pods restarted in the last 15 minutes from current status only",
+                "fatal_signals": "OOMKilled, CrashLoopBackOff, ImagePullBackOff, and related fatal reasons",
+                "misscheduled_coverage": "DaemonSets with misscheduled pods or missing node coverage",
+            },
+            "findings": findings,
+            "workload_items": workloads,
+            "restart_items": recent_restarts,
+            "fatal_items": fatal_items,
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "k8s_rollout_health_summary": round(data_ms, 1),
+                },
+                "counts": {
+                    "workloads": total_workloads,
+                    "deployments": int(counts.get("deployments") or 0),
+                    "statefulsets": int(counts.get("statefulsets") or 0),
+                    "daemonsets": int(counts.get("daemonsets") or 0),
+                    "restart_items": len(recent_restarts),
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def render_k8s_rollout_health_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "namespace",
+        "name",
+        "kind",
+        "ready",
+        "desired",
+        "updated",
+        "available",
+        "unavailable",
+        "revision_drift",
+        "risk",
+        "reason",
+    ])
+    for item in report.get("workload_items", []):
+        writer.writerow([
+            item.get("namespace", ""),
+            item.get("name", ""),
+            item.get("kind", ""),
+            item.get("ready", ""),
+            item.get("desired", ""),
+            item.get("updated", ""),
+            item.get("available", ""),
+            item.get("unavailable", ""),
+            item.get("revision_drift", ""),
+            item.get("risk", ""),
+            item.get("reason", ""),
+        ])
+    return output.getvalue()

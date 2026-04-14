@@ -158,6 +158,7 @@ from .k8s_inventory_ops import (
     list_k8s_gateways,
     list_k8s_httproutes,
     get_k8s_node_health_density_summary,
+    get_k8s_rollout_health_summary,
     list_k8s_operators,
     list_k8s_statefulsets,
     get_k8s_pvc_workload_summary,

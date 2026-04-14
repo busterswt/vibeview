@@ -591,6 +591,175 @@ def test_k8s_pvc_workload_reports_endpoints_return_json_and_csv(monkeypatch):
     assert "data-mariadb-0" in export.text
 
 
+def test_build_k8s_rollout_health_report_summarises_live_workload_state(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_rollout_health_summary",
+        lambda auth=None: {
+            "workloads": [
+                {
+                    "namespace": "payments",
+                    "name": "api",
+                    "kind": "Deployment",
+                    "ready": 3,
+                    "desired": 5,
+                    "updated": 4,
+                    "available": 3,
+                    "unavailable": 2,
+                    "revision_drift": "",
+                    "risk": "high",
+                    "reason": "rollout below desired count",
+                },
+                {
+                    "namespace": "db",
+                    "name": "mariadb",
+                    "kind": "StatefulSet",
+                    "ready": 2,
+                    "desired": 3,
+                    "updated": 2,
+                    "available": 3,
+                    "unavailable": 1,
+                    "revision_drift": "rev-a → rev-b",
+                    "risk": "high",
+                    "reason": "revision drift with incomplete rollout",
+                },
+                {
+                    "namespace": "logging",
+                    "name": "fluentbit",
+                    "kind": "DaemonSet",
+                    "ready": 24,
+                    "desired": 26,
+                    "updated": 26,
+                    "available": 24,
+                    "unavailable": 2,
+                    "misscheduled": 1,
+                    "revision_drift": "",
+                    "risk": "high",
+                    "reason": "daemonset coverage gap; misscheduled pods present",
+                },
+            ],
+            "recent_restarts": [
+                {
+                    "namespace": "web",
+                    "pod": "frontend-abc",
+                    "owner_name": "frontend",
+                    "owner_kind": "Deployment",
+                    "node": "cmp-a03",
+                    "restart_count": 2,
+                    "window": "5m",
+                    "last_reason": "OOMKilled",
+                    "last_exit_code": "137",
+                    "risk": "high",
+                },
+            ],
+            "fatal_counts": {"OOMKilled": 1},
+            "counts": {
+                "deployments": 1,
+                "statefulsets": 1,
+                "daemonsets": 1,
+                "broken_rollouts": 3,
+                "fatal_signals": 1,
+            },
+            "error": None,
+        },
+    )
+
+    payload = web_server._build_k8s_rollout_health_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["broken_rollouts"] == 3
+    assert payload["report"]["summary"]["recent_restarts"] == 1
+    assert payload["report"]["summary"]["fatal_signals"] == 1
+    assert payload["report"]["summary"]["misscheduled_coverage"] == 1
+    assert payload["report"]["fatal_items"][0]["reason"] == "OOMKilled"
+    assert payload["report"]["restart_items"][0]["pod"] == "frontend-abc"
+
+
+def test_k8s_rollout_health_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_k8s_rollout_health_summary",
+        lambda auth=None: {
+            "workloads": [
+                {
+                    "namespace": "payments",
+                    "name": "api",
+                    "kind": "Deployment",
+                    "ready": 3,
+                    "desired": 5,
+                    "updated": 4,
+                    "available": 3,
+                    "unavailable": 2,
+                    "revision_drift": "",
+                    "risk": "high",
+                    "reason": "rollout below desired count",
+                },
+            ],
+            "recent_restarts": [
+                {
+                    "namespace": "web",
+                    "pod": "frontend-abc",
+                    "owner_name": "frontend",
+                    "owner_kind": "Deployment",
+                    "node": "cmp-a03",
+                    "restart_count": 2,
+                    "window": "5m",
+                    "last_reason": "OOMKilled",
+                    "last_exit_code": "137",
+                    "risk": "high",
+                },
+            ],
+            "fatal_counts": {"OOMKilled": 1},
+            "counts": {
+                "deployments": 1,
+                "statefulsets": 0,
+                "daemonsets": 0,
+                "broken_rollouts": 1,
+                "fatal_signals": 1,
+            },
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        report = client.get("/api/reports/k8s-rollout-health")
+        export = client.get("/api/reports/k8s-rollout-health.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["workload_items"][0]["name"] == "api"
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="k8s-rollout-health.csv"'
+    assert "payments" in export.text
+
+
 def test_build_capacity_headroom_report_resolves_short_host_aliases(monkeypatch, tmp_path):
     server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
     server.node_states = {
