@@ -77,6 +77,44 @@ let appRuntimeState = {
   diagnosticsError: null,
 };
 
+function hasOpenStackAuth() {
+  return Boolean(authInfo?.has_openstack_auth);
+}
+
+function hasK8sAuth() {
+  return Boolean(authInfo?.has_k8s_auth);
+}
+
+function renderAuthModeAlert() {
+  const el = document.getElementById('auth-mode-alert');
+  if (!el) return;
+  if (hasOpenStackAuth()) {
+    el.classList.remove('open');
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <strong>Kubernetes-only mode.</strong>
+    OpenStack credentials were not provided for this session. Kubernetes views remain available, while OpenStack-backed views and reports are currently unavailable.
+  `;
+  el.classList.add('open');
+}
+
+function renderOpenStackUnavailablePanel(title, detail) {
+  return `
+    <section class="report-launch-card">
+      <div class="report-launch-shell">
+        <div class="report-launch-icon">☸️</div>
+        <div class="report-launch-copy">
+          <div class="report-launch-kicker">Kubernetes-only mode</div>
+          <div class="report-launch-title">${esc(title)}</div>
+          <div class="report-launch-text">${esc(detail)}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 // Working edit state for the currently-open Configure tab
 const netEdit = {
   node:          null,
@@ -368,12 +406,17 @@ function setAuthenticatedUI(info) {
   authInfo = info;
   hideSessionExpiredOverlay();
   document.getElementById('logout-btn').classList.add('visible');
-  const label = info?.username && info?.project_name
+  const label = !info?.has_openstack_auth
+    ? 'Kubernetes-only session'
+    : info?.username && info?.project_name
     ? `${info.username} @ ${info.project_name}`
     : (info?.username || 'Authenticated');
   document.getElementById('user-label').textContent = label;
   document.getElementById('user-dot').textContent = label.slice(0, 1).toUpperCase();
-  document.getElementById('bc-reboot').title = info?.is_admin ? '' : "Requires OpenStack admin role";
+  document.getElementById('bc-reboot').title = !info?.has_openstack_auth
+    ? 'Unavailable without OpenStack credentials'
+    : info?.is_admin ? '' : "Requires OpenStack admin role";
+  renderAuthModeAlert();
   wsSetStatus('connecting');
   if (!ws || ws.readyState === WebSocket.CLOSED) wsConnect();
   refreshAppRuntime();

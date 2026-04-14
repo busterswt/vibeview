@@ -155,8 +155,53 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert session.json()["project_name"] == "admin"
         assert session.json()["is_admin"] is True
         assert session.json()["role_names"] == ["member", "admin"]
+        assert session.json()["has_k8s_auth"] is True
+        assert session.json()["has_openstack_auth"] is True
+        assert session.json()["session_mode"] == "full"
 
         namespaces = client.get("/api/k8s/namespaces")
         assert namespaces.status_code == 200
         assert namespaces.json()["items"][0]["name"] == "default"
         assert captured["api_k8s_auth"] == captured["login_k8s_auth"]
+
+
+def test_login_allows_k8s_only_session(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_get_nodes(auth=None):
+        captured["login_k8s_auth"] = auth
+        return [{"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False}]
+
+    def fake_refresh(self, cached_nodes=None, silent=False):
+        captured["refreshed"] = True
+        captured["cached_nodes"] = cached_nodes
+
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", fake_get_nodes)
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", fake_refresh)
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": True,
+        },
+        "openstack": None,
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        assert login.json() == {"ok": True}
+        assert isinstance(captured["login_k8s_auth"], K8sAuth)
+
+        session = client.get("/api/session")
+        assert session.status_code == 200
+        body = session.json()
+        assert body["authenticated"] is True
+        assert body["has_k8s_auth"] is True
+        assert body["has_openstack_auth"] is False
+        assert body["session_mode"] == "kubernetes_only"
+        assert body["username"] is None
+        assert body["project_name"] is None
+        assert body["role_names"] == []
+        assert body["is_admin"] is False

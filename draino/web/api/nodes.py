@@ -93,7 +93,7 @@ async def api_node_detail(node_name: str, request: Request):
 
         nova: dict = {}
         api_issue = None
-        if state and state.is_compute:
+        if state and state.is_compute and server.openstack_auth is not None:
             try:
                 nova = await loop.run_in_executor(None, openstack_ops.get_hypervisor_detail, state.hypervisor, server.openstack_auth)
             except Exception as exc:
@@ -200,6 +200,9 @@ async def api_node_instance_detail(node_name: str, instance_id: str, request: Re
         session = _require_session_record()(request)
         server = session.server
         loop = asyncio.get_running_loop()
+
+        if server.openstack_auth is None:
+            return {"instance": None, "error": "OpenStack credentials not provided for this session.", "api_issue": None}
 
         try:
             instance = await loop.run_in_executor(

@@ -175,6 +175,13 @@ function syncStressActiveState() {
 }
 
 async function loadStressCatalog(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    stressState.catalog = null;
+    stressState.catalogError = null;
+    stressState.catalogLoading = false;
+    renderStressView();
+    return;
+  }
   if (stressState.catalogLoading) return;
   if (stressState.catalog && !force) {
     renderStressView();
@@ -215,6 +222,13 @@ async function loadStressCatalog(force = false) {
 }
 
 async function loadStressEnvironment(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    stressState.env = null;
+    stressState.envError = null;
+    stressState.envLoading = false;
+    renderStressView();
+    return;
+  }
   if (stressState.envLoading) return;
   if (stressState.env && !force) {
     renderStressView();
@@ -251,6 +265,12 @@ function stressNeedsDetailData() {
 }
 
 async function loadStressStatus(force = false, includeDetails = stressNeedsDetailData()) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    stressState.status = null;
+    stressState.statusLoading = false;
+    renderStressView();
+    return;
+  }
   if (stressState.statusLoading) return;
   if (stressState.status && !force && (!!stressState.status.details_included || !includeDetails)) {
     renderStressView();
@@ -828,6 +848,10 @@ function renderStressDistributionTable(distribution) {
 function renderStressView() {
   const wrap = document.getElementById('stress-wrap');
   if (!wrap) return;
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    wrap.innerHTML = renderOpenStackUnavailablePanel('Stress', 'Heat-backed stress templates require OpenStack credentials. This tab stays visible in Kubernetes-only mode for future K8s-native test workflows.');
+    return;
+  }
   ensureStressBootstrap();
   const scrollTop = wrap.scrollTop;
   if (stressState.catalogError && !stressState.catalog) {

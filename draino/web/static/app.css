@@ -129,6 +129,19 @@ body {
   color: var(--dim);
   flex-shrink: 0;
 }
+
+#auth-mode-alert {
+  display: none;
+  padding: 10px 14px;
+  background: #fff8e1;
+  border-bottom: 1px solid #ffe082;
+  color: #8d6e00;
+  font-size: 12px;
+}
+
+#auth-mode-alert.open {
+  display: block;
+}
 .bc-link { color: var(--blue); cursor: pointer; }
 .bc-link:hover { text-decoration: underline; }
 .bc-sep { color: #b0bec5; }

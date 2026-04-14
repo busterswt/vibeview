@@ -189,7 +189,7 @@ def test_load_nodes_bg_uses_full_state_when_membership_changes(monkeypatch, tmp_
 
 
 def test_load_nodes_bg_reuses_cached_openstack_summaries_on_silent_refresh(monkeypatch, tmp_path):
-    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server = web_server.DrainoServer(openstack_auth=object(), audit_log=str(tmp_path / "audit.log"))
     nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
 
     summary_calls: list[str] = []
@@ -220,7 +220,7 @@ def test_load_nodes_bg_reuses_cached_openstack_summaries_on_silent_refresh(monke
 
 
 def test_load_nodes_bg_manual_refresh_bypasses_cached_openstack_summaries(monkeypatch, tmp_path):
-    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+    server = web_server.DrainoServer(openstack_auth=object(), audit_log=str(tmp_path / "audit.log"))
     nodes = [{"name": "node-1", "hostname": "hv-1", "ready": True, "cordoned": False}]
 
     summary_calls: list[str] = []

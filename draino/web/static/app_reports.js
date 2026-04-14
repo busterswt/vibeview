@@ -7,6 +7,7 @@ const REPORT_META = {
     url: '/api/reports/maintenance-readiness',
     csvUrl: '/api/reports/maintenance-readiness.csv',
     icon: '🛠️',
+    requiresOpenStack: true,
   },
   'capacity-headroom': {
     label: 'Capacity & Headroom',
@@ -14,6 +15,7 @@ const REPORT_META = {
     url: '/api/reports/capacity-headroom',
     csvUrl: '/api/reports/capacity-headroom.csv',
     icon: '📊',
+    requiresOpenStack: true,
   },
   'k8s-node-health-density': {
     label: 'Kubernetes Node Health & Density',
@@ -21,6 +23,7 @@ const REPORT_META = {
     url: '/api/reports/k8s-node-health-density',
     csvUrl: '/api/reports/k8s-node-health-density.csv',
     icon: '☸️',
+    requiresOpenStack: false,
   },
   'k8s-pvc-workload': {
     label: 'Kubernetes PVC Placement & Workload',
@@ -28,6 +31,7 @@ const REPORT_META = {
     url: '/api/reports/k8s-pvc-workload',
     csvUrl: '/api/reports/k8s-pvc-workload.csv',
     icon: '🗄️',
+    requiresOpenStack: false,
   },
   'project-placement': {
     label: 'Project Placement',
@@ -35,6 +39,7 @@ const REPORT_META = {
     url: '/api/reports/project-placement',
     csvUrl: '/api/reports/project-placement.csv',
     icon: '🏢',
+    requiresOpenStack: true,
   },
   'placement-risk': {
     label: 'Placement Risk',
@@ -42,8 +47,13 @@ const REPORT_META = {
     url: '/api/reports/placement-risk',
     csvUrl: '/api/reports/placement-risk.csv',
     icon: '⚠️',
+    requiresOpenStack: true,
   },
 };
+
+function reportRequiresOpenStack(key) {
+  return Boolean(REPORT_META[key]?.requiresOpenStack);
+}
 
 function guessReportApiIssue(message, status) {
   const text = String(message || '').toLowerCase();
@@ -64,6 +74,12 @@ function guessReportApiIssue(message, status) {
 
 async function loadActiveReport(force = false) {
   const key = reportState.active;
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth() && reportRequiresOpenStack(key)) {
+    reportState.loading = false;
+    reportState.error = null;
+    renderReportsView();
+    return;
+  }
   if (reportState.loading) return;
   if (reportState.reports[key] && !force) {
     renderReportsView();
@@ -158,6 +174,29 @@ function renderReportLaunchState(activeMeta) {
           </div>
           <div class="report-launch-actions">
             <button class="report-launch-btn" type="button" onclick="loadActiveReport(true)">Run ${esc(activeMeta.label)}</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderReportUnavailableState(activeMeta) {
+  return `
+    <section class="report-launch-card">
+      <div class="report-launch-shell">
+        <div class="report-launch-icon">${esc(activeMeta.icon || '📄')}</div>
+        <div class="report-launch-copy">
+          <div class="report-launch-kicker">Kubernetes-only mode</div>
+          <div class="report-launch-title">${esc(activeMeta.label)}</div>
+          <div class="report-launch-subtitle">${esc(activeMeta.subtitle)}</div>
+          <div class="report-launch-text">
+            OpenStack credentials were not provided for this session, so this OpenStack-backed report is unavailable.
+            Kubernetes-only reports remain available.
+          </div>
+          <div class="report-launch-pills">
+            <span class="meta-pill">OpenStack required</span>
+            <span class="meta-pill">Session is Kubernetes-only</span>
           </div>
         </div>
       </div>
@@ -1003,7 +1042,9 @@ function renderReportsView() {
   });
 
   let content = '';
-  if (reportState.loading && !report) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth() && reportRequiresOpenStack(reportState.active)) {
+    content = renderReportUnavailableState(activeMeta);
+  } else if (reportState.loading && !report) {
     content = `<div class="report-empty"><span class="spinner">⟳</span> Loading live report…</div>`;
   } else if (reportState.error) {
     content = renderReportError(activeMeta);
@@ -1029,11 +1070,11 @@ function renderReportsView() {
         <div class="reports-nav-head">Report Navigator</div>
         <div class="reports-nav-group">Operations</div>
         ${Object.entries(REPORT_META).map(([key, meta]) => `
-          <div class="reports-nav-item${key === reportState.active ? ' active' : ''}" onclick="selectReport('${escAttr(key)}')">
+          <div class="reports-nav-item${key === reportState.active ? ' active' : ''}" onclick="selectReport('${escAttr(key)}')" title="${!hasOpenStackAuth() && meta.requiresOpenStack ? 'OpenStack credentials required' : ''}">
             <span class="ico">${meta.icon}</span>
             <div class="meta">
               <div class="name">${esc(meta.label)}</div>
-              <div class="sub">${esc(meta.subtitle)}</div>
+              <div class="sub">${esc(meta.subtitle)}${!hasOpenStackAuth() && meta.requiresOpenStack ? ' · OpenStack required' : ''}</div>
             </div>
           </div>
         `).join('')}

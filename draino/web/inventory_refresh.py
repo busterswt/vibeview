@@ -172,14 +172,18 @@ class InventoryRefreshMixin:
                         if not silent:
                             self._push({"type": "log", "node": "-", "message": f"MariaDB pod placement probe failed: {exc}", "color": "warn"})
 
-            summaries = self._get_cached_openstack_summaries(now=now, force=not silent)
-            if summaries is None:
-                try:
-                    summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
-                except Exception as exc:
-                    self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
-                    return
-                self._set_cached_openstack_summaries(summaries, now=now)
+            summaries: dict[str, dict] = {}
+            if self.openstack_auth is not None:
+                summaries = self._get_cached_openstack_summaries(now=now, force=not silent) or {}
+                if not summaries:
+                    try:
+                        summaries = openstack_ops.get_all_host_summaries(log_cb=_os_log, auth=self.openstack_auth)
+                    except Exception as exc:
+                        self._push({"type": "log", "node": "-", "message": f"OpenStack summary failed: {exc}", "color": "warn"})
+                        return
+                    self._set_cached_openstack_summaries(summaries, now=now)
+            elif not silent:
+                self._push({"type": "log", "node": "-", "message": "OpenStack credentials not provided. Running in Kubernetes-only mode.", "color": "warn"})
 
             self._etcd_node_names = k8s_ops.get_etcd_node_names(auth=self.k8s_auth)
 

@@ -90,11 +90,34 @@ function switchView(name) {
       bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
     }
     if (name === 'monitor') renderMonitorView();
+    if (name === 'networking' && !hasOpenStackAuth()) {
+      document.getElementById('net-wrap').innerHTML = renderOpenStackUnavailablePanel('Networks', 'This view currently relies on OpenStack networking data. Provide OpenStack credentials to enable it.');
+      document.getElementById('net-detail-wrap')?.classList.remove('open');
+      return;
+    }
+    if (name === 'routers' && !hasOpenStackAuth()) {
+      document.getElementById('router-wrap').innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
+      document.getElementById('router-detail-wrap')?.classList.remove('open');
+      return;
+    }
+    if (name === 'loadbalancers' && !hasOpenStackAuth()) {
+      document.getElementById('lb-wrap').innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
+      document.getElementById('lb-detail-wrap')?.classList.remove('open');
+      return;
+    }
+    if (name === 'storage' && !hasOpenStackAuth()) {
+      document.getElementById('vol-wrap').innerHTML = renderOpenStackUnavailablePanel('Volumes', 'This view currently relies on Cinder inventory. Provide OpenStack credentials to enable it.');
+      return;
+    }
     if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
     if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
     if (name === 'loadbalancers') loadLoadBalancers();
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'stress') {
+      if (!hasOpenStackAuth()) {
+        renderStressView();
+        return;
+      }
       renderStressView();
       if (typeof startStressStatusPolling === 'function') startStressStatusPolling();
     }

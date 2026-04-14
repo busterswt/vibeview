@@ -20,6 +20,11 @@ function compactRouterMac(value) {
 }
 
 async function loadNetworks(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('net-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Networks', 'This view currently relies on OpenStack networking data. Provide OpenStack credentials to enable it.');
+    return;
+  }
   if (netState.loading) return;
   if (netState.data && !force) { renderNetworksView(); return; }
   netState.loading = true;
@@ -104,6 +109,11 @@ function appendNetError(msg) {
 }
 
 async function loadLoadBalancers(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('lb-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
+    return;
+  }
   if (lbState.loading) return;
   if (lbState.data && !force) { renderLoadBalancersView(); return; }
   lbState.loading = true;
@@ -838,6 +848,11 @@ function renderOvnPortDetail(portId, cached) {
 // ════════════════════════════════════════════════════════════════════════════
 
 async function loadRouters(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('router-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
+    return;
+  }
   if (routerState.loading) return;
   if (routerState.data && !force) { renderRoutersView(); return; }
   routerState.loading = true;
@@ -1627,6 +1642,11 @@ function renderK8sTable(type, rows) {
 // ════════════════════════════════════════════════════════════════════════════
 
 async function loadVolumes(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('vol-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Volumes', 'This view currently relies on Cinder inventory. Provide OpenStack credentials to enable it.');
+    return;
+  }
   if (volState.loading) return;
   if (volState.data && !force) { renderStorageView(); return; }
   volState.loading = true;

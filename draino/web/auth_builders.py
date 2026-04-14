@@ -39,7 +39,7 @@ class OpenStackLoginPayload(BaseModel):
 
 class LoginPayload(BaseModel):
     kubernetes: K8sLoginPayload
-    openstack: OpenStackLoginPayload
+    openstack: OpenStackLoginPayload | None = None
 
 
 def _require(value: str | None, label: str) -> str:
@@ -228,3 +228,19 @@ def _build_openstack_auth_from_clouds_yaml(
         interface=interface,
         skip_tls_verify=skip_tls_verify,
     )
+
+
+def _openstack_payload_has_credentials(payload: OpenStackLoginPayload | None) -> bool:
+    if payload is None:
+        return False
+    candidates = [
+        payload.auth_url,
+        payload.username,
+        payload.password,
+        payload.project_name,
+        payload.application_credential_id,
+        payload.application_credential_secret,
+        payload.clouds_yaml,
+        payload.cloud_name,
+    ]
+    return any(str(value or "").strip() for value in candidates)

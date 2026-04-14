@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 import time
 from collections.abc import Callable
@@ -11,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
 
 from ...operations import k8s_ops, openstack_ops
-from ..auth_builders import LoginPayload, _build_k8s_auth, _build_openstack_auth
+from ..auth_builders import LoginPayload, _build_k8s_auth, _build_openstack_auth, _openstack_payload_has_credentials
 from ..inventory import DrainoServer
 from ..session import SESSION_TTL, SessionRecord, SessionStore
 
@@ -21,6 +22,7 @@ _static_dir: Path | None = None
 _sessions_getter: Callable[[], SessionStore] | None = None
 _app_loop_getter: Callable[[], asyncio.AbstractEventLoop | None] | None = None
 _audit_log_path_getter: Callable[[], str | None] | None = None
+_LOGIN_TIMEOUT_SECONDS = float(os.getenv("DRAINO_LOGIN_TIMEOUT_SECONDS", "15"))
 
 
 def configure(
@@ -91,10 +93,13 @@ async def api_session(request: Request):
         return {"authenticated": False}
     return {
         "authenticated": True,
-        "username": record.username,
-        "project_name": record.project_name,
+        "username": record.username or None,
+        "project_name": record.project_name or None,
         "role_names": record.role_names,
         "is_admin": record.is_admin,
+        "has_k8s_auth": record.server.k8s_auth is not None,
+        "has_openstack_auth": record.server.openstack_auth is not None,
+        "session_mode": "full" if record.server.openstack_auth is not None else "kubernetes_only",
     }
 
 
@@ -102,25 +107,52 @@ async def api_session(request: Request):
 async def api_login(payload: LoginPayload, request: Request, response: Response):
     _, sessions = _require_configured()
     k8s_auth = _build_k8s_auth(payload.kubernetes)
-    openstack_auth = _build_openstack_auth(payload.openstack)
+    openstack_auth = _build_openstack_auth(payload.openstack) if _openstack_payload_has_credentials(payload.openstack) else None
+    loop = asyncio.get_running_loop()
 
     try:
-        initial_nodes = k8s_ops.get_nodes(auth=k8s_auth)
+        initial_nodes = await asyncio.wait_for(
+            loop.run_in_executor(None, k8s_ops.get_nodes, k8s_auth),
+            timeout=_LOGIN_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kubernetes authentication timed out after {_LOGIN_TIMEOUT_SECONDS:.0f}s",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Kubernetes authentication failed: {exc}",
         ) from exc
 
-    try:
-        openstack_ops._conn(auth=openstack_auth).authorize()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"OpenStack authentication failed: {exc}",
-        ) from exc
-
-    role_names = openstack_ops.get_current_role_names(auth=openstack_auth)
+    role_names: list[str] = []
+    if openstack_auth is not None:
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: openstack_ops._conn(auth=openstack_auth).authorize()),
+                timeout=_LOGIN_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"OpenStack authentication timed out after {_LOGIN_TIMEOUT_SECONDS:.0f}s",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"OpenStack authentication failed: {exc}",
+            ) from exc
+        try:
+            role_names = await asyncio.wait_for(
+                loop.run_in_executor(None, openstack_ops.get_current_role_names, openstack_auth),
+                timeout=_LOGIN_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"OpenStack role lookup timed out after {_LOGIN_TIMEOUT_SECONDS:.0f}s",
+            ) from exc
     server = DrainoServer(
         k8s_auth=k8s_auth,
         openstack_auth=openstack_auth,
@@ -136,8 +168,8 @@ async def api_login(payload: LoginPayload, request: Request, response: Response)
     sessions.put(SessionRecord(
         session_id=session_id,
         server=server,
-        username=openstack_auth.username,
-        project_name=openstack_auth.project_name,
+        username=(openstack_auth.username if openstack_auth else ""),
+        project_name=(openstack_auth.project_name if openstack_auth else ""),
         role_names=role_names,
         is_admin=server.is_admin,
         created_at=now,

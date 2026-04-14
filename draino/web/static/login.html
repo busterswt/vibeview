@@ -205,6 +205,9 @@ body {
   gap: 16px;
   padding: 18px 22px 10px;
 }
+.auth-grid.os-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
 
 .auth-panel {
   border: 1px solid var(--vc-border);
@@ -212,6 +215,7 @@ body {
   background: var(--vc-white);
   overflow: hidden;
 }
+.auth-panel.hidden { display: none; }
 
 .auth-panel-head {
   padding: 8px 14px;
@@ -220,6 +224,34 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.auth-panel-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auth-panel-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.auth-service-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.auth-service-icon.k8s {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.auth-service-icon.os {
+  background: #fff1f1;
+  color: #d32f2f;
 }
 
 .auth-panel-title {
@@ -231,7 +263,47 @@ body {
 }
 
 .auth-panel-sub { font-size: 11px; color: var(--vc-dim); margin-top: 2px; }
+.auth-panel-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auth-toggle-btn {
+  border: 1px solid var(--vc-border);
+  background: var(--vc-white);
+  color: var(--vc-text);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.auth-toggle-btn:hover { border-color: var(--vc-blue); color: var(--vc-blue); }
 .tree-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--vc-blue-bg); color: var(--vc-blue); font-weight: 500; }
+.auth-reveal-card {
+  border: 1px dashed var(--vc-border);
+  border-radius: 4px;
+  background: #fbfcfe;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.auth-reveal-card.hidden { display: none; }
+.auth-reveal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.auth-reveal-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vc-text);
+}
+.auth-reveal-sub {
+  font-size: 11px;
+  color: var(--vc-dim);
+  margin-top: 2px;
+}
 
 .auth-panel-body { padding: 14px; display: grid; gap: 10px; }
 .auth-mode-switch {
@@ -401,9 +473,12 @@ body {
       <div class="auth-grid">
         <div class="auth-panel">
           <div class="auth-panel-head">
-            <div>
-              <div class="auth-panel-title">Kubernetes</div>
-              <div class="auth-panel-sub">Token, client certificate, or kubeconfig</div>
+            <div class="auth-panel-head-main">
+              <div class="auth-service-icon k8s">☸</div>
+              <div>
+                <div class="auth-panel-title">Kubernetes</div>
+                <div class="auth-panel-sub">Token, client certificate, or kubeconfig</div>
+              </div>
             </div>
             <span class="tree-badge">Required</span>
           </div>
@@ -475,13 +550,32 @@ body {
           </div>
         </div>
 
-        <div class="auth-panel">
-          <div class="auth-panel-head">
+        <div class="auth-reveal-card" id="auth-os-reveal">
+          <div class="auth-reveal-head">
+            <div class="auth-service-icon os">OS</div>
             <div>
-              <div class="auth-panel-title">OpenStack</div>
-              <div class="auth-panel-sub">Password, application credential, or clouds.yaml</div>
+              <div class="auth-reveal-title">OpenStack credentials are optional</div>
+              <div class="auth-reveal-sub">Enable this section to unlock OpenStack-backed views, reports, and stress testing.</div>
             </div>
-            <span class="tree-badge">Required</span>
+          </div>
+          <div>
+            <button class="auth-toggle-btn" id="auth-os-show-btn" type="button" onclick="setOpenStackPanelVisible(true)">Show OpenStack Authentication</button>
+          </div>
+        </div>
+
+        <div class="auth-panel hidden" id="auth-os-panel">
+          <div class="auth-panel-head">
+            <div class="auth-panel-head-main">
+              <div class="auth-service-icon os">OS</div>
+              <div class="auth-panel-head-left">
+                <div class="auth-panel-title">OpenStack</div>
+                <div class="auth-panel-sub">Password, application credential, or clouds.yaml</div>
+              </div>
+            </div>
+            <div class="auth-panel-head-right">
+              <button class="auth-toggle-btn" id="auth-os-toggle" type="button" onclick="setOpenStackPanelVisible(false)">Hide</button>
+              <span class="tree-badge">Optional</span>
+            </div>
           </div>
           <div class="auth-panel-body">
             <div class="auth-mode-switch">
@@ -599,6 +693,29 @@ body {
 <script>
 const authMode = { k8s: 'token', os: 'password' };
 const AUTH_PREFS_KEY = 'draino_auth_prefs_v1';
+const AUTH_OS_PANEL_COOKIE = 'vibeview_auth_os_panel';
+const LOGIN_TIMEOUT_MS = 15000;
+
+function setCookie(name, value, days = 365) {
+  const expires = new Date(Date.now() + days * 86400000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const prefix = `${name}=`;
+  return document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(prefix))?.slice(prefix.length) || '';
+}
+
+function setOpenStackPanelVisible(visible) {
+  const grid = document.querySelector('.auth-grid');
+  const panel = document.getElementById('auth-os-panel');
+  const reveal = document.getElementById('auth-os-reveal');
+  if (!grid || !panel || !reveal) return;
+  panel.classList.toggle('hidden', !visible);
+  reveal.classList.toggle('hidden', visible);
+  grid.classList.toggle('os-hidden', !visible);
+  setCookie(AUTH_OS_PANEL_COOKIE, visible ? 'visible' : 'hidden');
+}
 
 function esc(value) {
   return String(value ?? '')
@@ -698,6 +815,7 @@ function applyAuthPrefs() {
   document.getElementById('auth-os-app-region').value = region;
   document.getElementById('auth-os-interface').value = iface;
   document.getElementById('auth-os-app-interface').value = iface;
+  setOpenStackPanelVisible(getCookie(AUTH_OS_PANEL_COOKIE) === 'visible');
 }
 
 function clearSecretAuthInputs() {
@@ -769,6 +887,26 @@ function buildK8sAuthPayload() {
 }
 
 function buildOpenStackAuthPayload() {
+  const panel = document.getElementById('auth-os-panel');
+  if (!panel || panel.classList.contains('hidden')) return null;
+
+  const hasPasswordAuth = [
+    document.getElementById('auth-os-url').value.trim(),
+    document.getElementById('auth-os-user').value.trim(),
+    document.getElementById('auth-os-pass').value,
+    document.getElementById('auth-os-project').value.trim(),
+  ].some(Boolean);
+  const hasAppCredAuth = [
+    document.getElementById('auth-os-app-url').value.trim(),
+    document.getElementById('auth-os-app-id').value.trim(),
+    document.getElementById('auth-os-app-secret').value,
+  ].some(Boolean);
+  const hasCloudsYamlAuth = [
+    document.getElementById('auth-os-clouds-yaml').value.trim(),
+    document.getElementById('auth-os-cloud-name').value.trim(),
+  ].some(Boolean);
+  if (!hasPasswordAuth && !hasAppCredAuth && !hasCloudsYamlAuth) return null;
+
   if (authMode.os === 'password') {
     return {
       mode: 'password',
@@ -821,19 +959,24 @@ async function submitAuth() {
   };
   document.getElementById('auth-submit').disabled = true;
   setAuthMessage('Validating credentials and loading inventory…', 'busy');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
   try {
     saveAuthPrefs();
     const resp = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(json.detail || 'Login failed');
     window.location = '/app';
   } catch (e) {
-    setAuthMessage(String(e), 'error');
+    if (e && e.name === 'AbortError') setAuthMessage(`Login timed out after ${Math.round(LOGIN_TIMEOUT_MS / 1000)}s`, 'error');
+    else setAuthMessage(String(e), 'error');
   } finally {
+    clearTimeout(timeoutId);
     document.getElementById('auth-submit').disabled = false;
   }
 }
