@@ -7,9 +7,9 @@ from draino.web import latency as web_latency
 
 
 def test_normalise_image_digest_handles_kubernetes_image_ids():
-    assert web_server._normalise_image_digest("docker-pullable://ghcr.io/busterswt/draino-claude@sha256:abc123") == "sha256:abc123"
+    assert web_server._normalise_image_digest("docker-pullable://ghcr.io/busterswt/vibeview@sha256:abc123") == "sha256:abc123"
     assert web_server._normalise_image_digest("sha256:def456") == "sha256:def456"
-    assert web_server._normalise_image_digest("ghcr.io/busterswt/draino-claude:main") is None
+    assert web_server._normalise_image_digest("ghcr.io/busterswt/vibeview:main") is None
 
 
 def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch):
@@ -28,7 +28,7 @@ def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch)
         ),
     )
 
-    digest = web_server._resolve_remote_track_digest("ghcr.io/busterswt/draino-claude", "main")
+    digest = web_server._resolve_remote_track_digest("ghcr.io/busterswt/vibeview", "main")
 
     assert digest == "sha256:toplevel"
 

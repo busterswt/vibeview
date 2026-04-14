@@ -125,9 +125,9 @@ This preserves simplicity while making the hydration path feel incremental.
 
 Files:
 
-- [`draino/web/inventory_refresh.py`](/Users/james.denton/github/draino-claude/draino/web/inventory_refresh.py)
-- [`draino/models.py`](/Users/james.denton/github/draino-claude/draino/models.py)
-- [`draino/web/serialise.py`](/Users/james.denton/github/draino-claude/draino/web/serialise.py)
+- [`draino/web/inventory_refresh.py`](/Users/james.denton/github/vibeview/draino/web/inventory_refresh.py)
+- [`draino/models.py`](/Users/james.denton/github/vibeview/draino/models.py)
+- [`draino/web/serialise.py`](/Users/james.denton/github/vibeview/draino/web/serialise.py)
 
 Changes:
 
@@ -151,9 +151,9 @@ Changes:
 
 Files:
 
-- [`draino/web/static/app_core.js`](/Users/james.denton/github/draino-claude/draino/web/static/app_core.js)
-- [`draino/web/static/app_infra.js`](/Users/james.denton/github/draino-claude/draino/web/static/app_infra.js)
-- [`draino/web/static/app.css`](/Users/james.denton/github/draino-claude/draino/web/static/app.css)
+- [`draino/web/static/app_core.js`](/Users/james.denton/github/vibeview/draino/web/static/app_core.js)
+- [`draino/web/static/app_infra.js`](/Users/james.denton/github/vibeview/draino/web/static/app_infra.js)
+- [`draino/web/static/app.css`](/Users/james.denton/github/vibeview/draino/web/static/app.css)
 
 Changes:
 

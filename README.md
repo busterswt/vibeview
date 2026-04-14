@@ -206,7 +206,7 @@ in-process.
 ### GitHub image builds
 
 If you do not build images locally, the repository can build and publish them from GitHub
-Actions using [`.github/workflows/build-image.yml`](/Users/james.denton/github/draino-claude/.github/workflows/build-image.yml).
+Actions using [`.github/workflows/build-image.yml`](/Users/james.denton/github/vibeview/.github/workflows/build-image.yml).
 
 The workflow:
 
@@ -224,7 +224,7 @@ Typical flow:
 To use GHCR from Kubernetes, set the Helm values:
 
 ```bash
---set image.repository=ghcr.io/busterswt/draino-claude \
+--set image.repository=ghcr.io/busterswt/vibeview \
 --set image.tag=main
 ```
 

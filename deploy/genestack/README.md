@@ -21,7 +21,7 @@ docker push registry.example.com/operations/draino:0.1.0
 
 ## Deploy
 
-If you use Helm, start with [values.yaml](/Users/james.denton/github/draino-claude/deploy/genestack/values.yaml):
+If you use Helm, start with [values.yaml](/Users/james.denton/github/vibeview/deploy/genestack/values.yaml):
 
 ```bash
 sudo mkdir -p /etc/genestack/helm-configs/draino
@@ -30,7 +30,7 @@ sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/draino/draino-h
 
 Update these fields first:
 
-- image repository if different from `ghcr.io/busterswt/draino-claude`
+- image repository if different from `ghcr.io/busterswt/vibeview`
 - image tag
 - Gateway parent reference name and namespace
 - external hostname

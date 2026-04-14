@@ -15,7 +15,7 @@ This chart deploys the VibeView web UI.
 helm upgrade --install draino ./charts/draino \
   --namespace draino \
   --create-namespace \
-  --set image.repository=ghcr.io/busterswt/draino-claude \
+  --set image.repository=ghcr.io/busterswt/vibeview \
   --set image.tag=main \
   --set gateway.parentRefs[0].name=shared-gateway \
   --set gateway.parentRefs[0].sectionName=https \
@@ -38,7 +38,7 @@ Typical Genestack deployment:
 sudo mkdir -p /etc/genestack/helm-configs/draino
 sudo tee /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml >/dev/null <<'EOF'
 image:
-  repository: ghcr.io/busterswt/draino-claude
+  repository: ghcr.io/busterswt/vibeview
   tag: main
 gateway:
   enabled: true

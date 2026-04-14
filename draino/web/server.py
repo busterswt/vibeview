@@ -98,13 +98,13 @@ _SESSION_COOKIE = "draino_session"
 _SESSION_TTL = SESSION_TTL
 _HOST_SIGNALS_TTL = inventory_module._HOST_SIGNALS_TTL
 _APP_UPDATE_TTL = float(os.getenv("DRAINO_APP_UPDATE_TTL", "300"))
-_IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/draino-claude")
+_IMAGE_REPOSITORY = os.getenv("DRAINO_IMAGE_REPOSITORY", "ghcr.io/busterswt/vibeview")
 _IMAGE_TAG = os.getenv("DRAINO_IMAGE_TAG", "main")
 _UPDATE_REPOSITORY = os.getenv("DRAINO_UPDATE_REPOSITORY", _IMAGE_REPOSITORY)
 _UPDATE_TRACK = os.getenv("DRAINO_UPDATE_TRACK", "main")
 _UPDATE_URL = os.getenv(
     "DRAINO_UPDATE_URL",
-    "https://github.com/busterswt/draino-claude/blob/main/deploy/genestack/README.md#updating-a-deployment",
+    "https://github.com/busterswt/vibeview/blob/main/deploy/genestack/README.md#updating-a-deployment",
 )
 _POD_NAME = os.getenv("DRAINO_POD_NAME") or os.getenv("HOSTNAME", "")
 _POD_NAMESPACE = os.getenv("DRAINO_POD_NAMESPACE", "default")
