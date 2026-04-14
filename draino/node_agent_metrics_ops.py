@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import threading
 import time
 
@@ -16,6 +17,8 @@ _host_network_prev_samples: dict[str, tuple[float, int, int]] = {}
 _host_network_prev_lock = threading.Lock()
 _instance_port_prev_samples: dict[str, tuple[float, int, int]] = {}
 _instance_port_prev_lock = threading.Lock()
+_interface_prev_samples: dict[str, tuple[float, int, int]] = {}
+_interface_prev_lock = threading.Lock()
 
 
 def _get_host_metrics() -> dict:
@@ -298,3 +301,69 @@ done
 
     results.sort(key=lambda item: (item["port_id"], item["interface_name"]))
     return {"ports": results, "error": None}
+
+
+def _get_named_interface_stats(interface_names: list[str]) -> dict:
+    requested = [name for name in interface_names if name]
+    if not requested:
+        return {"interfaces": [], "error": None}
+
+    try:
+        proc = _run_host_shell(
+            "\n".join(
+                [
+                    "for name in " + " ".join(shlex.quote(name) for name in requested) + "; do",
+                    '  [ -r "/sys/class/net/$name/statistics/rx_bytes" ] || continue',
+                    '  rx=$(cat "/sys/class/net/$name/statistics/rx_bytes" 2>/dev/null)',
+                    '  tx=$(cat "/sys/class/net/$name/statistics/tx_bytes" 2>/dev/null)',
+                    '  oper=$(cat "/sys/class/net/$name/operstate" 2>/dev/null)',
+                    '  printf \'%s|%s|%s|%s\\n\' "$name" "${rx:-0}" "${tx:-0}" "${oper:-unknown}"',
+                    "done",
+                ]
+            ),
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"interfaces": [], "error": str(exc)}
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {"interfaces": [], "error": stderr or f"interface stats command exited {proc.returncode}"}
+
+    now = time.time()
+    results: list[dict] = []
+    with _interface_prev_lock:
+        for raw_line in proc.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split("|")
+            if len(parts) != 4:
+                continue
+            iface_name, rx_raw, tx_raw, operstate = parts
+            try:
+                rx_bytes = int(rx_raw)
+                tx_bytes = int(tx_raw)
+            except ValueError:
+                continue
+            rx_rate_bps = None
+            tx_rate_bps = None
+            previous = _interface_prev_samples.get(iface_name)
+            if previous is not None:
+                prev_time, prev_rx, prev_tx = previous
+                elapsed = now - prev_time
+                if elapsed > 0:
+                    rx_rate_bps = max(0.0, (rx_bytes - prev_rx) / elapsed)
+                    tx_rate_bps = max(0.0, (tx_bytes - prev_tx) / elapsed)
+            _interface_prev_samples[iface_name] = (now, rx_bytes, tx_bytes)
+            results.append({
+                "name": iface_name,
+                "operstate": operstate or "unknown",
+                "rx_bytes": rx_bytes,
+                "tx_bytes": tx_bytes,
+                "rx_bytes_per_second": rx_rate_bps,
+                "tx_bytes_per_second": tx_rate_bps,
+            })
+
+    results.sort(key=lambda item: item["name"])
+    return {"interfaces": results, "error": None}

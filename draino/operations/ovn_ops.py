@@ -4,8 +4,14 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import threading
+import time
 
 from .k8s_ops import K8sAuth, _kubectl_plugin_env
+
+_OVS_INTERFACE_BINDINGS_TTL = 10.0
+_ovs_interface_bindings_cache: dict[str, tuple[float, dict[str, str]]] = {}
+_ovs_interface_bindings_lock = threading.Lock()
 
 
 def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:
@@ -91,6 +97,55 @@ def get_ovn_port_detail(port_id: str, auth: K8sAuth | None = None) -> dict:
             data[key] = _parse_ovn_map(value)
 
     return data
+
+
+def get_ovs_interface_port_bindings(node_name: str, auth: K8sAuth | None = None) -> dict[str, str]:
+    """Return {neutron_port_uuid: ovs_interface_name} for one node via kubectl ko vsctl."""
+    now = time.time()
+    with _ovs_interface_bindings_lock:
+        cached = _ovs_interface_bindings_cache.get(node_name)
+        if cached and now < cached[0]:
+            return dict(cached[1])
+
+    cmd = [
+        "kubectl",
+        "ko",
+        "vsctl",
+        node_name,
+        "--data=bare",
+        "--no-heading",
+        "--columns=name,external_ids",
+        "list",
+        "Interface",
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_kubectl_plugin_env(auth))
+    except FileNotFoundError as exc:
+        raise RuntimeError("kubectl not found in PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("kubectl ko vsctl list timed out") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or f"kubectl ko vsctl exited with code {result.returncode}")
+
+    bindings: dict[str, str] = {}
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        name, _, external_ids = line.partition(" ")
+        if not name:
+            continue
+        match = re.search(r'iface-id\s*=\s*"?(?P<port>[^",}\s]+)"?', external_ids)
+        if not match:
+            continue
+        bindings[match.group("port")] = name
+
+    with _ovs_interface_bindings_lock:
+        _ovs_interface_bindings_cache[node_name] = (now + _OVS_INTERFACE_BINDINGS_TTL, dict(bindings))
+    return bindings
 
 
 def get_ovn_logical_switch(network_id: str, auth: K8sAuth | None = None) -> dict:

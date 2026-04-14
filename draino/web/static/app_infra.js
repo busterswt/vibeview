@@ -420,30 +420,45 @@ function refreshSelectedNodeNetworkStats() {
   loadNodeNetworkStats(selectedNode);
 }
 
-async function loadNodeInstancePortStats(nodeName, force = false) {
-  const cached = nodeInstancePortStatsCache[nodeName];
+async function loadNodeInstancePortStats(nodeName, instanceId, force = false) {
+  if (!instanceId) return;
+  const detail = instanceDetailCache[instanceId]?.data;
+  const portIds = Array.isArray(detail?.ports) ? detail.ports.map((p) => p.id).filter(Boolean) : [];
+  if (!portIds.length) return;
+  const cacheKey = `${nodeName}:${instanceId}`;
+  const cached = nodeInstancePortStatsCache[cacheKey];
   if (!force && cached?.loading) return;
-  nodeInstancePortStatsCache[nodeName] = {
+  nodeInstancePortStatsCache[cacheKey] = {
     ...(cached || {}),
     loading: true,
     error: null,
+    unsupported: false,
+    message: '',
   };
   if (selectedNode === nodeName && activeTab === 'instances') renderInstancesTab(nodes[nodeName]);
   try {
-    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/instance-port-stats`);
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/instance-port-stats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port_ids: portIds }),
+    });
     const json = await resp.json();
     const ports = json.ports || [];
-    nodeInstancePortStatsCache[nodeName] = {
+    nodeInstancePortStatsCache[cacheKey] = {
       loading: false,
       portsById: Object.fromEntries(ports.map(item => [item.port_id, item])),
       error: json.error || null,
+      unsupported: !!json.unsupported,
+      message: json.message || '',
       fetchedAt: new Date(),
     };
   } catch (e) {
-    nodeInstancePortStatsCache[nodeName] = {
+    nodeInstancePortStatsCache[cacheKey] = {
       loading: false,
       portsById: {},
       error: String(e),
+      unsupported: false,
+      message: '',
       fetchedAt: new Date(),
     };
   }
@@ -454,7 +469,7 @@ function refreshSelectedInstancePortStats() {
   if (activeView !== 'infrastructure' || activeTab !== 'instances' || !selectedNode || !nodes[selectedNode]) return;
   const instanceId = expandedInstanceIdByNode[selectedNode];
   if (!instanceId) return;
-  loadNodeInstancePortStats(selectedNode, true);
+  loadNodeInstancePortStats(selectedNode, instanceId, true);
 }
 
 function toggleNodeInterfaceStats(nodeName, ifaceName, enabled) {
@@ -1175,7 +1190,15 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
 function renderPortDetailPanel(port) {
   const ovn = port.ovn || {};
   const ovnPort = ovn.port || {};
-  const portStatsCache = nodeInstancePortStatsCache[selectedNode] || { loading: false, portsById: {}, error: null, fetchedAt: null };
+  const expandedInstanceId = expandedInstanceIdByNode[selectedNode];
+  const portStatsCache = nodeInstancePortStatsCache[`${selectedNode}:${expandedInstanceId}`] || {
+    loading: false,
+    portsById: {},
+    error: null,
+    unsupported: false,
+    message: '',
+    fetchedAt: null,
+  };
   const portStats = (port.id && portStatsCache.portsById && portStatsCache.portsById[port.id]) || null;
   const allowedAddressPairs = (port.allowed_address_pairs || [])
     .map((pair) => [pair.ip_address, pair.mac_address].filter(Boolean).join(' '))
@@ -1201,7 +1224,9 @@ function renderPortDetailPanel(port) {
         <div class="card">
           <div class="card-title">Host Interface</div>
           <div class="card-body">
-            ${portStatsCache.error ? `<div class="err-block">${esc(portStatsCache.error)}</div>` : `
+            ${portStatsCache.error ? `<div class="err-block">${esc(portStatsCache.error)}</div>` : portStatsCache.unsupported ? `
+              <div class="subtle" style="line-height:1.45">${esc(portStatsCache.message || 'VM interface metrics are not supported by the current node-agent build.')}</div>
+            ` : `
               <div class="mrow"><span class="ml">OVS Interface</span><span class="mv mono">${esc(portStats?.interface_name || '—')}</span></div>
               <div class="mrow"><span class="ml">Operstate</span><span class="mv">${esc(portStats?.operstate || (portStatsCache.loading ? 'loading…' : '—'))}</span></div>
               <div class="mrow"><span class="ml">RX</span><span class="mv mono">${portStats ? esc(fmtNetRate(portStats.rx_bytes_per_second)) : (portStatsCache.loading ? '<span class="spinner">⟳</span>' : '—')}</span></div>
@@ -1240,7 +1265,6 @@ function toggleInstanceDetail(instanceId) {
   expandedInstanceIdByNode[nodeName] = instanceId;
   renderInstancesTab(nodes[nodeName]);
   loadInstanceDetail(nodeName, instanceId);
-  loadNodeInstancePortStats(nodeName);
 }
 
 function togglePortDetail(instanceId, portId) {
@@ -1265,6 +1289,7 @@ async function loadInstanceDetail(nodeName, instanceId, force = false) {
     else recordApiSuccess('Nova');
     if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
     instanceDetailCache[instanceId] = { loading: false, data: json.instance, error: null };
+    if (json.instance?.ports?.length) loadNodeInstancePortStats(nodeName, instanceId, true);
   } catch (err) {
     instanceDetailCache[instanceId] = { loading: false, data: null, error: String(err) };
   }

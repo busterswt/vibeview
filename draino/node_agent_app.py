@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 
 from fastapi import FastAPI, Header, HTTPException, status
+from pydantic import BaseModel
 
 from . import node_agent_common
 from .node_agent_common import RebootRequest
@@ -13,9 +14,13 @@ from .node_agent_host_ops import (
     _get_host_signals,
     _get_network_interfaces,
 )
-from .node_agent_metrics_ops import _get_host_instance_port_stats, _get_host_metrics, _get_host_network_stats
+from .node_agent_metrics_ops import _get_host_instance_port_stats, _get_host_metrics, _get_host_network_stats, _get_named_interface_stats
 
 node_agent_app = FastAPI(title="VibeView Node Agent")
+
+
+class InterfaceStatsRequest(BaseModel):
+    interfaces: list[str]
 
 
 @node_agent_app.get("/healthz")
@@ -85,6 +90,17 @@ def host_instance_port_stats(authorization: str | None = Header(default=None)) -
     node_agent_common._authorise(authorization)
     node_agent_common._LOGGER.info("instance port stats requested node=%s", node_agent_common._node_name())
     return _get_host_instance_port_stats()
+
+
+@node_agent_app.post("/host/interface-stats")
+def host_interface_stats(payload: InterfaceStatsRequest, authorization: str | None = Header(default=None)) -> dict:
+    node_agent_common._authorise(authorization)
+    node_agent_common._LOGGER.info(
+        "named interface stats requested node=%s count=%s",
+        node_agent_common._node_name(),
+        len(payload.interfaces or []),
+    )
+    return _get_named_interface_stats(payload.interfaces or [])
 
 
 @node_agent_app.post("/reboot", status_code=status.HTTP_202_ACCEPTED)

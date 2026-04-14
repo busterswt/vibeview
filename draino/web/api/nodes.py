@@ -48,6 +48,10 @@ class ManagedNoSchedulePatch(BaseModel):
     enabled: bool
 
 
+class InstancePortStatsRequest(BaseModel):
+    port_ids: list[str]
+
+
 @router.get("/api/ovn/lsp/{port_id}")
 async def api_ovn_port_detail(port_id: str, request: Request):
     session = _require_session_record()(request)
@@ -144,8 +148,8 @@ async def api_node_network_stats(node_name: str, request: Request):
         )
 
 
-@router.get("/api/nodes/{node_name}/instance-port-stats")
-async def api_node_instance_port_stats(node_name: str, request: Request):
+@router.post("/api/nodes/{node_name}/instance-port-stats")
+async def api_node_instance_port_stats(node_name: str, payload: InstancePortStatsRequest, request: Request):
     session = _require_session_record()(request)
     loop = asyncio.get_running_loop()
     state = session.server.node_states.get(node_name)
@@ -153,6 +157,8 @@ async def api_node_instance_port_stats(node_name: str, request: Request):
         None,
         k8s_ops.get_node_instance_port_stats,
         node_name,
+        payload.port_ids,
+        session.server.k8s_auth,
         state.hypervisor if state else None,
     )
 

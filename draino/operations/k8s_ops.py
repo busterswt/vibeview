@@ -175,6 +175,7 @@ from .k8s_inventory_ops import (
     list_k8s_services,
 )
 from .ovn_ops import (
+    get_ovs_interface_port_bindings,
     get_ovn_edge_nodes,
     get_ovn_logical_router,
     get_ovn_logical_switch,
@@ -301,12 +302,51 @@ def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> 
         return {"interfaces": [], "error": str(exc)}
 
 
-def get_node_instance_port_stats(node_name: str, hostname: str | None = None) -> dict:
-    """Return OVS-backed per-instance port stats via the node agent."""
+def get_node_instance_port_stats(
+    node_name: str,
+    port_ids: list[str],
+    auth: K8sAuth | None = None,
+    hostname: str | None = None,
+) -> dict:
+    """Return host interface stats for the requested Neutron ports on one node."""
     try:
-        return node_agent_client.get_host_instance_port_stats(node_name)
+        bindings = get_ovs_interface_port_bindings(node_name, auth=auth)
     except Exception as exc:
         return {"ports": [], "error": str(exc)}
+
+    requested_port_ids = [port_id for port_id in port_ids if port_id]
+    port_to_iface = {port_id: bindings[port_id] for port_id in requested_port_ids if port_id in bindings}
+    interface_names = sorted(set(port_to_iface.values()))
+
+    try:
+        iface_stats = node_agent_client.get_host_interface_stats(node_name, interface_names)
+    except Exception as exc:
+        return {"ports": [], "error": str(exc)}
+
+    interfaces = iface_stats.get("interfaces", []) or []
+    stats_by_name = {item.get("name"): item for item in interfaces if item.get("name")}
+    ports: list[dict] = []
+    for port_id in requested_port_ids:
+        iface_name = port_to_iface.get(port_id)
+        if not iface_name:
+            continue
+        stats = stats_by_name.get(iface_name, {})
+        ports.append({
+            "port_id": port_id,
+            "interface_name": iface_name,
+            "operstate": stats.get("operstate"),
+            "rx_bytes": stats.get("rx_bytes"),
+            "tx_bytes": stats.get("tx_bytes"),
+            "rx_bytes_per_second": stats.get("rx_bytes_per_second"),
+            "tx_bytes_per_second": stats.get("tx_bytes_per_second"),
+        })
+
+    return {
+        "ports": ports,
+        "error": iface_stats.get("error"),
+        "unsupported": bool(iface_stats.get("unsupported")),
+        "message": iface_stats.get("message"),
+    }
 
 
 def drain_node(

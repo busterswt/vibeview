@@ -86,7 +86,33 @@ def get_host_network_stats(node_name: str) -> dict:
 
 
 def get_host_instance_port_stats(node_name: str) -> dict:
-    return _request_json(node_name, "GET", "/host/instance-port-stats")
+    try:
+        return _request_json(node_name, "GET", "/host/instance-port-stats")
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "HTTP 404" in msg:
+            return {
+                "ports": [],
+                "error": None,
+                "unsupported": True,
+                "message": "node-agent does not support VM interface metrics on this node yet",
+            }
+        raise
+
+
+def get_host_interface_stats(node_name: str, interface_names: list[str]) -> dict:
+    try:
+        return _request_json(node_name, "POST", "/host/interface-stats", {"interfaces": interface_names})
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "HTTP 404" in msg:
+            return {
+                "interfaces": [],
+                "error": None,
+                "unsupported": True,
+                "message": "node-agent does not support named interface metrics on this node yet",
+            }
+        raise
 
 
 def get_ready_node_names(agent_config: NodeAgentConfig | None = None) -> set[str]:

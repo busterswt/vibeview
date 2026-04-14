@@ -254,6 +254,20 @@ def test_get_node_network_stats_uses_node_agent(monkeypatch):
     assert result["interfaces"][0]["rx_bytes_per_second"] == 125000000.0
 
 
+def test_get_host_instance_port_stats_treats_404_as_unsupported(monkeypatch):
+    def fake_request_json(node_name, method, path, payload=None, agent_config=None):
+        raise RuntimeError('node-agent request failed: HTTP 404 {"detail":"Not Found"}')
+
+    monkeypatch.setattr(node_agent_client, "_request_json", fake_request_json)
+
+    result = node_agent_client.get_host_instance_port_stats("node-1")
+
+    assert result["ports"] == []
+    assert result["error"] is None
+    assert result["unsupported"] is True
+    assert "does not support VM interface metrics" in result["message"]
+
+
 def test_node_agent_host_network_stats_computes_rates(monkeypatch):
     outputs = iter([
         "eth0|1000|2000\nbond0|5000|7000\n",
@@ -281,15 +295,20 @@ def test_node_agent_host_network_stats_computes_rates(monkeypatch):
 
 def test_get_node_instance_port_stats_uses_node_agent(monkeypatch):
     monkeypatch.setattr(
+        k8s_ops,
+        "get_ovs_interface_port_bindings",
+        lambda node_name, auth=None: {"port-1": "tap123"},
+    )
+    monkeypatch.setattr(
         k8s_ops.node_agent_client,
-        "get_host_instance_port_stats",
-        lambda node_name: {
-            "ports": [{"port_id": "port-1", "interface_name": "tap123", "rx_bytes_per_second": 1234.0, "tx_bytes_per_second": 5678.0}],
+        "get_host_interface_stats",
+        lambda node_name, interface_names: {
+            "interfaces": [{"name": "tap123", "operstate": "up", "rx_bytes_per_second": 1234.0, "tx_bytes_per_second": 5678.0}],
             "error": None,
         },
     )
 
-    result = k8s_ops.get_node_instance_port_stats("node-1", "hv-1")
+    result = k8s_ops.get_node_instance_port_stats("node-1", ["port-1"], None, "hv-1")
 
     assert result["ports"][0]["port_id"] == "port-1"
     assert result["ports"][0]["interface_name"] == "tap123"
@@ -320,6 +339,32 @@ def test_node_agent_instance_port_stats_computes_rates(monkeypatch):
     assert port["operstate"] == "up"
     assert port["rx_bytes_per_second"] == 1000.0
     assert port["tx_bytes_per_second"] == 1500.0
+
+
+def test_node_agent_named_interface_stats_computes_rates(monkeypatch):
+    outputs = iter([
+        "tap123|1000|2000|up\ntap456|5000|7000|down\n",
+        "tap123|3000|5000|up\ntap456|9000|11000|down\n",
+    ])
+    times = iter([1000.0, 1002.0])
+
+    monkeypatch.setattr(
+        node_agent_metrics_ops,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=next(outputs), stderr=""),
+    )
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: next(times))
+    node_agent_metrics_ops._interface_prev_samples.clear()
+
+    first = node_agent_metrics_ops._get_named_interface_stats(["tap123", "tap456"])
+    second = node_agent_metrics_ops._get_named_interface_stats(["tap123", "tap456"])
+
+    assert first["error"] is None
+    assert first["interfaces"][0]["rx_bytes_per_second"] is None
+    iface = next(item for item in second["interfaces"] if item["name"] == "tap123")
+    assert iface["operstate"] == "up"
+    assert iface["rx_bytes_per_second"] == 1000.0
+    assert iface["tx_bytes_per_second"] == 1500.0
 
 
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):

@@ -253,7 +253,7 @@ def test_node_instance_port_stats_endpoint_returns_node_agent_data(monkeypatch):
     monkeypatch.setattr(
         web_server.k8s_ops,
         "get_node_instance_port_stats",
-        lambda node_name, hostname=None: {
+        lambda node_name, port_ids, auth=None, hostname=None: {
             "ports": [{"port_id": "port-1", "interface_name": "tap123", "rx_bytes_per_second": 1234.0, "tx_bytes_per_second": 5678.0}],
             "error": None,
         },
@@ -278,7 +278,7 @@ def test_node_instance_port_stats_endpoint_returns_node_agent_data(monkeypatch):
         record = next(iter(web_server._sessions._sessions.values()))
         record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
 
-        resp = client.get("/api/nodes/node-a/instance-port-stats")
+        resp = client.post("/api/nodes/node-a/instance-port-stats", json={"port_ids": ["port-1"]})
 
     assert resp.status_code == 200
     assert resp.json()["ports"][0]["port_id"] == "port-1"
