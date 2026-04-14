@@ -382,6 +382,10 @@ function enabledNetStatsSet(nodeName) {
   return nodeNetStatsEnabled[nodeName];
 }
 
+function interfaceSupportsLiveStats(iface) {
+  return String(iface?.status || '').toLowerCase() === 'up';
+}
+
 async function loadNodeNetworkStats(name) {
   nodeNetStatsCache[name] = {
     ...(nodeNetStatsCache[name] || {}),
@@ -914,7 +918,9 @@ function renderNodeMonitorTab(nd) {
           </thead>
           <tbody>
             ${ifaces.map((iface) => {
-              const checked = enabledStats.has(iface.name);
+              const supportsLiveStats = interfaceSupportsLiveStats(iface);
+              if (!supportsLiveStats) enabledStats.delete(iface.name);
+              const checked = supportsLiveStats && enabledStats.has(iface.name);
               const live = netStatsByName[iface.name] || {};
               const ipSummary = [...(iface.ipv4 || []), ...(iface.ipv6 || [])].join(', ');
               const bondName = iface.type === 'physical' ? (bondByMember[iface.name] || '') : '';
@@ -931,12 +937,12 @@ function renderNodeMonitorTab(nd) {
                 <td style="font-size:11px;color:var(--dim)">${esc(ipSummary || '—')}</td>
                 <td>
                   <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
-                    <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleNodeInterfaceStats('${escAttr(nd.k8s_name)}','${escAttr(iface.name)}', this.checked)">
-                    <span>${checked ? 'on' : 'off'}</span>
+                    <input type="checkbox" ${checked ? 'checked' : ''} ${supportsLiveStats ? '' : 'disabled'} onchange="toggleNodeInterfaceStats('${escAttr(nd.k8s_name)}','${escAttr(iface.name)}', this.checked)">
+                    <span>${supportsLiveStats ? (checked ? 'on' : 'off') : 'down'}</span>
                   </label>
                 </td>
-                <td>${checked ? esc(fmtNetRate(live.rx_bytes_per_second)) : '<span style="color:var(--dim)">off</span>'}</td>
-                <td>${checked ? esc(fmtNetRate(live.tx_bytes_per_second)) : '<span style="color:var(--dim)">off</span>'}</td>
+                <td>${checked ? esc(fmtNetRate(live.rx_bytes_per_second)) : `<span style="color:var(--dim)">${supportsLiveStats ? 'off' : 'down'}</span>`}</td>
+                <td>${checked ? esc(fmtNetRate(live.tx_bytes_per_second)) : `<span style="color:var(--dim)">${supportsLiveStats ? 'off' : 'down'}</span>`}</td>
               </tr>`;
             }).join('')}
           </tbody>
