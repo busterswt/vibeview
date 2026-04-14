@@ -61,6 +61,7 @@ const nodeMetricsCache = {};  // node_name → { loading, current, history, erro
 const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
 const nodeIrqBalanceCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
 const nodeSarTrendsCache = {}; // node_name → { loading, summary, interfaces, error, fetchedAt }
+const nodeSarExpanded = {}; // node_name -> boolean
 const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
 const nodeInstancePortStatsCache = {}; // node_name -> { loading, portsById, error, fetchedAt }
 const instanceDetailCache = {}; // instance_id -> { loading, data, error }

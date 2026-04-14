@@ -312,7 +312,7 @@ function selectNode(name) {
     if (shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
     _ensureNetworkDataLoaded(name);
     loadNodeIrqBalance(name);
-    loadNodeSarTrends(name);
+    if (isNodeSarExpanded(name)) loadNodeSarTrends(name);
   }
   if (activeTab === 'pods') actionPodsInline();
   // Load network config data if Configure tab is active
@@ -456,7 +456,24 @@ function refreshSelectedNodeIrqBalance() {
   loadNodeIrqBalance(selectedNode);
 }
 
+function isNodeSarExpanded(nodeName) {
+  return Boolean(nodeSarExpanded[nodeName]);
+}
+
+function setNodeSarExpanded(nodeName, expanded) {
+  nodeSarExpanded[nodeName] = Boolean(expanded);
+}
+
+function toggleNodeSarTrends(nodeName) {
+  if (!nodeName || !nodes[nodeName]) return;
+  const expanded = !isNodeSarExpanded(nodeName);
+  setNodeSarExpanded(nodeName, expanded);
+  if (expanded) loadNodeSarTrends(nodeName);
+  if (selectedNode === nodeName && activeTab === 'monitor') renderNodeMonitorTab(nodes[nodeName]);
+}
+
 async function loadNodeSarTrends(name, force = false) {
+  if (!force && !isNodeSarExpanded(name)) return;
   const cached = nodeSarTrendsCache[name];
   if (!force && cached?.loading) return;
   nodeSarTrendsCache[name] = {
@@ -489,6 +506,7 @@ async function loadNodeSarTrends(name, force = false) {
 
 function refreshSelectedNodeSarTrends() {
   if (activeView !== 'infrastructure' || activeTab !== 'monitor' || !selectedNode || !nodes[selectedNode]) return;
+  if (!isNodeSarExpanded(selectedNode)) return;
   loadNodeSarTrends(selectedNode);
 }
 
@@ -669,7 +687,7 @@ function showTab(name) {
   if (name === 'monitor' && selectedNode && shouldLoadNodeMetrics(selectedNode)) loadNodeMetrics(selectedNode);
   if (name === 'monitor' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
   if (name === 'monitor' && selectedNode) loadNodeIrqBalance(selectedNode);
-  if (name === 'monitor' && selectedNode) loadNodeSarTrends(selectedNode);
+  if (name === 'monitor' && selectedNode && isNodeSarExpanded(selectedNode)) loadNodeSarTrends(selectedNode);
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
   if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
@@ -1118,6 +1136,7 @@ function renderNodeMonitorTab(nd) {
     </div>
   </div>`;
 
+  const sarExpanded = isNodeSarExpanded(nd.k8s_name);
   const sarSummary = sarTrends.summary || {};
   const sarIfaceRows = (sarTrends.interfaces || []).length
     ? sarTrends.interfaces.map((item) => `<tr>
@@ -1130,13 +1149,17 @@ function renderNodeMonitorTab(nd) {
     : `<tr><td colspan="5" style="color:var(--dim)">No NIC drops or errors reported in the last ${esc(String(sarSummary.window_minutes || 15))} minutes.</td></tr>`;
 
   h += `<div class="card" style="margin-top:12px">
-    <div class="card-title">Recent Trends (SAR)</div>
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span>Recent Trends (SAR)</span>
+      <button class="btn secondary" type="button" onclick="toggleNodeSarTrends('${escAttr(nd.k8s_name)}')">${sarExpanded ? 'Hide' : 'Show'}</button>
+    </div>
     <div class="card-body">
       <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
         Short historical context from sysstat when available.
       </div>
-      ${sarTrends.loading ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading SAR trends…</div>` : ''}
-      ${sarTrends.error ? `<div class="runtime-note">${esc(sarTrends.error)}</div>` : sarSummary ? `
+      ${!sarExpanded ? `<div class="runtime-note">SAR is loaded on demand and refreshed infrequently while this section is open.</div>` : ''}
+      ${sarExpanded && sarTrends.loading ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading SAR trends…</div>` : ''}
+      ${sarExpanded && sarTrends.error ? `<div class="runtime-note">${esc(sarTrends.error)}</div>` : sarExpanded && sarSummary ? `
         <div class="summary-grid">
           <div class="card">
             <div class="card-title">CPU Busy Avg</div>
@@ -1162,8 +1185,8 @@ function renderNodeMonitorTab(nd) {
           </thead>
           <tbody>${sarIfaceRows}</tbody>
         </table>
-      ` : ''}
-      ${sarTrends.fetchedAt ? `<div class="runtime-note">Updated ${_fmtTime(sarTrends.fetchedAt)}</div>` : ''}
+      ` : sarExpanded ? `<div class="runtime-note">No SAR summary is available yet.</div>` : ''}
+      ${sarExpanded && sarTrends.fetchedAt ? `<div class="runtime-note">Updated ${_fmtTime(sarTrends.fetchedAt)}</div>` : ''}
     </div>
   </div>`;
 
