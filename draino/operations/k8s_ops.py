@@ -151,12 +151,15 @@ def _kubectl_plugin_env(auth: K8sAuth | None) -> dict | None:
 
 
 from .k8s_inventory_ops import (
+    list_k8s_daemonsets,
+    list_k8s_deployments,
     get_etcd_node_names,
     list_k8s_gatewayclasses,
     list_k8s_gateways,
     list_k8s_httproutes,
     get_k8s_node_health_density_summary,
     list_k8s_operators,
+    list_k8s_statefulsets,
     get_k8s_pvc_workload_summary,
     get_mariadb_node_names,
     get_node_k8s_detail,

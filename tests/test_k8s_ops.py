@@ -373,3 +373,84 @@ def test_list_k8s_operators_derives_version_from_workloads(monkeypatch):
     assert items[0]["version"] == "v1.7.2"
     assert items[0]["ready"] == "1/1"
     assert items[0]["managed_crds"] >= 1
+
+
+def test_list_k8s_workload_resources(monkeypatch):
+    deployment = SimpleNamespace(
+        metadata=SimpleNamespace(namespace="apps", name="web", creation_timestamp=None),
+        spec=SimpleNamespace(
+            replicas=3,
+            selector={"matchLabels": {"app": "web"}},
+            strategy=SimpleNamespace(type="RollingUpdate", rolling_update=SimpleNamespace(max_unavailable="25%", max_surge="25%")),
+            template=SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(image="nginx:1.29")])),
+        ),
+        status=SimpleNamespace(ready_replicas=2, updated_replicas=3, available_replicas=2, unavailable_replicas=1),
+    )
+    statefulset = SimpleNamespace(
+        metadata=SimpleNamespace(namespace="db", name="mariadb", creation_timestamp=None),
+        spec=SimpleNamespace(
+            replicas=3,
+            service_name="mariadb-headless",
+            selector={"matchLabels": {"app": "mariadb"}},
+            update_strategy=SimpleNamespace(type="RollingUpdate"),
+            volume_claim_templates=[SimpleNamespace(metadata=SimpleNamespace(name="data"))],
+            template=SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(image="mariadb:11.4")])),
+        ),
+        status=SimpleNamespace(ready_replicas=2, current_replicas=3, updated_replicas=2, current_revision="rev-a", update_revision="rev-b"),
+    )
+    daemonset = SimpleNamespace(
+        metadata=SimpleNamespace(namespace="infra", name="node-agent", creation_timestamp=None),
+        spec=SimpleNamespace(
+            selector={"matchLabels": {"app": "node-agent"}},
+            update_strategy=SimpleNamespace(type="RollingUpdate"),
+            template=SimpleNamespace(
+                spec=SimpleNamespace(
+                    node_selector={"node-role.kubernetes.io/worker": "true"},
+                    tolerations=[SimpleNamespace(), SimpleNamespace()],
+                    containers=[SimpleNamespace(image="example/node-agent:v2")],
+                ),
+            ),
+        ),
+        status=SimpleNamespace(
+            desired_number_scheduled=5,
+            current_number_scheduled=5,
+            number_ready=4,
+            number_available=4,
+            number_unavailable=1,
+            number_misscheduled=0,
+        ),
+    )
+
+    class FakeApps:
+        def list_deployment_for_all_namespaces(self):
+            return SimpleNamespace(items=[deployment])
+
+        def list_stateful_set_for_all_namespaces(self):
+            return SimpleNamespace(items=[statefulset])
+
+        def list_daemon_set_for_all_namespaces(self):
+            return SimpleNamespace(items=[daemonset])
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "AppsV1Api", lambda api_client: FakeApps())
+
+    deployments = k8s_inventory_ops.list_k8s_deployments()
+    statefulsets = k8s_inventory_ops.list_k8s_statefulsets()
+    daemonsets = k8s_inventory_ops.list_k8s_daemonsets()
+
+    assert deployments[0]["name"] == "web"
+    assert deployments[0]["ready"] == 2
+    assert deployments[0]["desired"] == 3
+    assert deployments[0]["strategy"] == "RollingUpdate"
+    assert deployments[0]["images"] == ["nginx:1.29"]
+
+    assert statefulsets[0]["name"] == "mariadb"
+    assert statefulsets[0]["service_name"] == "mariadb-headless"
+    assert statefulsets[0]["pvc_templates"] == ["data"]
+    assert statefulsets[0]["current_revision"] == "rev-a"
+
+    assert daemonsets[0]["name"] == "node-agent"
+    assert daemonsets[0]["desired"] == 5
+    assert daemonsets[0]["ready"] == 4
+    assert daemonsets[0]["node_selector"] == "node-role.kubernetes.io/worker=true"
+    assert daemonsets[0]["tolerations"] == 2

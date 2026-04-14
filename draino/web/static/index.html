@@ -198,6 +198,18 @@
           <span>🔗</span> Services <span class="hint">Port Groups</span>
           <span class="tree-badge" id="k8s-cnt-services"></span>
         </div>
+        <div class="k8s-res-item" data-res="deployments" onclick="selectK8sResource('deployments')">
+          <span>🚀</span> Deployments <span class="hint">Rollouts</span>
+          <span class="tree-badge" id="k8s-cnt-deployments"></span>
+        </div>
+        <div class="k8s-res-item" data-res="statefulsets" onclick="selectK8sResource('statefulsets')">
+          <span>🗄️</span> StatefulSets <span class="hint">Persistent Apps</span>
+          <span class="tree-badge" id="k8s-cnt-statefulsets"></span>
+        </div>
+        <div class="k8s-res-item" data-res="daemonsets" onclick="selectK8sResource('daemonsets')">
+          <span>🛰️</span> DaemonSets <span class="hint">Node Coverage</span>
+          <span class="tree-badge" id="k8s-cnt-daemonsets"></span>
+        </div>
         <div class="k8s-res-item" data-res="gatewayclasses" onclick="selectK8sResource('gatewayclasses')">
           <span>🏛️</span> GatewayClasses <span class="hint">Gateway API</span>
           <span class="tree-badge" id="k8s-cnt-gatewayclasses"></span>

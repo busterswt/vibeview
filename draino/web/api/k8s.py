@@ -54,6 +54,36 @@ async def api_k8s_services(request: Request, namespace: str | None = None):
         return {"items": [], "error": str(exc)}
 
 
+@router.get("/api/k8s/deployments")
+async def api_k8s_deployments(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_deployments, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/statefulsets")
+async def api_k8s_statefulsets(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_statefulsets, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/daemonsets")
+async def api_k8s_daemonsets(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_daemonsets, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
 @router.get("/api/k8s/gatewayclasses")
 async def api_k8s_gatewayclasses(request: Request):
     session = _require_session_record()(request)

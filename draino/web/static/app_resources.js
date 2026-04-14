@@ -1120,6 +1120,9 @@ const K8S_RES_META = {
   namespaces: { label: 'Namespaces',        icon: '📦', url: '/api/k8s/namespaces' },
   pods:       { label: 'Pods',              icon: '⬡',  url: '/api/k8s/pods'       },
   services:   { label: 'Services',          icon: '🔗', url: '/api/k8s/services'   },
+  deployments: { label: 'Deployments',      icon: '🚀', url: '/api/k8s/deployments' },
+  statefulsets: { label: 'StatefulSets',    icon: '🗄️', url: '/api/k8s/statefulsets' },
+  daemonsets: { label: 'DaemonSets',        icon: '🛰️', url: '/api/k8s/daemonsets' },
   gatewayclasses: { label: 'GatewayClasses', icon: '🏛️', url: '/api/k8s/gatewayclasses' },
   gateways:   { label: 'Gateways',          icon: '🚪', url: '/api/k8s/gateways'   },
   httproutes: { label: 'HTTPRoutes',        icon: '🛣️', url: '/api/k8s/httproutes' },
@@ -1174,6 +1177,9 @@ function k8sItemKey(type, row) {
     case 'services':
     case 'lbs':
     case 'pvcs':
+    case 'deployments':
+    case 'statefulsets':
+    case 'daemonsets':
     case 'gateways':
     case 'httproutes':
       return `${row.namespace || ''}/${row.name || ''}`;
@@ -1255,6 +1261,56 @@ function renderK8sDetail() {
         ['Cluster IP', `<span style="font-family:monospace">${esc(item.cluster_ip || '—')}</span>`],
         ['External IPs', k8sListHtml(item.external_ips || [])],
         ['Ports', `<span style="font-family:monospace">${esc(item.ports || '—')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'deployments':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Ready', `<span style="font-family:monospace">${esc(`${item.ready ?? 0}/${item.desired ?? 0}`)}</span>`],
+        ['Updated', esc(String(item.updated ?? 0))],
+        ['Available', esc(String(item.available ?? 0))],
+        ['Unavailable', esc(String(item.unavailable ?? 0))],
+        ['Strategy', esc(item.strategy || '—')],
+        ['Max Unavailable', esc(item.max_unavailable || '—')],
+        ['Max Surge', esc(item.max_surge || '—')],
+        ['Selector', `<span style="font-family:monospace">${esc(item.selector || '—')}</span>`],
+        ['Images', k8sListHtml(item.images || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'statefulsets':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Ready', `<span style="font-family:monospace">${esc(`${item.ready ?? 0}/${item.desired ?? 0}`)}</span>`],
+        ['Current', esc(String(item.current ?? 0))],
+        ['Updated', esc(String(item.updated ?? 0))],
+        ['Service Name', esc(item.service_name || '—')],
+        ['Update Strategy', esc(item.update_strategy || '—')],
+        ['Current Revision', `<span style="font-family:monospace">${esc(item.current_revision || '—')}</span>`],
+        ['Update Revision', `<span style="font-family:monospace">${esc(item.update_revision || '—')}</span>`],
+        ['PVC Templates', k8sListHtml(item.pvc_templates || [])],
+        ['Selector', `<span style="font-family:monospace">${esc(item.selector || '—')}</span>`],
+        ['Images', k8sListHtml(item.images || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'daemonsets':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Ready', `<span style="font-family:monospace">${esc(`${item.ready ?? 0}/${item.desired ?? 0}`)}</span>`],
+        ['Current', esc(String(item.current ?? 0))],
+        ['Available', esc(String(item.available ?? 0))],
+        ['Unavailable', esc(String(item.unavailable ?? 0))],
+        ['Misscheduled', esc(String(item.misscheduled ?? 0))],
+        ['Update Strategy', esc(item.update_strategy || '—')],
+        ['Selector', `<span style="font-family:monospace">${esc(item.selector || '—')}</span>`],
+        ['Node Selector', `<span style="font-family:monospace">${esc(item.node_selector || '—')}</span>`],
+        ['Tolerations', esc(String(item.tolerations ?? 0))],
+        ['Images', k8sListHtml(item.images || [])],
         ['Age', esc(k8sAge(item.created))],
       ])}</div></div>`;
       break;
@@ -1524,6 +1580,53 @@ function renderK8sTable(type, rows) {
             <td style="color:var(--dim)">${k8sAge(r.created)}</td>
           </tr>`;
         }).join('') + `</tbody></table>`;
+
+    case 'deployments':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Ready</th><th>Updated</th><th>Available</th><th>Unavailable</th><th>Strategy</th><th>Images</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td style="font-family:monospace">${esc(`${r.ready ?? 0}/${r.desired ?? 0}`)}</td>
+          <td>${esc(String(r.updated ?? 0))}</td>
+          <td>${esc(String(r.available ?? 0))}</td>
+          <td${(r.unavailable ?? 0) > 0 ? ' style="color:var(--red)"' : ''}>${esc(String(r.unavailable ?? 0))}</td>
+          <td>${esc(r.strategy || '—')}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc((r.images || []).join(', ') || '—')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'statefulsets':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Ready</th><th>Current</th><th>Updated</th><th>Service</th><th>PVC Templates</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td style="font-family:monospace">${esc(`${r.ready ?? 0}/${r.desired ?? 0}`)}</td>
+          <td>${esc(String(r.current ?? 0))}</td>
+          <td>${esc(String(r.updated ?? 0))}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc(r.service_name || '—')}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc((r.pvc_templates || []).join(', ') || '—')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'daemonsets':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Ready</th><th>Current</th><th>Available</th><th>Unavailable</th><th>Misscheduled</th><th>Node Selector</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td style="font-family:monospace">${esc(`${r.ready ?? 0}/${r.desired ?? 0}`)}</td>
+          <td>${esc(String(r.current ?? 0))}</td>
+          <td>${esc(String(r.available ?? 0))}</td>
+          <td${(r.unavailable ?? 0) > 0 ? ' style="color:var(--red)"' : ''}>${esc(String(r.unavailable ?? 0))}</td>
+          <td${(r.misscheduled ?? 0) > 0 ? ' style="color:var(--red)"' : ''}>${esc(String(r.misscheduled ?? 0))}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc(r.node_selector || '—')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
 
     case 'gatewayclasses':
       return `<table class="data-table"><thead><tr>

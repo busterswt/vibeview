@@ -877,6 +877,100 @@ def list_k8s_httproutes(auth: K8sAuth | None = None) -> list[dict]:
     return result
 
 
+def _selector_text(selector: dict | None) -> str:
+    match_labels = (selector or {}).get("match_labels")
+    if not match_labels and isinstance(selector, dict):
+        match_labels = selector.get("matchLabels")
+    if not isinstance(match_labels, dict) or not match_labels:
+        return "—"
+    return ",".join(f"{key}={value}" for key, value in sorted(match_labels.items()))
+
+
+def _template_images(template) -> list[str]:
+    pod_spec = getattr(getattr(template, "spec", None), "containers", None) or []
+    return [container.image for container in pod_spec if getattr(container, "image", None)]
+
+
+def list_k8s_deployments(auth: K8sAuth | None = None) -> list[dict]:
+    api = client.AppsV1Api(_api_client(auth))
+    result: list[dict] = []
+    for item in api.list_deployment_for_all_namespaces().items:
+        spec = item.spec
+        status = item.status
+        strategy = getattr(spec.strategy, "type", None) or "RollingUpdate"
+        rolling = getattr(spec.strategy, "rolling_update", None)
+        max_unavailable = getattr(rolling, "max_unavailable", None)
+        max_surge = getattr(rolling, "max_surge", None)
+        result.append({
+            "namespace": item.metadata.namespace,
+            "name": item.metadata.name,
+            "ready": int(getattr(status, "ready_replicas", None) or 0),
+            "desired": int(getattr(spec, "replicas", None) or 0),
+            "updated": int(getattr(status, "updated_replicas", None) or 0),
+            "available": int(getattr(status, "available_replicas", None) or 0),
+            "unavailable": int(getattr(status, "unavailable_replicas", None) or 0),
+            "strategy": strategy,
+            "max_unavailable": str(max_unavailable) if max_unavailable is not None else "—",
+            "max_surge": str(max_surge) if max_surge is not None else "—",
+            "selector": _selector_text(getattr(spec, "selector", None)),
+            "images": _template_images(spec.template),
+            "created": _ts(item),
+        })
+    return result
+
+
+def list_k8s_statefulsets(auth: K8sAuth | None = None) -> list[dict]:
+    api = client.AppsV1Api(_api_client(auth))
+    result: list[dict] = []
+    for item in api.list_stateful_set_for_all_namespaces().items:
+        spec = item.spec
+        status = item.status
+        result.append({
+            "namespace": item.metadata.namespace,
+            "name": item.metadata.name,
+            "ready": int(getattr(status, "ready_replicas", None) or 0),
+            "desired": int(getattr(spec, "replicas", None) or 0),
+            "current": int(getattr(status, "current_replicas", None) or 0),
+            "updated": int(getattr(status, "updated_replicas", None) or 0),
+            "service_name": getattr(spec, "service_name", None) or "—",
+            "update_strategy": getattr(getattr(spec, "update_strategy", None), "type", None) or "RollingUpdate",
+            "current_revision": getattr(status, "current_revision", None) or "—",
+            "update_revision": getattr(status, "update_revision", None) or "—",
+            "pvc_templates": [tpl.metadata.name for tpl in (getattr(spec, "volume_claim_templates", None) or []) if getattr(getattr(tpl, "metadata", None), "name", None)],
+            "selector": _selector_text(getattr(spec, "selector", None)),
+            "images": _template_images(spec.template),
+            "created": _ts(item),
+        })
+    return result
+
+
+def list_k8s_daemonsets(auth: K8sAuth | None = None) -> list[dict]:
+    api = client.AppsV1Api(_api_client(auth))
+    result: list[dict] = []
+    for item in api.list_daemon_set_for_all_namespaces().items:
+        spec = item.spec
+        status = item.status
+        node_selector = dict(getattr(getattr(spec, "template", None), "spec", None).node_selector or {})
+        tolerations = getattr(getattr(spec.template, "spec", None), "tolerations", None) or []
+        result.append({
+            "namespace": item.metadata.namespace,
+            "name": item.metadata.name,
+            "desired": int(getattr(status, "desired_number_scheduled", None) or 0),
+            "current": int(getattr(status, "current_number_scheduled", None) or 0),
+            "ready": int(getattr(status, "number_ready", None) or 0),
+            "available": int(getattr(status, "number_available", None) or 0),
+            "unavailable": int(getattr(status, "number_unavailable", None) or 0),
+            "misscheduled": int(getattr(status, "number_misscheduled", None) or 0),
+            "update_strategy": getattr(getattr(spec, "update_strategy", None), "type", None) or "RollingUpdate",
+            "selector": _selector_text(getattr(spec, "selector", None)),
+            "node_selector": ",".join(f"{key}={value}" for key, value in sorted(node_selector.items())) or "—",
+            "tolerations": len(tolerations),
+            "images": _template_images(spec.template),
+            "created": _ts(item),
+        })
+    return result
+
+
 def _images_and_version(pod_spec) -> tuple[list[str], str]:
     images = [container.image for container in (getattr(pod_spec, "containers", None) or []) if getattr(container, "image", None)]
     versions = []
