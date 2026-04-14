@@ -302,6 +302,14 @@ def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> 
         return {"interfaces": [], "error": str(exc)}
 
 
+def get_node_irq_balance(node_name: str, hostname: str | None = None) -> dict:
+    """Return NIC IRQ balance signals via the node agent."""
+    try:
+        return node_agent_client.get_host_irq_balance(node_name)
+    except Exception as exc:
+        return {"interfaces": [], "error": str(exc)}
+
+
 def _port_interface_candidates(port_id: str, ovs_interface_name: str | None = None) -> list[str]:
     short = (port_id or "")[:11]
     candidates: list[str] = []

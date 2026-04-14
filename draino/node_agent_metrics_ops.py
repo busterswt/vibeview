@@ -19,6 +19,8 @@ _instance_port_prev_samples: dict[str, tuple[float, int, int]] = {}
 _instance_port_prev_lock = threading.Lock()
 _interface_prev_samples: dict[str, tuple[float, int, int]] = {}
 _interface_prev_lock = threading.Lock()
+_irq_balance_prev_samples: dict[str, tuple[float, int, int]] = {}
+_irq_balance_prev_lock = threading.Lock()
 
 
 def _get_host_metrics() -> dict:
@@ -363,6 +365,190 @@ def _get_named_interface_stats(interface_names: list[str]) -> dict:
                 "tx_bytes": tx_bytes,
                 "rx_bytes_per_second": rx_rate_bps,
                 "tx_bytes_per_second": tx_rate_bps,
+            })
+
+    results.sort(key=lambda item: item["name"])
+    return {"interfaces": results, "error": None}
+
+
+def _mask_enabled(value: str | None) -> bool:
+    if not value:
+        return False
+    cleaned = value.strip().replace(",", "").replace("0x", "").lower()
+    return any(ch not in {"0"} for ch in cleaned)
+
+
+def _get_host_irq_balance() -> dict:
+    try:
+        proc = _run_host_shell(
+            r"""
+echo __IFACES__
+for d in /sys/class/net/*/; do
+  name=$(basename "$d")
+  is_phys=0; is_bond=0
+  [ -e "${d}device" ] && is_phys=1
+  [ -d "${d}bonding" ] && is_bond=1
+  [ "$is_phys" = "0" ] && [ "$is_bond" = "0" ] && continue
+  rx=$(cat "${d}statistics/rx_bytes" 2>/dev/null)
+  tx=$(cat "${d}statistics/tx_bytes" 2>/dev/null)
+  rxq=$(find "${d}queues" -maxdepth 1 -type d -name 'rx-*' 2>/dev/null | wc -l | tr -d ' ')
+  txq=$(find "${d}queues" -maxdepth 1 -type d -name 'tx-*' 2>/dev/null | wc -l | tr -d ' ')
+  rps=0
+  for f in "${d}"queues/rx-*/rps_cpus; do
+    [ -r "$f" ] || continue
+    v=$(cat "$f" 2>/dev/null | tr -d '\n')
+    case "${v}" in
+      ""|0|00|000|0,0|0,00|00,00) ;;
+      *) rps=1; break ;;
+    esac
+  done
+  xps=0
+  for f in "${d}"queues/tx-*/xps_cpus; do
+    [ -r "$f" ] || continue
+    v=$(cat "$f" 2>/dev/null | tr -d '\n')
+    case "${v}" in
+      ""|0|00|000|0,0|0,00|00,00) ;;
+      *) xps=1; break ;;
+    esac
+  done
+  printf '%s|%s|%s|%s|%s|%s|%s\n' "$name" "${rx:-0}" "${tx:-0}" "${rxq:-0}" "${txq:-0}" "$rps" "$xps"
+done
+echo __INTERRUPTS__
+cat /proc/interrupts 2>/dev/null
+echo __END__
+""",
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"interfaces": [], "error": str(exc)}
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {"interfaces": [], "error": stderr or f"irq balance command exited {proc.returncode}"}
+
+    section = None
+    iface_rows: dict[str, dict] = {}
+    interrupt_lines: list[str] = []
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.rstrip("\n")
+        stripped = line.strip()
+        if stripped == "__IFACES__":
+            section = "ifaces"
+            continue
+        if stripped == "__INTERRUPTS__":
+            section = "interrupts"
+            continue
+        if stripped == "__END__":
+            break
+        if not stripped:
+            continue
+        if section == "ifaces":
+            parts = stripped.split("|")
+            if len(parts) != 7:
+                continue
+            name, rx_raw, tx_raw, rxq_raw, txq_raw, rps_raw, xps_raw = parts
+            try:
+                iface_rows[name] = {
+                    "name": name,
+                    "rx_bytes": int(rx_raw),
+                    "tx_bytes": int(tx_raw),
+                    "rx_queues": int(rxq_raw),
+                    "tx_queues": int(txq_raw),
+                    "rps_enabled": rps_raw == "1",
+                    "xps_enabled": xps_raw == "1",
+                }
+            except ValueError:
+                continue
+        elif section == "interrupts":
+            interrupt_lines.append(line)
+
+    if not interrupt_lines:
+        return {"interfaces": [], "error": "no /proc/interrupts data available"}
+
+    header = interrupt_lines[0].split()
+    cpu_count = len([item for item in header if item.startswith("CPU")])
+    irq_by_iface: dict[str, list[int]] = {name: [0] * cpu_count for name in iface_rows}
+    for line in interrupt_lines[1:]:
+        if ":" not in line:
+            continue
+        _, _, rest = line.partition(":")
+        parts = rest.split()
+        if len(parts) < cpu_count + 1:
+            continue
+        counts_raw = parts[:cpu_count]
+        detail = " ".join(parts[cpu_count:])
+        counts: list[int] = []
+        valid = True
+        for item in counts_raw:
+            try:
+                counts.append(int(item))
+            except ValueError:
+                valid = False
+                break
+        if not valid:
+            continue
+        for iface_name in iface_rows:
+            if iface_name and iface_name in detail:
+                current = irq_by_iface[iface_name]
+                irq_by_iface[iface_name] = [current[idx] + counts[idx] for idx in range(cpu_count)]
+
+    now = time.time()
+    results: list[dict] = []
+    with _irq_balance_prev_lock:
+        for iface_name, base in iface_rows.items():
+            rx_bytes = base["rx_bytes"]
+            tx_bytes = base["tx_bytes"]
+            rx_rate_bps = None
+            tx_rate_bps = None
+            previous = _irq_balance_prev_samples.get(iface_name)
+            if previous is not None:
+                prev_time, prev_rx, prev_tx = previous
+                elapsed = now - prev_time
+                if elapsed > 0:
+                    rx_rate_bps = max(0.0, (rx_bytes - prev_rx) / elapsed)
+                    tx_rate_bps = max(0.0, (tx_bytes - prev_tx) / elapsed)
+            _irq_balance_prev_samples[iface_name] = (now, rx_bytes, tx_bytes)
+
+            cpu_counts = irq_by_iface.get(iface_name, [])
+            irq_total = sum(cpu_counts)
+            active_cpus = sum(1 for value in cpu_counts if value > 0)
+            top_idx = max(range(len(cpu_counts)), key=lambda idx: cpu_counts[idx]) if cpu_counts else None
+            top_cpu_count = cpu_counts[top_idx] if top_idx is not None else 0
+            top_cpu_share_pct = round((top_cpu_count / irq_total) * 100, 1) if irq_total > 0 else None
+            top_cpu = f"CPU{top_idx}" if top_idx is not None and top_cpu_count > 0 else None
+            traffic_bps = max(value or 0.0 for value in (rx_rate_bps, tx_rate_bps))
+            reason = "Balanced or idle"
+            risk = "low"
+            if irq_total <= 0:
+                reason = "No interface IRQ activity observed"
+            elif traffic_bps >= 100_000_000 and top_cpu_share_pct is not None and top_cpu_share_pct >= 70:
+                risk = "high"
+                reason = f"IRQ concentration on {top_cpu} under active traffic"
+            elif traffic_bps >= 100_000_000 and active_cpus <= 1 and max(base["rx_queues"], base["tx_queues"]) > 1:
+                risk = "high"
+                reason = "Single active CPU handling multi-queue traffic"
+            elif traffic_bps >= 25_000_000 and top_cpu_share_pct is not None and top_cpu_share_pct >= 50:
+                risk = "medium"
+                reason = f"{top_cpu} handling most interrupts"
+            elif traffic_bps >= 25_000_000 and base["rx_queues"] > 1 and active_cpus < min(4, base["rx_queues"]):
+                risk = "medium"
+                reason = "Interrupts spread across too few CPUs for queue count"
+
+            results.append({
+                "name": iface_name,
+                "rx_bytes_per_second": rx_rate_bps,
+                "tx_bytes_per_second": tx_rate_bps,
+                "irq_total": irq_total,
+                "active_cpus": active_cpus,
+                "cpu_count": cpu_count,
+                "top_cpu": top_cpu,
+                "top_cpu_share_pct": top_cpu_share_pct,
+                "rx_queues": base["rx_queues"],
+                "tx_queues": base["tx_queues"],
+                "rps_enabled": base["rps_enabled"],
+                "xps_enabled": base["xps_enabled"],
+                "risk": risk,
+                "reason": reason,
             })
 
     results.sort(key=lambda item: item["name"])

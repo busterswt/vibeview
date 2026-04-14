@@ -395,6 +395,66 @@ def test_node_agent_named_interface_stats_computes_rates(monkeypatch):
     assert iface["tx_bytes_per_second"] == 1500.0
 
 
+def test_get_node_irq_balance_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_irq_balance",
+        lambda node_name: {
+            "interfaces": [{"name": "bond0", "risk": "medium", "top_cpu": "CPU7"}],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_irq_balance("node-1", "hv-1")
+
+    assert result["interfaces"][0]["name"] == "bond0"
+    assert result["interfaces"][0]["risk"] == "medium"
+
+
+def test_node_agent_irq_balance_computes_cpu_concentration(monkeypatch):
+    outputs = iter([
+        "\n".join([
+            "__IFACES__",
+            "bond0|1000|2000|8|8|0|1",
+            "eno1|3000|4000|8|8|0|0",
+            "__INTERRUPTS__",
+            "           CPU0       CPU1       CPU2       CPU3",
+            "100:      8000       100       100       100   IR-PCI-MSI  bond0-rx-0",
+            "101:      2000       100       100       100   IR-PCI-MSI  eno1-rx-0",
+            "__END__",
+        ]),
+        "\n".join([
+            "__IFACES__",
+            "bond0|81001000|2000|8|8|0|1",
+            "eno1|3000|4000|8|8|0|0",
+            "__INTERRUPTS__",
+            "           CPU0       CPU1       CPU2       CPU3",
+            "100:      8000       100       100       100   IR-PCI-MSI  bond0-rx-0",
+            "101:      2000       100       100       100   IR-PCI-MSI  eno1-rx-0",
+            "__END__",
+        ]),
+    ])
+    times = iter([1000.0, 1002.0])
+
+    monkeypatch.setattr(
+        node_agent_metrics_ops,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=next(outputs), stderr=""),
+    )
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: next(times))
+    node_agent_metrics_ops._irq_balance_prev_samples.clear()
+
+    first = node_agent_metrics_ops._get_host_irq_balance()
+    second = node_agent_metrics_ops._get_host_irq_balance()
+
+    assert first["error"] is None
+    bond = next(item for item in second["interfaces"] if item["name"] == "bond0")
+    assert bond["active_cpus"] == 4
+    assert bond["top_cpu"] == "CPU0"
+    assert bond["top_cpu_share_pct"] == 96.4
+    assert bond["risk"] == "medium"
+
+
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
     payload = {
         "headings": [

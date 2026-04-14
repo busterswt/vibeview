@@ -85,6 +85,10 @@ def get_host_network_stats(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/network-stats")
 
 
+def get_host_irq_balance(node_name: str) -> dict:
+    return _request_json(node_name, "GET", "/host/irq-balance")
+
+
 def get_host_instance_port_stats(node_name: str) -> dict:
     try:
         return _request_json(node_name, "GET", "/host/instance-port-stats")

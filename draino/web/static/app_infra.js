@@ -311,6 +311,7 @@ function selectNode(name) {
   if (activeTab === 'monitor') {
     if (shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
     _ensureNetworkDataLoaded(name);
+    loadNodeIrqBalance(name);
   }
   if (activeTab === 'pods') actionPodsInline();
   // Load network config data if Configure tab is active
@@ -418,6 +419,40 @@ function refreshSelectedNodeNetworkStats() {
   const enabled = enabledNetStatsSet(selectedNode);
   if (!enabled.size) return;
   loadNodeNetworkStats(selectedNode);
+}
+
+async function loadNodeIrqBalance(name, force = false) {
+  const cached = nodeIrqBalanceCache[name];
+  if (!force && cached?.loading) return;
+  nodeIrqBalanceCache[name] = {
+    ...(cached || {}),
+    loading: true,
+    error: null,
+  };
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/irq-balance`);
+    const json = await resp.json();
+    nodeIrqBalanceCache[name] = {
+      loading: false,
+      interfaces: json.interfaces || [],
+      error: json.error || null,
+      fetchedAt: new Date(),
+    };
+  } catch (e) {
+    nodeIrqBalanceCache[name] = {
+      loading: false,
+      interfaces: [],
+      error: String(e),
+      fetchedAt: new Date(),
+    };
+  }
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+}
+
+function refreshSelectedNodeIrqBalance() {
+  if (activeView !== 'infrastructure' || activeTab !== 'monitor' || !selectedNode || !nodes[selectedNode]) return;
+  loadNodeIrqBalance(selectedNode);
 }
 
 async function loadNodeInstancePortStats(nodeName, instanceId, force = false) {
@@ -596,6 +631,7 @@ function showTab(name) {
   if (name === 'pods' && selectedNode && lastPodsCache?.node !== selectedNode) actionPodsInline();
   if (name === 'monitor' && selectedNode && shouldLoadNodeMetrics(selectedNode)) loadNodeMetrics(selectedNode);
   if (name === 'monitor' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
+  if (name === 'monitor' && selectedNode) loadNodeIrqBalance(selectedNode);
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
   if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
@@ -887,6 +923,7 @@ function renderNodeMonitorTab(nd) {
   const enabledStats = enabledNetStatsSet(nd.k8s_name);
   const netStats = nodeNetStatsCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
   const netStatsByName = Object.fromEntries((netStats.interfaces || []).map(item => [item.name, item]));
+  const irqBalance = nodeIrqBalanceCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
   const bondByMember = {};
   for (const iface of ifaces) {
     if (iface.type !== 'bond') continue;
@@ -1001,6 +1038,48 @@ function renderNodeMonitorTab(nd) {
         </table>
       ` : (!ifaceCache.ifacesLoading ? `<div style="color:var(--dim)">No physical or bond interfaces found.</div>` : '')}
       ${netStats.fetchedAt && enabledStats.size ? `<div class="runtime-note">Updated ${_fmtTime(netStats.fetchedAt)}</div>` : ''}
+    </div>
+  </div>`;
+
+  const irqRows = (irqBalance.interfaces || []).length
+    ? irqBalance.interfaces.map((item) => {
+      const riskClass = item.risk === 'high' ? 'mv red' : item.risk === 'medium' ? 'mv yellow' : 'mv green';
+      const traffic = [item.rx_bytes_per_second != null ? `RX ${fmtNetRate(item.rx_bytes_per_second)}` : null, item.tx_bytes_per_second != null ? `TX ${fmtNetRate(item.tx_bytes_per_second)}` : null]
+        .filter(Boolean)
+        .join(' · ') || 'warming up';
+      const topShare = item.top_cpu_share_pct != null ? `${item.top_cpu_share_pct}%` : '—';
+      const topCpu = item.top_cpu || '—';
+      const queues = `${item.rx_queues ?? 0}/${item.tx_queues ?? 0}`;
+      return `<tr>
+        <td><strong>${esc(item.name)}</strong></td>
+        <td>${esc(traffic)}</td>
+        <td>${esc(item.irq_total ?? '—')}</td>
+        <td>${esc(item.active_cpus ?? 0)} / ${esc(item.cpu_count ?? '—')}</td>
+        <td>${esc(topCpu)}</td>
+        <td>${esc(topShare)}</td>
+        <td>${esc(queues)}</td>
+        <td>${item.rps_enabled || item.xps_enabled ? `<span class="tree-badge">${item.rps_enabled ? 'RPS' : ''}${item.rps_enabled && item.xps_enabled ? ' · ' : ''}${item.xps_enabled ? 'XPS' : ''}</span>` : '<span style="color:var(--dim)">—</span>'}</td>
+        <td><span class="${riskClass}">${esc(item.risk || 'low')}</span></td>
+        <td style="color:var(--dim)">${esc(item.reason || '—')}</td>
+      </tr>`;
+    }).join('')
+    : `<tr><td colspan="10" style="color:var(--dim)">No IRQ balance data reported.</td></tr>`;
+
+  h += `<div class="card" style="margin-top:12px">
+    <div class="card-title">NIC IRQ Balance</div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
+        Highlights interfaces where interrupt handling appears concentrated on too few CPUs under active traffic.
+      </div>
+      ${irqBalance.loading ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading IRQ balance…</div>` : ''}
+      ${irqBalance.error ? `<div class="etcd-alert danger">IRQ balance error: ${esc(irqBalance.error)}</div>` : ''}
+      <table class="data-table">
+        <thead>
+          <tr><th>Interface</th><th>Traffic</th><th>IRQs</th><th>Active CPUs</th><th>Top CPU</th><th>Top Share</th><th>Queues</th><th>RPS/XPS</th><th>Risk</th><th>Reason</th></tr>
+        </thead>
+        <tbody>${irqRows}</tbody>
+      </table>
+      ${irqBalance.fetchedAt ? `<div class="runtime-note">Updated ${_fmtTime(irqBalance.fetchedAt)}</div>` : ''}
     </div>
   </div>`;
 
