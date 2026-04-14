@@ -67,6 +67,9 @@ function renderNetworksView() {
       ? `<span class="sdot green"></span>up` : `<span class="sdot red"></span>down`;
     const ext    = n.external ? `<span class="tag-amp">ext</span>` : '—';
     const shared = n.shared ? '✓' : '—';
+    const routerPill = n.router_connected && n.router_id
+      ? `<button class="btn sm" style="padding:1px 8px;font-size:11px" onclick="event.stopPropagation();navigateToRouterFromNetwork('${escAttr(n.router_id)}')">Connected</button>`
+      : '<span style="color:var(--dim)">—</span>';
     const rowSel = selectedNetwork === n.id ? ' selected' : '';
     rows += `<tr class="${rowSel}" style="cursor:pointer" data-net-id="${escAttr(n.id)}" onclick="selectNetwork('${escAttr(n.id)}')">
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(n.name)}</td>
@@ -75,6 +78,7 @@ function renderNetworksView() {
       <td>${esc(n.network_type) || '<span style="color:var(--dim)">—</span>'}</td>
       <td>${shared}</td>
       <td>${ext}</td>
+      <td>${routerPill}</td>
       <td>${n.subnet_count}</td>
       <td class="uuid-short" title="${esc(n.project_id)}">${n.project_id.slice(0, 8) || '—'}</td>
     </tr>`;
@@ -95,13 +99,21 @@ function renderNetworksView() {
         <th>Type <span class="hint">vDS Type</span></th>
         <th>Shared</th>
         <th>External <span class="hint">Uplink</span></th>
+        <th>Router</th>
         <th>Subnets</th>
         <th>Project</th>
       </tr></thead>
-      <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:20px">No networks match the filter.</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:20px">No networks match the filter.</td></tr>'}</tbody>
     </table>
     ${buildPager(netState, filtered.length, 'netState', 'renderNetworksView')}`;
   restoreFocusedInput(wrap, focusedInput);
+}
+
+async function navigateToRouterFromNetwork(routerId) {
+  if (!routerId) return;
+  switchNetworkingSection('routers');
+  await loadRouters();
+  await selectRouter(routerId);
 }
 
 function appendNetError(msg) {

@@ -19,12 +19,32 @@ def coerce_bool(value: object) -> bool:
 def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return all Neutron networks visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)
+    connected_router_by_network: dict[str, str] = {}
+    try:
+        for port in conn.network.ports():
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            device_owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+            if not _is_router_interface_owner(device_owner):
+                continue
+            network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+            router_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+            if network_id and router_id and network_id not in connected_router_by_network:
+                connected_router_by_network[network_id] = router_id
+    except Exception:
+        connected_router_by_network = {}
+
     result = []
     for network in conn.network.networks():
         data = network.to_dict() if hasattr(network, "to_dict") else {}
         raw_external = data.get("router:external")
         if raw_external is None:
             raw_external = getattr(network, "is_router_external", False)
+        network_type = (
+            data.get("provider:network_type")
+            or getattr(network, "provider_network_type", None)
+            or getattr(network, "network_type", None)
+            or ""
+        )
         result.append({
             "id": network.id,
             "name": network.name or "(unnamed)",
@@ -32,9 +52,11 @@ def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
             "admin_state": "up" if network.is_admin_state_up else "down",
             "shared": bool(network.is_shared),
             "external": coerce_bool(raw_external),
-            "network_type": data.get("provider:network_type") or "",
+            "network_type": network_type,
             "project_id": network.project_id or "",
             "subnet_count": len(list(network.subnet_ids or [])),
+            "router_connected": network.id in connected_router_by_network,
+            "router_id": connected_router_by_network.get(network.id, ""),
         })
     return result
 

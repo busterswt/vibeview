@@ -41,6 +41,56 @@ def test_get_networks_coerces_external_flag_strings(monkeypatch):
     assert items[2]["external"] is True
 
 
+def test_get_networks_includes_router_connection_and_network_type_fallback(monkeypatch):
+    class FakeNetwork:
+        def __init__(self):
+            self.id = "net-1"
+            self.name = "tenant-net"
+            self.status = "ACTIVE"
+            self.is_admin_state_up = True
+            self.is_shared = False
+            self.project_id = "proj-1"
+            self.subnet_ids = ["subnet-1"]
+            self.is_router_external = False
+            self.provider_network_type = "vxlan"
+
+        def to_dict(self):
+            return {"router:external": False}
+
+    class FakePort:
+        def __init__(self):
+            self.network_id = "net-1"
+            self.device_id = "router-1"
+            self.device_owner = "network:router_interface"
+
+        def to_dict(self):
+            return {
+                "network_id": "net-1",
+                "device_id": "router-1",
+                "device_owner": "network:router_interface",
+            }
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def networks():
+            return [FakeNetwork()]
+
+        @staticmethod
+        def ports():
+            return [FakePort()]
+
+    class FakeConn:
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    items = web_server._get_networks(auth=None)
+
+    assert items[0]["network_type"] == "vxlan"
+    assert items[0]["router_connected"] is True
+    assert items[0]["router_id"] == "router-1"
+
+
 def test_get_routers_includes_gateway_and_interface_counts(monkeypatch):
     class FakeRouter:
         def __init__(self):

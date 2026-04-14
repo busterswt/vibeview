@@ -1044,15 +1044,11 @@ function renderNodeMonitorTab(nd) {
   const irqRows = (irqBalance.interfaces || []).length
     ? irqBalance.interfaces.map((item) => {
       const riskClass = item.risk === 'high' ? 'mv red' : item.risk === 'medium' ? 'mv yellow' : 'mv green';
-      const traffic = [item.rx_bytes_per_second != null ? `RX ${fmtNetRate(item.rx_bytes_per_second)}` : null, item.tx_bytes_per_second != null ? `TX ${fmtNetRate(item.tx_bytes_per_second)}` : null]
-        .filter(Boolean)
-        .join(' · ') || 'warming up';
       const topShare = item.top_cpu_share_pct != null ? `${item.top_cpu_share_pct}%` : '—';
       const topCpu = item.top_cpu || '—';
       const queues = `${item.rx_queues ?? 0}/${item.tx_queues ?? 0}`;
       return `<tr>
         <td><strong>${esc(item.name)}</strong></td>
-        <td>${esc(traffic)}</td>
         <td>${esc(item.irq_total ?? '—')}</td>
         <td>${esc(item.active_cpus ?? 0)} / ${esc(item.cpu_count ?? '—')}</td>
         <td>${esc(topCpu)}</td>
@@ -1063,7 +1059,7 @@ function renderNodeMonitorTab(nd) {
         <td style="color:var(--dim)">${esc(item.reason || '—')}</td>
       </tr>`;
     }).join('')
-    : `<tr><td colspan="10" style="color:var(--dim)">No IRQ balance data reported.</td></tr>`;
+    : `<tr><td colspan="9" style="color:var(--dim)">No IRQ balance data reported.</td></tr>`;
 
   h += `<div class="card" style="margin-top:12px">
     <div class="card-title">NIC IRQ Balance</div>
@@ -1075,7 +1071,7 @@ function renderNodeMonitorTab(nd) {
       ${irqBalance.error ? `<div class="etcd-alert danger">IRQ balance error: ${esc(irqBalance.error)}</div>` : ''}
       <table class="data-table">
         <thead>
-          <tr><th>Interface</th><th>Traffic</th><th>IRQs</th><th>Active CPUs</th><th>Top CPU</th><th>Top Share</th><th>Queues</th><th>RPS/XPS</th><th>Risk</th><th>Reason</th></tr>
+          <tr><th>Interface</th><th>IRQs</th><th>Active CPUs</th><th>Top CPU</th><th>Top Share</th><th>Queues</th><th>RPS/XPS</th><th>Risk</th><th>Reason</th></tr>
         </thead>
         <tbody>${irqRows}</tbody>
       </table>
