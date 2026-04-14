@@ -83,6 +83,7 @@ from .report_helpers import (
     build_k8s_pvc_workload_report as _build_k8s_pvc_workload_report,
     build_k8s_rollout_health_report as _build_k8s_rollout_health_report,
     build_maintenance_readiness_report as _build_maintenance_readiness_report,
+    build_nova_activity_capacity_report as _build_nova_activity_capacity_report,
     build_placement_risk_report as _build_placement_risk_report,
     build_project_placement_report as _build_project_placement_report,
     render_capacity_headroom_csv as _render_capacity_headroom_csv,
@@ -90,6 +91,7 @@ from .report_helpers import (
     render_k8s_pvc_workload_csv as _render_k8s_pvc_workload_csv,
     render_k8s_rollout_health_csv as _render_k8s_rollout_health_csv,
     render_maintenance_readiness_csv as _render_maintenance_readiness_csv,
+    render_nova_activity_capacity_csv as _render_nova_activity_capacity_csv,
     render_placement_risk_csv as _render_placement_risk_csv,
     render_project_placement_csv as _render_project_placement_csv,
 )

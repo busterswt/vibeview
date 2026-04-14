@@ -17,6 +17,14 @@ const REPORT_META = {
     icon: '📊',
     requiresOpenStack: true,
   },
+  'nova-activity-capacity': {
+    label: 'Nova Activity & Capacity',
+    subtitle: 'Current estate, recent queryable change window, and Placement headroom',
+    url: '/api/reports/nova-activity-capacity',
+    csvUrl: '/api/reports/nova-activity-capacity.csv',
+    icon: '🧭',
+    requiresOpenStack: true,
+  },
   'k8s-node-health-density': {
     label: 'Kubernetes Node Health & Density',
     subtitle: 'Kubelet drift, pod density, PVC hotspots, and standout nodes',
@@ -69,7 +77,7 @@ function guessReportApiIssue(message, status) {
   if (text.includes('neutron')) service = 'Neutron';
   else if (text.includes('nova')) service = 'Nova';
   else if (text.includes('keystone') || (text.includes('auth') && text.includes('token'))) service = 'Keystone';
-  else if ((text.includes('timeout') || text.includes('upstream')) && reportState.active === 'capacity-headroom') service = 'Nova';
+  else if ((text.includes('timeout') || text.includes('upstream')) && (reportState.active === 'capacity-headroom' || reportState.active === 'nova-activity-capacity')) service = 'Nova';
   if (!service) return null;
   return {
     service,
@@ -125,7 +133,7 @@ async function loadActiveReport(force = false) {
     }
     const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
-    else if (reportState.active === 'capacity-headroom') recordApiSuccess('Nova');
+    else if (reportState.active === 'capacity-headroom' || reportState.active === 'nova-activity-capacity') recordApiSuccess('Nova');
     if (json.error) throw new Error(json.error);
     reportState.reports[key] = json.report;
   } catch (e) {
@@ -458,6 +466,209 @@ function renderCapacityReport(activeMeta, report, nowLabel) {
             `).join('')}
           </tbody>
         </table>
+      </div>
+    </section>
+
+    ${renderReportDebugCard(report)}
+  `;
+}
+
+function renderNovaActivityCapacityReport(activeMeta, report, nowLabel) {
+  const summary = report.summary || {};
+  const summaryFoot = report.summary_foot || {};
+  const findings = report.findings || [];
+  const azItems = report.az_items || [];
+  const projectItems = report.project_items || [];
+  const hypervisorItems = report.hypervisor_items || [];
+  const deletedItems = report.deleted_items || [];
+  const statusItems = report.status_items || [];
+  const recent = report.recent_activity || {};
+  const totalProjects = Number(report.scope?.projects ?? projectItems.length) || 0;
+  const totalInstances = Number(report.scope?.instances ?? summary.active_instances ?? 0) || 0;
+  return `
+    <section class="report-header-card">
+      <div class="report-head-top">
+        <div>
+          <div class="report-title">${esc(report.title || activeMeta.label)}</div>
+          <div class="report-subtitle">${esc(report.subtitle || '')}</div>
+        </div>
+      </div>
+      <div class="report-meta-row">
+        <span class="meta-pill">Nova current state</span>
+        <span class="meta-pill">Placement live usage</span>
+        <span class="meta-pill">Recent change window: ${esc(String(report.scope?.window_hours ?? 24))}h</span>
+        <span class="meta-pill">${esc(String(totalInstances))} instances</span>
+        <span class="meta-pill">Generated ${esc(nowLabel)}</span>
+        ${renderReportActionPills()}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-body">
+        <div class="card-note">This report is API-derived only. It does not persist historical snapshots, so deleted visibility and recent activity only reflect what Nova still exposes right now.</div>
+      </div>
+    </section>
+
+    <section class="report-hero-grid report-hero-grid-five">
+      ${renderCapacityHero('Active Instances', String(summary.active_instances ?? 0), 'good', summaryFoot.active_instances || '')}
+      ${renderCapacityHero('Deleted Visible', String(summary.deleted_visible ?? 0), (summary.deleted_visible ?? 0) > 0 ? 'warn' : 'good', summaryFoot.deleted_visible || '')}
+      ${renderCapacityHero(`Changed Since ${esc(String(report.scope?.window_hours ?? 24))}h`, String(summary.changed_since_window ?? 0), (summary.changed_since_window ?? 0) > 0 ? 'warn' : 'good', summaryFoot.changed_since_window || '')}
+      ${renderCapacityHero('vCPU Headroom', renderPercentValue(summary.vcpu_headroom_pct), summary.vcpu_headroom_pct != null && summary.vcpu_headroom_pct < 20 ? 'bad' : 'good', summaryFoot.vcpu_headroom_pct || '')}
+      ${renderCapacityHero('RAM Headroom', renderPercentValue(summary.ram_headroom_pct), summary.ram_headroom_pct != null && summary.ram_headroom_pct < 20 ? 'warn' : 'good', summaryFoot.ram_headroom_pct || '')}
+    </section>
+
+    <section class="report-grid-two">
+      ${renderFindingsCard(findings, 'Highest-Risk Findings')}
+      <div class="card">
+        <div class="card-title"><span>Current Capacity by AZ</span></div>
+        <div class="card-body report-chart-strip">
+          ${azItems.flatMap(item => ([
+            renderReportBreakdownBar(`${item.availability_zone || 'unknown'} vCPU`, Math.round(item.vcpus_used_pct || 0), 100, (item.vcpus_used_pct || 0) >= 85 ? 'bad' : (item.vcpus_used_pct || 0) >= 70 ? 'warn' : 'good').replace(`${Math.round(item.vcpus_used_pct || 0)} / 100`, `${Math.round(item.vcpus_used_pct || 0)}%`),
+            renderReportBreakdownBar(`${item.availability_zone || 'unknown'} RAM`, Math.round(item.memory_mb_used_pct || 0), 100, (item.memory_mb_used_pct || 0) >= 85 ? 'bad' : (item.memory_mb_used_pct || 0) >= 70 ? 'warn' : 'good').replace(`${Math.round(item.memory_mb_used_pct || 0)} / 100`, `${Math.round(item.memory_mb_used_pct || 0)}%`),
+          ])).join('')}
+        </div>
+      </div>
+    </section>
+
+    <section class="report-grid-three">
+      <div class="card">
+        <div class="card-title"><span>Recent Activity Window</span></div>
+        <div class="card-body report-chart-strip">
+          ${renderReportBreakdownBar('Creates', recent.created ?? 0, Math.max(recent.changed ?? 0, 1), 'good')}
+          ${renderReportBreakdownBar('Deletes', recent.deleted ?? 0, Math.max(recent.changed ?? 0, 1), 'bad')}
+          ${renderReportBreakdownBar('Updates', recent.updated ?? 0, Math.max(recent.changed ?? 0, 1), 'blue')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Active Status Mix</span></div>
+        <div class="card-body report-chart-strip">
+          ${statusItems.map(item => renderReportBreakdownBar(item.status || 'UNKNOWN', item.count ?? 0, Math.max(totalInstances, 1), item.status === 'ACTIVE' ? 'good' : item.status === 'ERROR' ? 'bad' : 'warn')).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Placement Hotspots</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>AZ</th>
+                <th>vCPU %</th>
+                <th>RAM %</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(report.placement_hotspots || []).map(item => `
+                <tr>
+                  <td class="mono">${esc(item.hypervisor || '')}</td>
+                  <td>${esc(item.availability_zone || '—')}</td>
+                  <td>${renderPercentValue(item.vcpus_used_pct)}</td>
+                  <td>${renderPercentValue(item.memory_mb_used_pct)}</td>
+                </tr>
+              `).join('') || `
+                <tr>
+                  <td colspan="4" class="card-note">No current Placement hotspots detected.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span>Top Projects by Active Instances</span></div>
+      <div class="card-body report-table-wrap">
+        <table class="data-table report-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Project ID</th>
+              <th>Active</th>
+              <th>Hosts</th>
+              <th>24h Changes</th>
+              <th>Visible Deletes</th>
+              <th>Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${projectItems.map(item => `
+              <tr>
+                <td>${esc(item.project_name || item.project_id || '')}</td>
+                <td class="mono">${esc(item.project_id || '')}</td>
+                <td>${esc(String(item.active_instances ?? 0))}</td>
+                <td>${esc(String(item.host_count ?? 0))}</td>
+                <td>${esc(String(item.recent_changes ?? 0))}</td>
+                <td>${esc(String(item.deleted_visible ?? 0))}</td>
+                <td><span class="report-tag ${item.signal === 'high-churn' ? 'red' : item.signal === 'growing' ? 'yellow' : 'green'}">${esc(item.signal || 'stable')}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="report-grid-two">
+      <div class="card">
+        <div class="card-title"><span>Busiest Hypervisors</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>AZ</th>
+                <th>Instances</th>
+                <th>Projects</th>
+                <th>vCPU Used %</th>
+                <th>RAM Used %</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${hypervisorItems.map(item => `
+                <tr>
+                  <td class="mono">${esc(item.hypervisor || '')}</td>
+                  <td>${esc(item.availability_zone || '—')}</td>
+                  <td>${esc(String(item.active_instances ?? 0))}</td>
+                  <td>${esc(String(item.project_count ?? 0))}</td>
+                  <td>${renderPercentValue(item.vcpus_used_pct)}</td>
+                  <td>${renderPercentValue(item.memory_mb_used_pct)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>Deleted Instances Still Visible</span></div>
+        <div class="card-body report-table-wrap">
+          <table class="data-table report-table">
+            <thead>
+              <tr>
+                <th>Instance</th>
+                <th>Project</th>
+                <th>Host</th>
+                <th>Deleted At</th>
+                <th>Flavor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${deletedItems.map(item => `
+                <tr>
+                  <td class="mono">${esc(item.name || '')}</td>
+                  <td>${esc(item.project_name || '')}</td>
+                  <td class="mono">${esc(item.host || '—')}</td>
+                  <td>${esc(item.deleted_at || '—')}</td>
+                  <td>${esc(item.flavor || '—')}</td>
+                </tr>
+              `).join('') || `
+                <tr>
+                  <td colspan="5" class="card-note">No deleted instances are currently visible from Nova.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -1223,6 +1434,8 @@ function renderReportsView() {
   } else if (report) {
     content = reportState.active === 'capacity-headroom'
       ? renderCapacityReport(activeMeta, report, nowLabel)
+      : reportState.active === 'nova-activity-capacity'
+        ? renderNovaActivityCapacityReport(activeMeta, report, nowLabel)
       : reportState.active === 'k8s-node-health-density'
         ? renderK8sNodeHealthDensityReport(activeMeta, report, nowLabel)
       : reportState.active === 'k8s-pvc-workload'

@@ -316,6 +316,206 @@ def test_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
     assert "cmp-a01" in export.text
 
 
+def test_build_nova_activity_capacity_report_summarises_api_only_snapshot(monkeypatch, tmp_path):
+    server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
+
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_nova_activity_snapshot",
+        lambda auth=None, window_hours=24: {
+            "window_hours": 24,
+            "since": "2026-04-13T20:00:00Z",
+            "active_instances": [
+                {
+                    "id": "vm-1",
+                    "name": "api-01",
+                    "status": "ACTIVE",
+                    "project_id": "proj-a",
+                    "project_name": "analytics-prod",
+                    "host": "cmp-42",
+                    "availability_zone": "az-a",
+                    "created_at": "2026-04-14T10:00:00Z",
+                    "updated_at": "2026-04-14T10:00:00Z",
+                    "deleted_at": "",
+                    "flavor": "m1.large",
+                    "deleted": False,
+                },
+                {
+                    "id": "vm-2",
+                    "name": "api-02",
+                    "status": "SHUTOFF",
+                    "project_id": "proj-a",
+                    "project_name": "analytics-prod",
+                    "host": "cmp-42",
+                    "availability_zone": "az-a",
+                    "created_at": "2026-04-12T10:00:00Z",
+                    "updated_at": "2026-04-14T11:00:00Z",
+                    "deleted_at": "",
+                    "flavor": "m1.large",
+                    "deleted": False,
+                },
+                {
+                    "id": "vm-3",
+                    "name": "edge-01",
+                    "status": "ACTIVE",
+                    "project_id": "proj-b",
+                    "project_name": "customer-edge",
+                    "host": "cmp-31",
+                    "availability_zone": "az-b",
+                    "created_at": "2026-04-10T10:00:00Z",
+                    "updated_at": "2026-04-14T11:30:00Z",
+                    "deleted_at": "",
+                    "flavor": "m1.medium",
+                    "deleted": False,
+                },
+            ],
+            "deleted_visible": [
+                {
+                    "id": "vm-4",
+                    "name": "job-old",
+                    "status": "DELETED",
+                    "project_id": "proj-a",
+                    "project_name": "analytics-prod",
+                    "host": "cmp-41",
+                    "availability_zone": "az-a",
+                    "created_at": "2026-04-14T07:00:00Z",
+                    "updated_at": "2026-04-14T12:00:00Z",
+                    "deleted_at": "2026-04-14T12:00:00Z",
+                    "flavor": "m1.small",
+                    "deleted": True,
+                }
+            ],
+            "recent_activity": {"changed": 4, "created": 1, "deleted": 1, "updated": 2},
+        },
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_placement_capacity_snapshot",
+        lambda auth=None: {
+            "items": [
+                {
+                    "hypervisor": "cmp-42",
+                    "availability_zone": "az-a",
+                    "aggregates": ["general"],
+                    "vcpus": 100,
+                    "vcpus_used": 82,
+                    "vcpus_effective": 100,
+                    "memory_mb": 200000,
+                    "memory_mb_used": 160000,
+                    "memory_mb_effective": 200000,
+                },
+                {
+                    "hypervisor": "cmp-31",
+                    "availability_zone": "az-b",
+                    "aggregates": ["general"],
+                    "vcpus": 80,
+                    "vcpus_used": 40,
+                    "vcpus_effective": 80,
+                    "memory_mb": 180000,
+                    "memory_mb_used": 90000,
+                    "memory_mb_effective": 180000,
+                },
+            ]
+        },
+    )
+
+    payload = web_server._build_nova_activity_capacity_report(server)
+
+    assert payload["error"] is None
+    assert payload["report"]["summary"]["active_instances"] == 3
+    assert payload["report"]["summary"]["deleted_visible"] == 1
+    assert payload["report"]["summary"]["changed_since_window"] == 4
+    assert payload["report"]["project_items"][0]["project_name"] == "analytics-prod"
+    assert payload["report"]["hypervisor_items"][0]["hypervisor"] == "cmp-42"
+    assert payload["report"]["deleted_items"][0]["name"] == "job-old"
+    assert payload["report"]["debug"]["counts"]["projects"] == 2
+
+
+def test_nova_activity_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_nova_activity_snapshot",
+        lambda auth=None, window_hours=24: {
+            "window_hours": 24,
+            "since": "2026-04-13T20:00:00Z",
+            "active_instances": [
+                {
+                    "id": "vm-1",
+                    "name": "api-01",
+                    "status": "ACTIVE",
+                    "project_id": "proj-a",
+                    "project_name": "analytics-prod",
+                    "host": "cmp-42",
+                    "availability_zone": "az-a",
+                    "created_at": "2026-04-14T10:00:00Z",
+                    "updated_at": "2026-04-14T10:00:00Z",
+                    "deleted_at": "",
+                    "flavor": "m1.large",
+                    "deleted": False,
+                }
+            ],
+            "deleted_visible": [],
+            "recent_activity": {"changed": 1, "created": 1, "deleted": 0, "updated": 0},
+        },
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_placement_capacity_snapshot",
+        lambda auth=None: {
+            "items": [
+                {
+                    "hypervisor": "cmp-42",
+                    "availability_zone": "az-a",
+                    "aggregates": ["general"],
+                    "vcpus": 100,
+                    "vcpus_used": 40,
+                    "vcpus_effective": 100,
+                    "memory_mb": 200000,
+                    "memory_mb_used": 90000,
+                    "memory_mb_effective": 200000,
+                }
+            ]
+        },
+    )
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": False,
+        },
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        report = client.get("/api/reports/nova-activity-capacity")
+        export = client.get("/api/reports/nova-activity-capacity.csv")
+
+    assert report.status_code == 200
+    assert report.json()["report"]["summary"]["active_instances"] == 1
+    assert export.status_code == 200
+    assert export.headers["content-disposition"] == 'attachment; filename="nova-activity-capacity.csv"'
+    assert "analytics-prod" in export.text
+
+
 def test_build_k8s_node_health_density_report_summarises_live_k8s_state(monkeypatch, tmp_path):
     server = web_server.DrainoServer(audit_log=str(tmp_path / "audit.log"))
     monkeypatch.setattr(

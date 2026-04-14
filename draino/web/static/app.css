@@ -902,6 +902,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.report-hero-grid-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .report-hero-card {
   background: var(--white);
   border: 1px solid var(--border);
@@ -926,6 +927,7 @@ body.no-hints .vmware-ref-card { display: none !important; }
 .report-hero-foot.warn { color: var(--yellow); }
 .report-hero-foot.bad { color: var(--red); }
 .report-grid-two { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 14px; }
+.report-grid-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .report-findings { display: grid; gap: 8px; }
 .report-finding-row {
   display: grid;

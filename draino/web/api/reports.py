@@ -14,6 +14,7 @@ from ..report_helpers import (
     build_k8s_pvc_workload_report,
     build_k8s_rollout_health_report,
     build_maintenance_readiness_report,
+    build_nova_activity_capacity_report,
     build_placement_risk_report,
     build_project_placement_report,
     render_capacity_headroom_csv,
@@ -21,6 +22,7 @@ from ..report_helpers import (
     render_k8s_pvc_workload_csv,
     render_k8s_rollout_health_csv,
     render_maintenance_readiness_csv,
+    render_nova_activity_capacity_csv,
     render_placement_risk_csv,
     render_project_placement_csv,
 )
@@ -88,6 +90,31 @@ async def api_report_capacity_headroom_csv(request: Request):
         csv_text,
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="capacity-headroom.csv"'},
+    )
+
+
+@router.get("/api/reports/nova-activity-capacity")
+async def api_report_nova_activity_capacity(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        report = await loop.run_in_executor(None, build_nova_activity_capacity_report, session.server)
+        report["api_issue"] = None
+        return report
+    except Exception as exc:
+        return {"report": None, "error": str(exc), "api_issue": build_api_issue("Nova", "GET nova-activity-capacity report", exc)}
+
+
+@router.get("/api/reports/nova-activity-capacity.csv")
+async def api_report_nova_activity_capacity_csv(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, build_nova_activity_capacity_report, session.server)
+    csv_text = await loop.run_in_executor(None, render_nova_activity_capacity_csv, report["report"])
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="nova-activity-capacity.csv"'},
     )
 
 

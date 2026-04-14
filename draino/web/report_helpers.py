@@ -5,6 +5,7 @@ import csv
 import io
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
@@ -653,6 +654,347 @@ def render_project_placement_csv(report: dict) -> str:
             item.get("risk", ""),
             item.get("reason", ""),
             item.get("top_hosts_label", ""),
+        ])
+    return output.getvalue()
+
+
+def _safe_pct(numerator: float | int | None, denominator: float | int | None) -> float | None:
+    try:
+        if numerator is None or denominator in (None, 0):
+            return None
+        return (float(numerator) / float(denominator)) * 100.0
+    except Exception:
+        return None
+
+
+def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
+    """Build an API-only Nova + Placement current-state and recent-activity report."""
+    started = time.perf_counter()
+
+    activity_started = time.perf_counter()
+    activity = openstack_ops.get_nova_activity_snapshot(auth=server.openstack_auth, window_hours=24)
+    activity_ms = (time.perf_counter() - activity_started) * 1000.0
+
+    placement_started = time.perf_counter()
+    placement = openstack_ops.get_placement_capacity_snapshot(auth=server.openstack_auth)
+    placement_ms = (time.perf_counter() - placement_started) * 1000.0
+
+    active_instances = activity.get("active_instances", [])
+    deleted_visible = activity.get("deleted_visible", [])
+    recent = activity.get("recent_activity", {})
+    placement_items = placement.get("items", [])
+
+    status_counts: dict[str, int] = {}
+    project_map: dict[str, dict] = {}
+    host_map: dict[str, dict] = {}
+    az_project_mix: dict[str, dict] = {}
+
+    for item in active_instances:
+        status = str(item.get("status") or "UNKNOWN").upper()
+        project_id = item.get("project_id") or "unknown"
+        project_name = item.get("project_name") or project_id
+        host = item.get("host") or "unknown"
+        az = item.get("availability_zone") or "unknown"
+
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+        project_entry = project_map.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_name,
+            "active_instances": 0,
+            "hosts": set(),
+            "azs": set(),
+        })
+        project_entry["active_instances"] += 1
+        project_entry["hosts"].add(host)
+        project_entry["azs"].add(az)
+
+        host_entry = host_map.setdefault(host, {
+            "hypervisor": host,
+            "active_instances": 0,
+            "projects": set(),
+        })
+        host_entry["active_instances"] += 1
+        host_entry["projects"].add(project_name)
+
+        mix = az_project_mix.setdefault(az, {})
+        mix[project_id] = mix.get(project_id, 0) + 1
+
+    recent_changed = int(recent.get("changed") or 0)
+    recent_created = int(recent.get("created") or 0)
+    recent_deleted = int(recent.get("deleted") or 0)
+    recent_updated = int(recent.get("updated") or 0)
+
+    for item in deleted_visible:
+        project_id = item.get("project_id") or "unknown"
+        project_name = item.get("project_name") or project_id
+        entry = project_map.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_name,
+            "active_instances": 0,
+            "hosts": set(),
+            "azs": set(),
+        })
+        entry["deleted_visible"] = int(entry.get("deleted_visible") or 0) + 1
+
+    for item in active_instances + deleted_visible:
+        project_id = item.get("project_id") or "unknown"
+        entry = project_map.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": item.get("project_name") or project_id,
+            "active_instances": 0,
+            "hosts": set(),
+            "azs": set(),
+        })
+        created_at = str(item.get("created_at") or "")
+        updated_at = str(item.get("updated_at") or "")
+        deleted_at = str(item.get("deleted_at") or "")
+        if deleted_at:
+            entry["recent_deletes"] = int(entry.get("recent_deletes") or 0) + (1 if _parse_window_ts(deleted_at, activity.get("since")) else 0)
+        elif created_at:
+            entry["recent_creates"] = int(entry.get("recent_creates") or 0) + (1 if _parse_window_ts(created_at, activity.get("since")) else 0)
+        elif updated_at:
+            entry["recent_updates"] = int(entry.get("recent_updates") or 0) + (1 if _parse_window_ts(updated_at, activity.get("since")) else 0)
+
+    project_items: list[dict] = []
+    for entry in project_map.values():
+        recent_creates = int(entry.get("recent_creates") or 0)
+        recent_deletes = int(entry.get("recent_deletes") or 0)
+        recent_updates = int(entry.get("recent_updates") or 0)
+        recent_changes = recent_creates + recent_deletes + recent_updates
+        signal = "stable"
+        if recent_creates + recent_deletes >= 20:
+            signal = "high-churn"
+        elif recent_changes >= 10:
+            signal = "growing"
+        project_items.append({
+            "project_id": entry["project_id"],
+            "project_name": entry["project_name"],
+            "active_instances": entry["active_instances"],
+            "host_count": len(entry["hosts"]),
+            "availability_zone_count": len(entry["azs"]),
+            "recent_creates": recent_creates,
+            "recent_deletes": recent_deletes,
+            "recent_updates": recent_updates,
+            "recent_changes": recent_changes,
+            "deleted_visible": int(entry.get("deleted_visible") or 0),
+            "signal": signal,
+        })
+    project_items.sort(key=lambda item: (-item["active_instances"], -item["recent_changes"], item["project_name"]))
+
+    placement_by_host = {item.get("hypervisor"): item for item in placement_items}
+    hypervisor_items: list[dict] = []
+    for host, entry in host_map.items():
+        placement_item = placement_by_host.get(host, {})
+        vcpu_pct = _safe_pct(placement_item.get("vcpus_used"), placement_item.get("vcpus_effective") or placement_item.get("vcpus"))
+        ram_pct = _safe_pct(placement_item.get("memory_mb_used"), placement_item.get("memory_mb_effective") or placement_item.get("memory_mb"))
+        hypervisor_items.append({
+            "hypervisor": host,
+            "availability_zone": placement_item.get("availability_zone") or "unknown",
+            "active_instances": entry["active_instances"],
+            "project_count": len(entry["projects"]),
+            "vcpus_used_pct": vcpu_pct,
+            "memory_mb_used_pct": ram_pct,
+        })
+    hypervisor_items.sort(key=lambda item: (-item["active_instances"], -(item.get("memory_mb_used_pct") or 0), item["hypervisor"]))
+
+    az_items_map: dict[str, dict] = {}
+    total_vcpus_effective = 0.0
+    total_vcpus_used = 0.0
+    total_ram_effective = 0.0
+    total_ram_used = 0.0
+    placement_hotspots: list[dict] = []
+    for item in placement_items:
+        az = item.get("availability_zone") or "unknown"
+        entry = az_items_map.setdefault(az, {
+            "availability_zone": az,
+            "vcpus_effective": 0.0,
+            "vcpus_used": 0.0,
+            "memory_mb_effective": 0.0,
+            "memory_mb_used": 0.0,
+            "hosts": 0,
+        })
+        vcpus_effective = float(item.get("vcpus_effective") or item.get("vcpus") or 0.0)
+        vcpus_used = float(item.get("vcpus_used") or 0.0)
+        memory_effective = float(item.get("memory_mb_effective") or item.get("memory_mb") or 0.0)
+        memory_used = float(item.get("memory_mb_used") or 0.0)
+        entry["hosts"] += 1
+        entry["vcpus_effective"] += vcpus_effective
+        entry["vcpus_used"] += vcpus_used
+        entry["memory_mb_effective"] += memory_effective
+        entry["memory_mb_used"] += memory_used
+        total_vcpus_effective += vcpus_effective
+        total_vcpus_used += vcpus_used
+        total_ram_effective += memory_effective
+        total_ram_used += memory_used
+
+        host_vcpu_pct = _safe_pct(vcpus_used, vcpus_effective)
+        host_ram_pct = _safe_pct(memory_used, memory_effective)
+        if (host_vcpu_pct or 0) >= 85 or (host_ram_pct or 0) >= 85:
+            placement_hotspots.append({
+                "hypervisor": item.get("hypervisor") or "",
+                "availability_zone": az,
+                "vcpus_used_pct": host_vcpu_pct,
+                "memory_mb_used_pct": host_ram_pct,
+            })
+
+    az_items = sorted(
+        ({
+            **entry,
+            "vcpus_used_pct": _safe_pct(entry["vcpus_used"], entry["vcpus_effective"]),
+            "memory_mb_used_pct": _safe_pct(entry["memory_mb_used"], entry["memory_mb_effective"]),
+            "project_count": len(az_project_mix.get(entry["availability_zone"], {})),
+        } for entry in az_items_map.values()),
+        key=lambda item: item["availability_zone"],
+    )
+    placement_hotspots.sort(key=lambda item: (-(item.get("memory_mb_used_pct") or 0), -(item.get("vcpus_used_pct") or 0), item["hypervisor"]))
+
+    deleted_items = [{
+        "name": item.get("name") or item.get("id") or "",
+        "project_name": item.get("project_name") or item.get("project_id") or "",
+        "host": item.get("host") or "—",
+        "deleted_at": item.get("deleted_at") or item.get("updated_at") or "",
+        "flavor": item.get("flavor") or "—",
+    } for item in deleted_visible[:25]]
+
+    findings: list[dict] = []
+    hottest_az = max(az_items, key=lambda item: ((item.get("vcpus_used_pct") or 0) + (item.get("memory_mb_used_pct") or 0)), default=None)
+    if hottest_az and ((hottest_az.get("vcpus_used_pct") or 0) >= 85 or (hottest_az.get("memory_mb_used_pct") or 0) >= 85):
+        findings.append({
+            "severity": "high",
+            "message": f"Compute AZ {hottest_az['availability_zone']} is under elevated pressure from current Placement usage.",
+        })
+    churn_project = max(project_items, key=lambda item: item["recent_creates"] + item["recent_deletes"], default=None)
+    if churn_project and (churn_project["recent_creates"] + churn_project["recent_deletes"]) >= 20:
+        findings.append({
+            "severity": "high",
+            "message": f"Project {churn_project['project_name']} shows elevated 24h create/delete churn.",
+        })
+    if deleted_visible:
+        findings.append({
+            "severity": "medium",
+            "message": f"{len(deleted_visible)} deleted instances remain queryable in Nova. Useful operationally, but not durable history.",
+        })
+    hottest_host = placement_hotspots[0] if placement_hotspots else None
+    if hottest_host:
+        findings.append({
+            "severity": "medium",
+            "message": f"Hypervisor {hottest_host['hypervisor']} is among the hottest current Placement consumers.",
+        })
+
+    status_items = [{"status": key, "count": value} for key, value in sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))]
+    summary = {
+        "active_instances": len(active_instances),
+        "deleted_visible": len(deleted_visible),
+        "changed_since_window": recent_changed,
+        "vcpu_headroom_pct": _safe_pct(max(0.0, total_vcpus_effective - total_vcpus_used), total_vcpus_effective),
+        "ram_headroom_pct": _safe_pct(max(0.0, total_ram_effective - total_ram_used), total_ram_effective),
+        "recent_creates": recent_created,
+        "recent_deletes": recent_deleted,
+        "recent_updates": recent_updated,
+    }
+    total_ms = (time.perf_counter() - started) * 1000.0
+
+    return {
+        "report": {
+            "key": "nova-activity-capacity",
+            "title": "Nova Activity & Capacity Snapshot",
+            "subtitle": "Current Nova estate, recent queryable instance changes, and Placement-backed headroom. This report is API-derived only and does not persist historical snapshots.",
+            "source": "OpenStack Nova + Placement",
+            "scope": {
+                "instances": len(active_instances),
+                "deleted_visible": len(deleted_visible),
+                "hypervisors": len(placement_items),
+                "projects": len(project_items),
+                "window_hours": int(activity.get("window_hours") or 24),
+            },
+            "summary": summary,
+            "summary_foot": {
+                "active_instances": f"{status_counts.get('ACTIVE', 0)} ACTIVE / {max(0, len(active_instances) - status_counts.get('ACTIVE', 0))} other current states",
+                "deleted_visible": "Currently queryable deleted servers from Nova",
+                "changed_since_window": f"{recent_created} creates / {recent_deleted} deletes / {recent_updated} updates",
+                "vcpu_headroom_pct": f"{int(round(total_vcpus_used))} used / {int(round(total_vcpus_effective or 0))} effective",
+                "ram_headroom_pct": f"{int(round(total_ram_used))} MiB used / {int(round(total_ram_effective or 0))} MiB effective",
+            },
+            "recent_activity": {
+                "changed": recent_changed,
+                "created": recent_created,
+                "deleted": recent_deleted,
+                "updated": recent_updated,
+            },
+            "findings": findings[:6],
+            "az_items": az_items,
+            "status_items": status_items,
+            "project_items": project_items[:20],
+            "hypervisor_items": hypervisor_items[:20],
+            "deleted_items": deleted_items,
+            "placement_hotspots": placement_hotspots[:10],
+            "debug": {
+                "timing_ms": {
+                    "total": round(total_ms, 1),
+                    "nova_activity": round(activity_ms, 1),
+                    "placement_capacity": round(placement_ms, 1),
+                },
+                "counts": {
+                    "active_instances": len(active_instances),
+                    "deleted_visible": len(deleted_visible),
+                    "recent_changed": recent_changed,
+                    "hypervisors": len(placement_items),
+                    "projects": len(project_items),
+                },
+            },
+        },
+        "error": None,
+    }
+
+
+def _parse_window_ts(value: str, since_text: str | None) -> bool:
+    since_dt = None
+    if since_text:
+        normalized = since_text[:-1] + "+00:00" if since_text.endswith("Z") else since_text
+        try:
+            since_dt = datetime.fromisoformat(normalized)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            since_dt = None
+    if since_dt is None:
+        return False
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        event_dt = datetime.fromisoformat(normalized)
+        if event_dt.tzinfo is None:
+            event_dt = event_dt.replace(tzinfo=timezone.utc)
+        return event_dt >= since_dt
+    except Exception:
+        return False
+
+
+def render_nova_activity_capacity_csv(report: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "project_name",
+        "project_id",
+        "active_instances",
+        "recent_creates",
+        "recent_deletes",
+        "recent_updates",
+        "recent_changes",
+        "deleted_visible",
+        "signal",
+    ])
+    for item in report.get("project_items", []):
+        writer.writerow([
+            item.get("project_name", ""),
+            item.get("project_id", ""),
+            item.get("active_instances", ""),
+            item.get("recent_creates", ""),
+            item.get("recent_deletes", ""),
+            item.get("recent_updates", ""),
+            item.get("recent_changes", ""),
+            item.get("deleted_visible", ""),
+            item.get("signal", ""),
         ])
     return output.getvalue()
 

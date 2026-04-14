@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Callable, Optional
 from urllib.parse import quote
@@ -102,6 +103,207 @@ def _servers_on_host(conn, hypervisor: str) -> list:
         s for s in conn.compute.servers(all_projects=True)
         if _server_host(s) == hypervisor
     ]
+
+
+def _iter_servers(conn, **kwargs):
+    try:
+        return conn.compute.servers(**kwargs)
+    except TypeError:
+        kwargs.pop("details", None)
+        return conn.compute.servers(**kwargs)
+
+
+def _parse_iso8601(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _server_deleted(server) -> bool:
+    data = server.to_dict() if hasattr(server, "to_dict") else {}
+    deleted_at = (
+        getattr(server, "deleted_at", None)
+        or data.get("deleted_at")
+        or data.get("OS-SRV-USG:terminated_at")
+    )
+    status = str(
+        getattr(server, "status", None)
+        or data.get("status")
+        or ""
+    ).upper()
+    vm_state = str(
+        getattr(server, "vm_state", None)
+        or data.get("OS-EXT-STS:vm_state")
+        or ""
+    ).lower()
+    return bool(deleted_at) or status in {"DELETED", "SOFT_DELETED"} or vm_state in {"deleted", "soft_deleted"}
+
+
+def _server_record(server, project_names: dict[str, str]) -> dict:
+    data = server.to_dict() if hasattr(server, "to_dict") else {}
+    project_id = _server_project_id(server) or "unknown"
+    flavor_ref = getattr(server, "flavor", None) or data.get("flavor") or {}
+    flavor_name = (
+        _field(flavor_ref, "original_name", "name")
+        or (data.get("flavor", {}).get("original_name") if isinstance(data.get("flavor"), dict) else None)
+        or _field(server, "flavor_name")
+        or ""
+    )
+    return {
+        "id": getattr(server, "id", None) or data.get("id") or "",
+        "name": getattr(server, "name", None) or data.get("name") or "",
+        "status": str(getattr(server, "status", None) or data.get("status") or "").upper() or "UNKNOWN",
+        "project_id": project_id,
+        "project_name": project_names.get(project_id) or project_id,
+        "host": _server_host(server) or "",
+        "availability_zone": (
+            getattr(server, "availability_zone", None)
+            or data.get("OS-EXT-AZ:availability_zone")
+            or data.get("availability_zone")
+            or ""
+        ),
+        "created_at": getattr(server, "created_at", None) or data.get("created_at") or "",
+        "updated_at": getattr(server, "updated_at", None) or data.get("updated_at") or "",
+        "deleted_at": (
+            getattr(server, "deleted_at", None)
+            or data.get("deleted_at")
+            or data.get("OS-SRV-USG:terminated_at")
+            or ""
+        ),
+        "flavor": flavor_name or "",
+        "deleted": _server_deleted(server),
+    }
+
+
+def get_nova_activity_snapshot(
+    auth: OpenStackAuth | None = None,
+    *,
+    window_hours: int = 24,
+) -> dict:
+    """Return an API-only snapshot of current and recent Nova instance activity."""
+    conn = _conn(auth=auth)
+    project_names: dict[str, str] = {}
+    try:
+        for project in conn.identity.projects():
+            project_id = getattr(project, "id", None) or ""
+            if project_id:
+                project_names[project_id] = getattr(project, "name", None) or project_id
+    except Exception:
+        pass
+
+    active_records = [
+        _server_record(server, project_names)
+        for server in _iter_servers(conn, all_projects=True, details=True)
+        if not _server_deleted(server)
+    ]
+
+    deleted_records: list[dict] = []
+    try:
+        deleted_records = [
+            record
+            for record in (
+                _server_record(server, project_names)
+                for server in _iter_servers(conn, all_projects=True, details=True, deleted=True)
+            )
+            if record["deleted"]
+        ]
+    except Exception:
+        deleted_records = []
+
+    since_dt = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
+    since_text = since_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    try:
+        recent_candidates = [
+            _server_record(server, project_names)
+            for server in _iter_servers(
+                conn,
+                all_projects=True,
+                details=True,
+                deleted=True,
+                changes_since=since_text,
+            )
+        ]
+    except Exception:
+        recent_candidates = active_records + deleted_records
+
+    recent_by_id: dict[str, dict] = {}
+    for record in recent_candidates:
+        if record["id"] and record["id"] not in recent_by_id:
+            recent_by_id[record["id"]] = record
+    recent_records = list(recent_by_id.values())
+
+    created = 0
+    deleted = 0
+    updated = 0
+    for record in recent_records:
+        created_at = _parse_iso8601(record.get("created_at"))
+        updated_at = _parse_iso8601(record.get("updated_at"))
+        deleted_at = _parse_iso8601(record.get("deleted_at"))
+        if created_at and created_at >= since_dt:
+            created += 1
+            continue
+        if deleted_at and deleted_at >= since_dt:
+            deleted += 1
+            continue
+        if record.get("deleted") and updated_at and updated_at >= since_dt:
+            deleted += 1
+            continue
+        updated += 1
+
+    return {
+        "window_hours": int(window_hours),
+        "since": since_text,
+        "active_instances": active_records,
+        "deleted_visible": sorted(
+            deleted_records,
+            key=lambda item: item.get("deleted_at") or item.get("updated_at") or "",
+            reverse=True,
+        ),
+        "recent_activity": {
+            "changed": len(recent_records),
+            "created": created,
+            "deleted": deleted,
+            "updated": max(0, updated),
+        },
+    }
+
+
+def get_placement_capacity_snapshot(auth: OpenStackAuth | None = None) -> dict:
+    """Return Placement-backed current capacity and usage by hypervisor."""
+    conn = _conn(auth=auth)
+    host_summaries = get_all_host_summaries(auth=auth)
+    items: list[dict] = []
+    try:
+        hypervisors = list(conn.compute.hypervisors())
+    except Exception:
+        hypervisors = []
+    for hv in hypervisors:
+        hostname = getattr(hv, "name", None) or getattr(hv, "hypervisor_hostname", None) or ""
+        if not hostname:
+            continue
+        placement = _placement_hypervisor_inventory(conn, hostname)
+        summary = host_summaries.get(hostname) or host_summaries.get(hostname.split(".", 1)[0]) or {}
+        items.append({
+            "hypervisor": hostname,
+            "availability_zone": summary.get("availability_zone") or "unknown",
+            "aggregates": summary.get("aggregates") or [],
+            "vcpus": placement.get("vcpus"),
+            "vcpus_used": placement.get("vcpus_used"),
+            "vcpus_effective": placement.get("vcpus_effective"),
+            "memory_mb": placement.get("memory_mb"),
+            "memory_mb_used": placement.get("memory_mb_used"),
+            "memory_mb_effective": placement.get("memory_mb_effective"),
+        })
+    items.sort(key=lambda item: item["hypervisor"])
+    return {"items": items}
 
 
 def _field(source, *names):
@@ -503,8 +705,14 @@ def _placement_hypervisor_inventory(conn, hypervisor: str) -> dict:
     result = {
         "vcpus": None,
         "vcpus_used": None,
+        "vcpus_effective": None,
+        "vcpus_reserved": None,
+        "vcpus_allocation_ratio": None,
         "memory_mb": None,
         "memory_mb_used": None,
+        "memory_mb_effective": None,
+        "memory_mb_reserved": None,
+        "memory_mb_allocation_ratio": None,
     }
     try:
         provider = conn.placement.find_resource_provider(hypervisor, ignore_missing=True)
@@ -516,8 +724,22 @@ def _placement_hypervisor_inventory(conn, hypervisor: str) -> dict:
         mem_inventory = inventory_by_class.get("MEMORY_MB")
         if vcpu_inventory is not None:
             result["vcpus"] = getattr(vcpu_inventory, "total", None)
+            result["vcpus_reserved"] = getattr(vcpu_inventory, "reserved", None)
+            result["vcpus_allocation_ratio"] = getattr(vcpu_inventory, "allocation_ratio", None)
+            total = getattr(vcpu_inventory, "total", None)
+            reserved = getattr(vcpu_inventory, "reserved", None) or 0
+            ratio = getattr(vcpu_inventory, "allocation_ratio", None) or 1.0
+            if total is not None:
+                result["vcpus_effective"] = max(0.0, float(total - reserved)) * float(ratio)
         if mem_inventory is not None:
             result["memory_mb"] = getattr(mem_inventory, "total", None)
+            result["memory_mb_reserved"] = getattr(mem_inventory, "reserved", None)
+            result["memory_mb_allocation_ratio"] = getattr(mem_inventory, "allocation_ratio", None)
+            total = getattr(mem_inventory, "total", None)
+            reserved = getattr(mem_inventory, "reserved", None) or 0
+            ratio = getattr(mem_inventory, "allocation_ratio", None) or 1.0
+            if total is not None:
+                result["memory_mb_effective"] = max(0.0, float(total - reserved)) * float(ratio)
 
         endpoint = conn.endpoint_for("placement")
         if endpoint:
