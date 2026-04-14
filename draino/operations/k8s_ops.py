@@ -310,6 +310,14 @@ def get_node_irq_balance(node_name: str, hostname: str | None = None) -> dict:
         return {"interfaces": [], "error": str(exc)}
 
 
+def get_node_sar_trends(node_name: str, hostname: str | None = None) -> dict:
+    """Return summarized SAR trends via the node agent."""
+    try:
+        return node_agent_client.get_host_sar_trends(node_name)
+    except Exception as exc:
+        return {"summary": None, "interfaces": [], "error": str(exc)}
+
+
 def _port_interface_candidates(port_id: str, ovs_interface_name: str | None = None) -> list[str]:
     short = (port_id or "")[:11]
     candidates: list[str] = []

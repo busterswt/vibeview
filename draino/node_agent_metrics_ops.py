@@ -23,6 +23,13 @@ _irq_balance_prev_samples: dict[str, tuple[float, int, int]] = {}
 _irq_balance_prev_lock = threading.Lock()
 
 
+def _safe_float(value: str | None) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_host_metrics() -> dict:
     now = time.time()
     global _host_metrics_cache
@@ -553,3 +560,122 @@ echo __END__
 
     results.sort(key=lambda item: item["name"])
     return {"interfaces": results, "error": None}
+
+
+def _get_host_sar_trends() -> dict:
+    try:
+        proc = _run_host_shell(
+            r"""
+if ! command -v sar >/dev/null 2>&1; then
+  echo "__ERROR__ sar not found"
+  exit 0
+fi
+end=$(date +%H:%M:%S)
+start=$(date -d '15 minutes ago' +%H:%M:%S 2>/dev/null || python3 - <<'PY'
+from datetime import datetime, timedelta
+print((datetime.now() - timedelta(minutes=15)).strftime("%H:%M:%S"))
+PY
+)
+echo __CPU__
+sar -u -s "$start" -e "$end" 2>/dev/null
+echo __QUEUE__
+sar -q -s "$start" -e "$end" 2>/dev/null
+echo __CTX__
+sar -w -s "$start" -e "$end" 2>/dev/null
+echo __NET__
+sar -n EDEV -s "$start" -e "$end" 2>/dev/null
+echo __END__
+""",
+            timeout=12,
+        )
+    except Exception as exc:
+        return {"summary": None, "interfaces": [], "error": str(exc)}
+
+    if "__ERROR__ sar not found" in proc.stdout:
+        return {"summary": None, "interfaces": [], "error": "sar unavailable"}
+
+    sections: dict[str, list[str]] = {"cpu": [], "queue": [], "ctx": [], "net": []}
+    section = None
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.rstrip("\n")
+        stripped = line.strip()
+        if stripped == "__CPU__":
+            section = "cpu"
+            continue
+        if stripped == "__QUEUE__":
+            section = "queue"
+            continue
+        if stripped == "__CTX__":
+            section = "ctx"
+            continue
+        if stripped == "__NET__":
+            section = "net"
+            continue
+        if stripped == "__END__":
+            break
+        if section and stripped:
+            sections[section].append(stripped)
+
+    cpu_busy_values: list[float] = []
+    runq_values: list[float] = []
+    ctx_values: list[float] = []
+    nic_rows: dict[str, dict[str, float]] = {}
+
+    for line in sections["cpu"]:
+        parts = line.split()
+        if len(parts) < 8 or parts[0] in {"Linux", "Average:"}:
+            continue
+        idle = _safe_float(parts[-1])
+        if idle is None:
+            continue
+        cpu_busy_values.append(max(0.0, 100.0 - idle))
+
+    for line in sections["queue"]:
+        parts = line.split()
+        if len(parts) < 4 or parts[0] in {"Linux", "Average:"}:
+            continue
+        runq_idx = 2 if parts[1] in {"AM", "PM"} else 1
+        runq = _safe_float(parts[runq_idx])
+        if runq is not None:
+            runq_values.append(runq)
+
+    for line in sections["ctx"]:
+        parts = line.split()
+        if len(parts) < 3 or parts[0] in {"Linux", "Average:"}:
+            continue
+        ctx_idx = 3 if len(parts) > 3 and parts[1] in {"AM", "PM"} else 2
+        ctx = _safe_float(parts[ctx_idx])
+        if ctx is not None:
+            ctx_values.append(ctx)
+
+    for line in sections["net"]:
+        parts = line.split()
+        if len(parts) < 8 or parts[0] in {"Linux", "Average:"}:
+            continue
+        offset = 1 if parts[1] in {"AM", "PM"} else 0
+        iface_name = parts[1 + offset]
+        if iface_name in {"IFACE", "lo"}:
+            continue
+        row = nic_rows.setdefault(iface_name, {"rxerr": 0.0, "txerr": 0.0, "rxdrop": 0.0, "txdrop": 0.0, "samples": 0.0})
+        row["rxerr"] += _safe_float(parts[2 + offset]) or 0.0
+        row["txerr"] += _safe_float(parts[3 + offset]) or 0.0
+        row["rxdrop"] += _safe_float(parts[5 + offset]) or 0.0
+        row["txdrop"] += _safe_float(parts[6 + offset]) or 0.0
+        row["samples"] += 1.0
+
+    interfaces: list[dict] = []
+    for iface_name, totals in nic_rows.items():
+        samples = totals.pop("samples", 0.0) or 1.0
+        averaged = {key: round(value / samples, 2) for key, value in totals.items()}
+        total_issues = round(sum(averaged.values()), 2)
+        interfaces.append({"name": iface_name, **averaged, "total_issues": total_issues})
+
+    interfaces.sort(key=lambda item: (item["total_issues"], item["name"]), reverse=True)
+    summary = {
+        "window_minutes": 15,
+        "cpu_busy_avg": round(sum(cpu_busy_values) / len(cpu_busy_values), 1) if cpu_busy_values else None,
+        "run_queue_peak": round(max(runq_values), 2) if runq_values else None,
+        "ctx_switches_avg": round(sum(ctx_values) / len(ctx_values), 1) if ctx_values else None,
+        "nic_issue_count": sum(1 for item in interfaces if item["total_issues"] > 0),
+    }
+    return {"summary": summary, "interfaces": interfaces[:8], "error": None}

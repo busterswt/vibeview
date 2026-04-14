@@ -19,6 +19,7 @@ from .node_agent_metrics_ops import (
     _get_host_irq_balance,
     _get_host_metrics,
     _get_host_network_stats,
+    _get_host_sar_trends,
     _get_named_interface_stats,
 )
 
@@ -96,6 +97,13 @@ def host_irq_balance(authorization: str | None = Header(default=None)) -> dict:
     node_agent_common._authorise(authorization)
     node_agent_common._LOGGER.info("host irq balance requested node=%s", node_agent_common._node_name())
     return _get_host_irq_balance()
+
+
+@node_agent_app.get("/host/sar-trends")
+def host_sar_trends(authorization: str | None = Header(default=None)) -> dict:
+    node_agent_common._authorise(authorization)
+    node_agent_common._LOGGER.info("host sar trends requested node=%s", node_agent_common._node_name())
+    return _get_host_sar_trends()
 
 
 @node_agent_app.get("/host/instance-port-stats")

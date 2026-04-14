@@ -19,6 +19,7 @@ let appRuntimeTimer = null;
 let nodeMonitorTimer = null;
 let nodeNetStatsTimer = null;
 let nodeIrqBalanceTimer = null;
+let nodeSarTrendsTimer = null;
 let instancePortStatsTimer = null;
 let stressStatusTimer = null;
 let wsStatusMode = 'offline';
@@ -59,6 +60,7 @@ const nodeDetailCache = {};   // node_name → { loading, k8s, nova, error }
 const nodeMetricsCache = {};  // node_name → { loading, current, history, error }
 const nodeNetStatsCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
 const nodeIrqBalanceCache = {}; // node_name → { loading, interfaces, error, fetchedAt }
+const nodeSarTrendsCache = {}; // node_name → { loading, summary, interfaces, error, fetchedAt }
 const nodeNetStatsEnabled = {}; // node_name -> Set(interfaceName)
 const nodeInstancePortStatsCache = {}; // node_name -> { loading, portsById, error, fetchedAt }
 const instanceDetailCache = {}; // instance_id -> { loading, data, error }
@@ -431,6 +433,7 @@ function setAuthenticatedUI(info) {
   if (!nodeMonitorTimer) nodeMonitorTimer = setInterval(refreshSelectedNodeMetrics, 30000);
   if (!nodeNetStatsTimer) nodeNetStatsTimer = setInterval(refreshSelectedNodeNetworkStats, 3000);
   if (!nodeIrqBalanceTimer) nodeIrqBalanceTimer = setInterval(refreshSelectedNodeIrqBalance, 10000);
+  if (!nodeSarTrendsTimer) nodeSarTrendsTimer = setInterval(refreshSelectedNodeSarTrends, 60000);
   if (!instancePortStatsTimer) instancePortStatsTimer = setInterval(refreshSelectedInstancePortStats, 3000);
 }
 

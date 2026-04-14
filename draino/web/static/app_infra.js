@@ -312,6 +312,7 @@ function selectNode(name) {
     if (shouldLoadNodeMetrics(name)) loadNodeMetrics(name);
     _ensureNetworkDataLoaded(name);
     loadNodeIrqBalance(name);
+    loadNodeSarTrends(name);
   }
   if (activeTab === 'pods') actionPodsInline();
   // Load network config data if Configure tab is active
@@ -453,6 +454,42 @@ async function loadNodeIrqBalance(name, force = false) {
 function refreshSelectedNodeIrqBalance() {
   if (activeView !== 'infrastructure' || activeTab !== 'monitor' || !selectedNode || !nodes[selectedNode]) return;
   loadNodeIrqBalance(selectedNode);
+}
+
+async function loadNodeSarTrends(name, force = false) {
+  const cached = nodeSarTrendsCache[name];
+  if (!force && cached?.loading) return;
+  nodeSarTrendsCache[name] = {
+    ...(cached || {}),
+    loading: true,
+    error: null,
+  };
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/sar-trends`);
+    const json = await resp.json();
+    nodeSarTrendsCache[name] = {
+      loading: false,
+      summary: json.summary || null,
+      interfaces: json.interfaces || [],
+      error: json.error || null,
+      fetchedAt: new Date(),
+    };
+  } catch (e) {
+    nodeSarTrendsCache[name] = {
+      loading: false,
+      summary: null,
+      interfaces: [],
+      error: String(e),
+      fetchedAt: new Date(),
+    };
+  }
+  if (selectedNode === name && activeTab === 'monitor') renderNodeMonitorTab(nodes[name]);
+}
+
+function refreshSelectedNodeSarTrends() {
+  if (activeView !== 'infrastructure' || activeTab !== 'monitor' || !selectedNode || !nodes[selectedNode]) return;
+  loadNodeSarTrends(selectedNode);
 }
 
 async function loadNodeInstancePortStats(nodeName, instanceId, force = false) {
@@ -632,6 +669,7 @@ function showTab(name) {
   if (name === 'monitor' && selectedNode && shouldLoadNodeMetrics(selectedNode)) loadNodeMetrics(selectedNode);
   if (name === 'monitor' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
   if (name === 'monitor' && selectedNode) loadNodeIrqBalance(selectedNode);
+  if (name === 'monitor' && selectedNode) loadNodeSarTrends(selectedNode);
   if (selectedNode && nodes[selectedNode]) renderActiveTab(nodes[selectedNode]);
   if (name === 'configure' && selectedNode) _ensureNetworkDataLoaded(selectedNode);
 }
@@ -924,6 +962,7 @@ function renderNodeMonitorTab(nd) {
   const netStats = nodeNetStatsCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
   const netStatsByName = Object.fromEntries((netStats.interfaces || []).map(item => [item.name, item]));
   const irqBalance = nodeIrqBalanceCache[nd.k8s_name] || { loading: false, interfaces: [], error: null, fetchedAt: null };
+  const sarTrends = nodeSarTrendsCache[nd.k8s_name] || { loading: false, summary: null, interfaces: [], error: null, fetchedAt: null };
   const bondByMember = {};
   for (const iface of ifaces) {
     if (iface.type !== 'bond') continue;
@@ -1076,6 +1115,55 @@ function renderNodeMonitorTab(nd) {
         <tbody>${irqRows}</tbody>
       </table>
       ${irqBalance.fetchedAt ? `<div class="runtime-note">Updated ${_fmtTime(irqBalance.fetchedAt)}</div>` : ''}
+    </div>
+  </div>`;
+
+  const sarSummary = sarTrends.summary || {};
+  const sarIfaceRows = (sarTrends.interfaces || []).length
+    ? sarTrends.interfaces.map((item) => `<tr>
+        <td><strong>${esc(item.name)}</strong></td>
+        <td>${esc(item.rxdrop ?? '—')}</td>
+        <td>${esc(item.txdrop ?? '—')}</td>
+        <td>${esc(item.rxerr ?? '—')}</td>
+        <td>${esc(item.txerr ?? '—')}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" style="color:var(--dim)">No NIC drops or errors reported in the last ${esc(String(sarSummary.window_minutes || 15))} minutes.</td></tr>`;
+
+  h += `<div class="card" style="margin-top:12px">
+    <div class="card-title">Recent Trends (SAR)</div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
+        Short historical context from sysstat when available.
+      </div>
+      ${sarTrends.loading ? `<div class="runtime-note"><span class="spinner">⟳</span> Loading SAR trends…</div>` : ''}
+      ${sarTrends.error ? `<div class="runtime-note">${esc(sarTrends.error)}</div>` : sarSummary ? `
+        <div class="summary-grid">
+          <div class="card">
+            <div class="card-title">CPU Busy Avg</div>
+            <div class="card-body"><div class="mrow"><span class="ml">Last ${esc(String(sarSummary.window_minutes || 15))}m</span><span class="mv">${sarSummary.cpu_busy_avg != null ? `${sarSummary.cpu_busy_avg}%` : '—'}</span></div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Run Queue Peak</div>
+            <div class="card-body"><div class="mrow"><span class="ml">Last ${esc(String(sarSummary.window_minutes || 15))}m</span><span class="mv">${sarSummary.run_queue_peak != null ? sarSummary.run_queue_peak : '—'}</span></div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Ctx Switches Avg</div>
+            <div class="card-body"><div class="mrow"><span class="ml">Per second</span><span class="mv">${sarSummary.ctx_switches_avg != null ? sarSummary.ctx_switches_avg : '—'}</span></div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">NIC Error Standouts</div>
+            <div class="card-body"><div class="mrow"><span class="ml">Interfaces</span><span class="mv">${sarSummary.nic_issue_count != null ? sarSummary.nic_issue_count : '—'}</span></div></div>
+          </div>
+        </div>
+        <div style="font-size:11px;font-weight:600;color:var(--dim);margin:12px 0 6px">NIC Errors &amp; Drops</div>
+        <table class="data-table">
+          <thead>
+            <tr><th>Interface</th><th>rxdrop/s</th><th>txdrop/s</th><th>rxerr/s</th><th>txerr/s</th></tr>
+          </thead>
+          <tbody>${sarIfaceRows}</tbody>
+        </table>
+      ` : ''}
+      ${sarTrends.fetchedAt ? `<div class="runtime-note">Updated ${_fmtTime(sarTrends.fetchedAt)}</div>` : ''}
     </div>
   </div>`;
 

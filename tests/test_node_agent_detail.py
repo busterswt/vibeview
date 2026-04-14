@@ -411,6 +411,23 @@ def test_get_node_irq_balance_uses_node_agent(monkeypatch):
     assert result["interfaces"][0]["risk"] == "medium"
 
 
+def test_get_node_sar_trends_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_sar_trends",
+        lambda node_name: {
+            "summary": {"window_minutes": 15, "cpu_busy_avg": 72.1},
+            "interfaces": [{"name": "bond0", "rxdrop": 0.2, "txdrop": 0.0, "rxerr": 0.0, "txerr": 0.0}],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_sar_trends("node-1", "hv-1")
+
+    assert result["summary"]["cpu_busy_avg"] == 72.1
+    assert result["interfaces"][0]["name"] == "bond0"
+
+
 def test_node_agent_irq_balance_computes_cpu_concentration(monkeypatch):
     outputs = iter([
         "\n".join([
@@ -453,6 +470,42 @@ def test_node_agent_irq_balance_computes_cpu_concentration(monkeypatch):
     assert bond["top_cpu"] == "CPU0"
     assert bond["top_cpu_share_pct"] == 96.4
     assert bond["risk"] == "medium"
+
+
+def test_node_agent_sar_trends_summarises_recent_history(monkeypatch):
+    stdout = "\n".join([
+        "__CPU__",
+        "12:00:01 AM     all      1.00      0.00      2.00      0.00      0.00      0.00      0.00      0.00     97.00",
+        "12:05:01 AM     all      2.00      0.00      4.00      0.00      0.00      0.00      0.00      0.00     94.00",
+        "__QUEUE__",
+        "12:00:01 AM       1      100      0.50      0.10       200",
+        "12:05:01 AM       3      120      0.75      0.20       250",
+        "__CTX__",
+        "12:00:01 AM      1000      2000",
+        "12:05:01 AM      1100      2400",
+        "__NET__",
+        "12:00:01 AM     IFACE   rxerr/s   txerr/s   coll/s   rxdrop/s   txdrop/s   txcarr/s   rxfram/s   rxfifo/s   txfifo/s",
+        "12:00:01 AM     bond0      0.00      0.00      0.00       0.50       0.25       0.00       0.00       0.00       0.00",
+        "12:05:01 AM     bond0      0.00      0.00      0.00       1.50       0.75       0.00       0.00       0.00       0.00",
+        "__END__",
+    ])
+
+    monkeypatch.setattr(
+        node_agent_metrics_ops,
+        "_run_host_shell",
+        lambda script, timeout=12: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=stdout, stderr=""),
+    )
+
+    result = node_agent_metrics_ops._get_host_sar_trends()
+
+    assert result["error"] is None
+    assert result["summary"]["window_minutes"] == 15
+    assert result["summary"]["cpu_busy_avg"] == 4.5
+    assert result["summary"]["run_queue_peak"] == 3.0
+    assert result["summary"]["ctx_switches_avg"] == 2200.0
+    assert result["summary"]["nic_issue_count"] == 1
+    assert result["interfaces"][0]["name"] == "bond0"
+    assert result["interfaces"][0]["rxdrop"] == 1.0
 
 
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):

@@ -161,6 +161,19 @@ async def api_node_irq_balance(node_name: str, request: Request):
     )
 
 
+@router.get("/api/nodes/{node_name}/sar-trends")
+async def api_node_sar_trends(node_name: str, request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    state = session.server.node_states.get(node_name)
+    return await loop.run_in_executor(
+        None,
+        k8s_ops.get_node_sar_trends,
+        node_name,
+        state.hypervisor if state else None,
+    )
+
+
 @router.post("/api/nodes/{node_name}/instance-port-stats")
 async def api_node_instance_port_stats(node_name: str, payload: InstancePortStatsRequest, request: Request):
     session = _require_session_record()(request)
