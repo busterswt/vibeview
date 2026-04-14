@@ -279,7 +279,7 @@ def get_nova_activity_snapshot(
 def get_placement_capacity_snapshot(auth: OpenStackAuth | None = None) -> dict:
     """Return Placement-backed current capacity and usage by hypervisor."""
     conn = _conn(auth=auth)
-    host_summaries = get_all_host_summaries(auth=auth)
+    host_topology = get_host_topology(auth=auth)
     items: list[dict] = []
     try:
         hypervisors = list(conn.compute.hypervisors())
@@ -290,7 +290,7 @@ def get_placement_capacity_snapshot(auth: OpenStackAuth | None = None) -> dict:
         if not hostname:
             continue
         placement = _placement_hypervisor_inventory(conn, hostname)
-        summary = host_summaries.get(hostname) or host_summaries.get(hostname.split(".", 1)[0]) or {}
+        summary = host_topology.get(hostname) or host_topology.get(hostname.split(".", 1)[0]) or {}
         items.append({
             "hypervisor": hostname,
             "availability_zone": summary.get("availability_zone") or "unknown",
@@ -304,6 +304,42 @@ def get_placement_capacity_snapshot(auth: OpenStackAuth | None = None) -> dict:
         })
     items.sort(key=lambda item: item["hypervisor"])
     return {"items": items}
+
+
+def get_host_topology(auth: OpenStackAuth | None = None) -> dict[str, dict]:
+    """Return lightweight host topology keyed by host name.
+
+    This avoids the expensive global server listing used by get_all_host_summaries
+    when callers only need aggregate and AZ context.
+    """
+    conn = _conn(auth=auth)
+    service_hosts: set[str] = set()
+    try:
+        for svc in conn.compute.services(binary="nova-compute"):
+            host = getattr(svc, "host", None) or ""
+            if host:
+                service_hosts.add(host)
+    except Exception:
+        pass
+
+    result: dict[str, dict] = {host: {"availability_zone": None, "aggregates": []} for host in service_hosts}
+    try:
+        for agg in conn.compute.aggregates():
+            agg_az = (
+                getattr(agg, "availability_zone", None)
+                or (agg.metadata or {}).get("availability_zone")
+                or None
+            )
+            agg_name = getattr(agg, "name", None) or ""
+            for host in (agg.hosts or []):
+                entry = result.setdefault(host, {"availability_zone": None, "aggregates": []})
+                if agg_az and not entry["availability_zone"]:
+                    entry["availability_zone"] = agg_az
+                if agg_name and agg_name not in entry["aggregates"]:
+                    entry["aggregates"].append(agg_name)
+    except Exception:
+        pass
+    return result
 
 
 def _field(source, *names):
