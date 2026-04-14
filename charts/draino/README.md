@@ -12,15 +12,18 @@ This chart deploys the VibeView web UI.
 ## Install
 
 ```bash
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
+helm upgrade --install vibeview ./charts/draino \
+  --namespace vibeview \
   --create-namespace \
   --set image.repository=ghcr.io/busterswt/vibeview \
   --set image.tag=main \
   --set gateway.parentRefs[0].name=shared-gateway \
   --set gateway.parentRefs[0].sectionName=https \
-  --set gateway.hostnames[0]=draino.example.com
+  --set gateway.hostnames[0]=vibeview.example.com
 ```
+
+The chart directory remains `charts/draino`, but the examples use the `vibeview`
+product/release name.
 
 ## Envoy Gateway
 
@@ -31,12 +34,14 @@ Default behavior:
 - creates an `HTTPRoute`
 - attaches that route to an existing `Gateway`
 - supports optional per-rule Gateway API `timeouts`
+- deploys the browser UI plus the node-local HTTPS agent
+- defaults the node-agent profile to `unprivileged`
 
 Typical Genestack deployment:
 
 ```bash
-sudo mkdir -p /etc/genestack/helm-configs/draino
-sudo tee /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml >/dev/null <<'EOF'
+sudo mkdir -p /etc/genestack/helm-configs/vibeview
+sudo tee /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml >/dev/null <<'EOF'
 image:
   repository: ghcr.io/busterswt/vibeview
   tag: main
@@ -46,15 +51,15 @@ gateway:
   parentRefs:
     - name: envoy-gateway
       namespace: infra-gateway
-      sectionName: draino-https
+      sectionName: vibeview-https
   hostnames:
-    - draino.<your-domain>
+    - vibeview.<your-domain>
 EOF
 
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
+helm upgrade --install vibeview ./charts/draino \
+  --namespace vibeview \
   --create-namespace \
-  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+  -f /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 ```
 
 To increase route timeouts for slow live report generation or similar long-running
@@ -79,7 +84,7 @@ If your environment wants this chart to create its own `Gateway`, set:
 
 ```bash
 --set gateway.create=true \
---set gateway.name=draino-gateway \
+--set gateway.name=vibeview-gateway \
 --set gateway.gatewayClassName=envoy-gateway-class
 ```
 
@@ -173,6 +178,6 @@ The external hostname is intentionally value-driven because it varies by environ
 For Gateway API, set it with:
 
 ```bash
---set gateway.hostnames[0]=draino.<your-domain>
+--set gateway.hostnames[0]=vibeview.<your-domain>
 ```
 or use a values file.

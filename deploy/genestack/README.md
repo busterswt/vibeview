@@ -5,6 +5,14 @@ This repo can run cleanly as a single web pod in a Genestack / OpenStack-Helm en
 If you use Helm, prefer the chart in `charts/draino/`. The manifest in this folder is a
 plain-YAML reference equivalent.
 
+Current deploy highlights:
+
+- browser UI for infrastructure, Kubernetes, networking, reports, and stress testing
+- node-local HTTPS agent for host inspection and reboot operations
+- Gateway API / Envoy Gateway integration
+- unprivileged node-agent profile by default, with an optional privileged mode
+- live reports for capacity, placement, PVC workload, and Kubernetes node health
+
 ## Why this shape
 
 - `draino --web` already exposes the browser UI over HTTP/WebSockets.
@@ -15,8 +23,8 @@ plain-YAML reference equivalent.
 ## Build and push
 
 ```bash
-docker build -t registry.example.com/operations/draino:0.1.0 .
-docker push registry.example.com/operations/draino:0.1.0
+docker build -t registry.example.com/operations/vibeview:0.1.0 .
+docker push registry.example.com/operations/vibeview:0.1.0
 ```
 
 ## Deploy
@@ -24,8 +32,8 @@ docker push registry.example.com/operations/draino:0.1.0
 If you use Helm, start with [values.yaml](/Users/james.denton/github/vibeview/deploy/genestack/values.yaml):
 
 ```bash
-sudo mkdir -p /etc/genestack/helm-configs/draino
-sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+sudo mkdir -p /etc/genestack/helm-configs/vibeview
+sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 ```
 
 Update these fields first:
@@ -38,10 +46,10 @@ Update these fields first:
 Then deploy with Helm using the Genestack override file:
 
 ```bash
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
+helm upgrade --install vibeview ./charts/draino \
+  --namespace vibeview \
   --create-namespace \
-  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+  -f /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 ```
 
 ## Updating a deployment
@@ -49,30 +57,30 @@ helm upgrade --install draino ./charts/draino \
 To update an existing Genestack deployment to the newest published image:
 
 1. Push the repo change and wait for the GitHub image build to publish a new image.
-2. Update the image tag in `/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`.
+2. Update the image tag in `/etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml`.
 3. Re-run Helm:
 
 ```bash
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
+helm upgrade --install vibeview ./charts/draino \
+  --namespace vibeview \
   --create-namespace \
-  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+  -f /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 ```
 
 4. Verify the rollout:
 
 ```bash
-kubectl -n draino rollout status deployment/draino
-kubectl -n draino rollout status daemonset/draino-trustmebro-agent
-kubectl -n draino get pods -o wide
+kubectl -n vibeview rollout status deployment/vibeview
+kubectl -n vibeview rollout status daemonset/vibeview-trustmebro-agent
+kubectl -n vibeview get pods -o wide
 ```
 
 If you are still deploying `image.tag: main`, restart the workloads after the Helm upgrade
 to force a fresh pull on every node:
 
 ```bash
-kubectl -n draino rollout restart deployment/draino
-kubectl -n draino rollout restart daemonset/draino-trustmebro-agent
+kubectl -n vibeview rollout restart deployment/vibeview
+kubectl -n vibeview rollout restart daemonset/vibeview-trustmebro-agent
 ```
 
 ## New Gateway listener
@@ -92,22 +100,22 @@ mkdir -p /etc/genestack/gateway-api/listeners
 Then create the listener fragment for a dedicated VibeView hostname:
 
 ```bash
-cat >/etc/genestack/gateway-api/listeners/draino-https.json <<'EOF'
+cat >/etc/genestack/gateway-api/listeners/vibeview-https.json <<'EOF'
 [
   {
     "op": "add",
     "path": "/spec/listeners/-",
     "value": {
-      "name": "draino-https",
+      "name": "vibeview-https",
       "protocol": "HTTPS",
       "port": 443,
-      "hostname": "draino.example.com",
+      "hostname": "vibeview.example.com",
       "tls": {
         "mode": "Terminate",
         "certificateRefs": [
           {
             "kind": "Secret",
-            "name": "draino-tls"
+            "name": "vibeview-tls"
           }
         ]
       },
@@ -130,16 +138,16 @@ The contents should look like this:
     "op": "add",
     "path": "/spec/listeners/-",
     "value": {
-      "name": "draino-https",
+      "name": "vibeview-https",
       "protocol": "HTTPS",
       "port": 443,
-      "hostname": "draino.example.com",
+      "hostname": "vibeview.example.com",
       "tls": {
         "mode": "Terminate",
         "certificateRefs": [
           {
             "kind": "Secret",
-            "name": "draino-tls"
+            "name": "vibeview-tls"
           }
         ]
       },
@@ -158,7 +166,7 @@ Then patch the shared gateway, for example:
 ```bash
 kubectl patch -n envoy-gateway gateway flex-gateway \
   --type='json' \
-  --patch="$(cat /etc/genestack/gateway-api/listeners/draino-https.json)"
+  --patch="$(cat /etc/genestack/gateway-api/listeners/vibeview-https.json)"
 ```
 
 Adjust `envoy-gateway`, `flex-gateway`, the listener name, hostname, and TLS secret to
@@ -171,7 +179,7 @@ the chart install. In Genestack terms, that is the route resource that binds to 
 listener via `parentRefs.sectionName`.
 
 Your override file at
-`/etc/genestack/helm-configs/draino/draino-helm-overrides.yaml`
+`/etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml`
 should line up with the listener:
 
 ```yaml
@@ -181,9 +189,9 @@ gateway:
   parentRefs:
     - name: flex-gateway
       namespace: envoy-gateway
-      sectionName: draino-https
+      sectionName: vibeview-https
   hostnames:
-    - draino.example.com
+    - vibeview.example.com
 ```
 
 That causes the chart to render an `HTTPRoute` similar to:
@@ -192,21 +200,21 @@ That causes the chart to render an `HTTPRoute` similar to:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: draino
+  name: vibeview
 spec:
   parentRefs:
     - name: flex-gateway
       namespace: envoy-gateway
-      sectionName: draino-https
+      sectionName: vibeview-https
   hostnames:
-    - draino.example.com
+    - vibeview.example.com
   rules:
     - matches:
         - path:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: draino
+        - name: vibeview
           port: 80
 ```
 

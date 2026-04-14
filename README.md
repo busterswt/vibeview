@@ -1,10 +1,11 @@
 # VibeView
 
 **VibeView** is an interactive operator tool for safely draining OpenStack hypervisors and
-Kubernetes nodes before a maintenance reboot.  It automates the full evacuation workflow —
+Kubernetes nodes before a maintenance reboot. It automates the full evacuation workflow —
 live-migrating VMs, failing over Octavia load balancers, evicting pods — and then issues
-the reboot and waits for the node to return.  Every action is recorded to a compliance
-audit log.
+the reboot and waits for the node to return. It also includes live infrastructure,
+Kubernetes, networking, reporting, and stress-testing views for day-two operator work.
+Every action is recorded to a compliance audit log.
 
 It ships as a browser-based web UI powered by FastAPI and WebSockets, with a
 node-local agent for reboot and host-inspection operations.
@@ -27,11 +28,31 @@ node-local agent for reboot and host-inspection operations.
 - **Compliance audit log** — every action (started / completed / failed / blocked /
   cancelled) is appended as a structured JSONL entry to `~/.draino/audit.log`
 - **Browser-based operations UI** — web UI for infrastructure, Kubernetes, networking,
-  and storage views
+  reports, stress testing, and storage views
+- **Network operations views** — list/detail drawers for networks, routers, and load
+  balancers, including VIP ports, OVN logical port data, and subnet metadata-port repair
+- **Kubernetes inventory** — browse namespaces, pods, services, Gateway API resources,
+  PVCs/PVs, CRDs, and operators with right-side detail drawers
+- **Live operator reports** — capacity and headroom, placement risk, project placement,
+  node health and density, and PVC placement/workload reports
+- **Heat-backed stress workspace** — disposable stack templates for capacity spread and
+  end-to-end load balancer testing with action trace and timing summaries
+- **Flexible node-agent profile** — deploy the node-local agent in unprivileged mode by
+  default, or switch to privileged/root mode when host reboot support is required
 
 ---
 
 ## Installation
+
+For local development or operator use from a checkout:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+For a plain runtime install without development tooling:
 
 ```bash
 pip install .
@@ -53,6 +74,7 @@ To run the local validation commands used in this repo, install:
 Typical local checks:
 
 ```bash
+PYTHONPATH=. pytest -q tests/web
 pytest -q tests/web
 pytest -q
 helm template test charts/draino
@@ -133,20 +155,20 @@ server-side.
 Build the web UI image:
 
 ```bash
-docker build -t draino:0.2.0 .
+docker build -t vibeview:0.2.0 .
 ```
 
 Run it locally:
 
 ```bash
-docker run --rm -p 8000:8000 draino:0.2.0
+docker run --rm -p 8000:8000 vibeview:0.2.0
 ```
 
 Tag and push it to your registry:
 
 ```bash
-docker tag draino:0.2.0 registry.example.com/operations/draino:0.2.0
-docker push registry.example.com/operations/draino:0.2.0
+docker tag vibeview:0.2.0 registry.example.com/operations/vibeview:0.2.0
+docker push registry.example.com/operations/vibeview:0.2.0
 ```
 
 Notes:
@@ -187,17 +209,19 @@ Security note:
 ### Helm chart
 
 A Helm chart for the web UI is in `charts/draino/`.
+The chart path and Python package still use `draino` internally, but deployment-facing
+examples below use the `vibeview` product name.
 
 Example install:
 
 ```bash
-sudo mkdir -p /etc/genestack/helm-configs/draino
-sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+sudo mkdir -p /etc/genestack/helm-configs/vibeview
+sudo cp deploy/genestack/values.yaml /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 
-helm upgrade --install draino ./charts/draino \
-  --namespace draino \
+helm upgrade --install vibeview ./charts/draino \
+  --namespace vibeview \
   --create-namespace \
-  -f /etc/genestack/helm-configs/draino/draino-helm-overrides.yaml
+  -f /etc/genestack/helm-configs/vibeview/vibeview-helm-overrides.yaml
 ```
 
 By default the chart keeps `replicaCount=1` because authenticated web sessions are stored
@@ -232,7 +256,7 @@ The external hostname should stay deployment-specific. Set it with Helm values r
 than hard-coding it into the chart. For Envoy Gateway:
 
 ```bash
---set gateway.hostnames[0]=draino.<environment-domain>
+--set gateway.hostnames[0]=vibeview.<environment-domain>
 ```
 
 ### Options
