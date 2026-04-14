@@ -187,6 +187,7 @@ def get_nova_activity_snapshot(
     auth: OpenStackAuth | None = None,
     *,
     window_hours: int = 24,
+    deleted_window_days: int = 15,
 ) -> dict:
     """Return an API-only snapshot of current and recent Nova instance activity."""
     conn = _conn(auth=auth)
@@ -206,14 +207,26 @@ def get_nova_activity_snapshot(
     ]
 
     deleted_records: list[dict] = []
+    deleted_since_dt = datetime.now(timezone.utc) - timedelta(days=max(1, int(deleted_window_days)))
+    deleted_since_text = deleted_since_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     try:
         deleted_records = [
             record
             for record in (
                 _server_record(server, project_names)
-                for server in _iter_servers(conn, all_projects=True, details=True, deleted=True)
+                for server in _iter_servers(
+                    conn,
+                    all_projects=True,
+                    details=True,
+                    deleted=True,
+                    changes_since=deleted_since_text,
+                )
             )
             if record["deleted"]
+            and (
+                (_parse_iso8601(record.get("deleted_at")) and _parse_iso8601(record.get("deleted_at")) >= deleted_since_dt)
+                or (_parse_iso8601(record.get("updated_at")) and _parse_iso8601(record.get("updated_at")) >= deleted_since_dt)
+            )
         ]
     except Exception:
         deleted_records = []
@@ -261,6 +274,7 @@ def get_nova_activity_snapshot(
     return {
         "window_hours": int(window_hours),
         "since": since_text,
+        "deleted_window_days": int(deleted_window_days),
         "active_instances": active_records,
         "deleted_visible": sorted(
             deleted_records,

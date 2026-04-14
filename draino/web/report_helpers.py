@@ -907,11 +907,12 @@ def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
                 "hypervisors": len(placement_items),
                 "projects": len(project_items),
                 "window_hours": int(activity.get("window_hours") or 24),
+                "deleted_window_days": int(activity.get("deleted_window_days") or 15),
             },
             "summary": summary,
             "summary_foot": {
                 "active_instances": f"{status_counts.get('ACTIVE', 0)} ACTIVE / {max(0, len(active_instances) - status_counts.get('ACTIVE', 0))} other current states",
-                "deleted_visible": "Currently queryable deleted servers from Nova",
+                "deleted_visible": f"Deleted servers queryable from the last {int(activity.get('deleted_window_days') or 15)} days",
                 "changed_since_window": f"{recent_created} creates / {recent_deleted} deletes / {recent_updated} updates",
                 "vcpu_headroom_pct": f"{int(round(total_vcpus_used))} used / {int(round(total_vcpus_effective or 0))} effective",
                 "ram_headroom_pct": f"{int(round(total_ram_used))} MiB used / {int(round(total_ram_effective or 0))} MiB effective",
