@@ -378,6 +378,57 @@ def test_get_load_balancers_includes_floating_ip_and_counts(monkeypatch):
             assert port_id == "vip-port-1"
             return [FakeFip()]
 
+        @staticmethod
+        def get_port(port_id):
+            assert port_id == "vip-port-1"
+            return type("Port", (), {
+                "id": "vip-port-1",
+                "name": "octavia-lb-vip",
+                "status": "ACTIVE",
+                "network_id": "net-1",
+                "fixed_ips": [{"subnet_id": "subnet-1", "ip_address": "10.10.0.5"}],
+                "mac_address": "fa:16:3e:11:22:33",
+                "device_owner": "Octavia",
+                "device_id": "lb-1",
+                "project_id": "proj-1",
+                "is_admin_state_up": True,
+                "to_dict": lambda self: {},
+            })()
+
+        @staticmethod
+        def get_port(port_id):
+            assert port_id == "vip-port-1"
+            return SimpleNamespace(
+                id="vip-port-1",
+                name="octavia-lb-vip",
+                status="ACTIVE",
+                network_id="net-1",
+                fixed_ips=[{"subnet_id": "subnet-1", "ip_address": "10.10.0.5"}],
+                mac_address="fa:16:3e:11:22:33",
+                device_owner="Octavia",
+                device_id="lb-1",
+                project_id="proj-1",
+                is_admin_state_up=True,
+                to_dict=lambda: {},
+            )
+
+        @staticmethod
+        def get_port(port_id):
+            assert port_id == "vip-port-1"
+            return SimpleNamespace(
+                id="vip-port-1",
+                name="octavia-lb-vip",
+                status="ACTIVE",
+                network_id="net-1",
+                fixed_ips=[{"subnet_id": "subnet-1", "ip_address": "10.10.0.5"}],
+                mac_address="fa:16:3e:11:22:33",
+                device_owner="Octavia",
+                device_id="lb-1",
+                project_id="proj-1",
+                is_admin_state_up=True,
+                to_dict=lambda: {},
+            )
+
     class FakeLoadBalancerAPI:
         @staticmethod
         def load_balancers():
@@ -491,6 +542,23 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
             assert port_id == "vip-port-1"
             return [FakeFip()]
 
+        @staticmethod
+        def get_port(port_id):
+            assert port_id == "vip-port-1"
+            return type("Port", (), {
+                "id": "vip-port-1",
+                "name": "octavia-lb-vip",
+                "status": "ACTIVE",
+                "network_id": "net-1",
+                "fixed_ips": [{"subnet_id": "subnet-1", "ip_address": "10.10.0.5"}],
+                "mac_address": "fa:16:3e:11:22:33",
+                "device_owner": "Octavia",
+                "device_id": "lb-1",
+                "project_id": "proj-1",
+                "is_admin_state_up": True,
+                "to_dict": lambda self: {},
+            })()
+
     class FakeComputeAPI:
         @staticmethod
         def get_server(server_id):
@@ -544,6 +612,14 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
     assert item["id"] == "lb-1"
     assert item["floating_ip"] == "198.51.100.25"
     assert item["vip_subnet_id"] == "subnet-1"
+    assert item["vip_port"]["id"] == "vip-port-1"
+    assert item["vip_port"]["name"] == "octavia-lb-vip"
+    assert item["vip_port"]["network_id"] == "net-1"
+    assert item["vip_port"]["subnet_id"] == "subnet-1"
+    assert item["vip_port"]["ip_address"] == "10.10.0.5"
+    assert item["vip_port"]["mac_address"] == "fa:16:3e:11:22:33"
+    assert item["vip_port"]["device_id"] == "lb-1"
+    assert item["vip_port"]["admin_state_up"] is True
     assert item["listeners"][0]["id"] == "listener-1"
     assert item["listeners"][0]["protocol_port"] == 443
     assert item["pools"][0]["member_count"] == 2

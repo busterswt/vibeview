@@ -326,6 +326,41 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
     vip_address = getattr(lb, "vip_address", None) or lb_data.get("vip_address") or ""
     project_id = getattr(lb, "project_id", None) or lb_data.get("project_id") or ""
     floating_ip = _lookup_floating_ip_by_port_or_address(conn, vip_port_id, vip_address, {})
+    vip_port: dict[str, object] = {
+        "id": vip_port_id,
+        "name": "",
+        "status": "",
+        "network_id": "",
+        "subnet_id": "",
+        "ip_address": vip_address,
+        "mac_address": "",
+        "device_owner": "",
+        "device_id": "",
+        "project_id": project_id,
+        "admin_state_up": False,
+    }
+    if vip_port_id:
+        try:
+            port = conn.network.get_port(vip_port_id)
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+            primary_ip = next((item.get("ip_address", "") for item in fixed_ips if item.get("ip_address")), "") or vip_address
+            primary_subnet = next((item.get("subnet_id", "") for item in fixed_ips if item.get("subnet_id")), "") or ""
+            vip_port = {
+                "id": getattr(port, "id", None) or port_data.get("id") or vip_port_id,
+                "name": getattr(port, "name", None) or port_data.get("name") or "",
+                "status": getattr(port, "status", None) or port_data.get("status") or "",
+                "network_id": getattr(port, "network_id", None) or port_data.get("network_id") or "",
+                "subnet_id": primary_subnet,
+                "ip_address": primary_ip,
+                "mac_address": getattr(port, "mac_address", None) or port_data.get("mac_address") or "",
+                "device_owner": getattr(port, "device_owner", None) or port_data.get("device_owner") or "",
+                "device_id": getattr(port, "device_id", None) or port_data.get("device_id") or "",
+                "project_id": getattr(port, "project_id", None) or port_data.get("project_id") or project_id,
+                "admin_state_up": bool(getattr(port, "is_admin_state_up", port_data.get("admin_state_up", False))),
+            }
+        except Exception:
+            pass
 
     listeners_by_id: dict[str, object] = {}
     try:
@@ -458,6 +493,7 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
         "floating_ip": floating_ip,
         "vip_port_id": vip_port_id,
         "vip_subnet_id": getattr(lb, "vip_subnet_id", None) or lb_data.get("vip_subnet_id") or "",
+        "vip_port": vip_port,
         "project_id": project_id,
         "flavor_id": getattr(lb, "flavor_id", None) or lb_data.get("flavor_id") or "",
         "listeners": listeners,

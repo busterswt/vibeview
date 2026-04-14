@@ -204,6 +204,19 @@ def test_load_balancer_detail_endpoint_returns_detail(monkeypatch):
             "floating_ip": "198.51.100.25",
             "vip_port_id": "vip-port-1",
             "vip_subnet_id": "subnet-1",
+            "vip_port": {
+                "id": "vip-port-1",
+                "name": "octavia-lb-vip",
+                "status": "ACTIVE",
+                "network_id": "net-1",
+                "subnet_id": "subnet-1",
+                "ip_address": "10.10.0.5",
+                "mac_address": "fa:16:3e:11:22:33",
+                "device_owner": "Octavia",
+                "device_id": "lb-1",
+                "project_id": "proj-1",
+                "admin_state_up": True,
+            },
             "project_id": "proj-1",
             "flavor_id": "amphora-small",
             "listeners": [{"id": "listener-1", "name": "https"}],
@@ -235,5 +248,7 @@ def test_load_balancer_detail_endpoint_returns_detail(monkeypatch):
     assert resp.status_code == 200
     assert body["error"] is None
     assert body["load_balancer"]["id"] == "lb-1"
+    assert body["load_balancer"]["vip_port"]["id"] == "vip-port-1"
+    assert body["load_balancer"]["vip_port"]["mac_address"] == "fa:16:3e:11:22:33"
     assert body["load_balancer"]["ha_summary"] == "HA spread OK"
     assert body["load_balancer"]["pools"][0]["id"] == "pool-1"

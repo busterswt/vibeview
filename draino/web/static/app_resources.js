@@ -188,6 +188,7 @@ async function selectLoadBalancer(id) {
   document.getElementById('lb-detail-wrap').classList.add('open');
   lbDetailState.loading = true;
   lbDetailState.data = null;
+  lbDetailState.vipOvn = { loading: false, data: null, error: null };
   renderLoadBalancerDetail();
   try {
     const resp = await fetch(`/api/load-balancers/${encodeURIComponent(id)}`);
@@ -202,11 +203,26 @@ async function selectLoadBalancer(id) {
     lbDetailState.loading = false;
     renderLoadBalancerDetail();
   }
+  const vipPortId = lbDetailState.data?.vip_port?.id || lbDetailState.data?.vip_port_id || '';
+  if (vipPortId) {
+    lbDetailState.vipOvn = { loading: true, data: null, error: null };
+    renderLoadBalancerDetail();
+    try {
+      const resp = await fetch(`/api/ovn/lsp/${encodeURIComponent(vipPortId)}`);
+      const json = await resp.json();
+      if (json.error) throw new Error(json.error);
+      lbDetailState.vipOvn = { loading: false, data: json.port, error: null };
+    } catch (e) {
+      lbDetailState.vipOvn = { loading: false, data: null, error: String(e) };
+    }
+    renderLoadBalancerDetail();
+  }
 }
 
 function closeLoadBalancerDetail() {
   selectedLoadBalancer = null;
   lbDetailState.data = null;
+  lbDetailState.vipOvn = { loading: false, data: null, error: null };
   document.getElementById('lb-detail-wrap').classList.remove('open');
   document.querySelectorAll('#lb-wrap tr[data-lb-id]').forEach(r => r.classList.remove('selected'));
 }
@@ -247,6 +263,59 @@ function renderLoadBalancerDetail() {
         <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(ld.flavor_id || '—')}</span></div>
       </div>
     </div>`;
+
+  const vipPort = ld.vip_port || null;
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">VIP Port</div>
+    <div class="card-body">`;
+  if (!vipPort || !vipPort.id) {
+    h += `<div style="color:var(--dim);font-size:12px">VIP port details are not available.</div>`;
+  } else {
+    h += `
+      <div class="mrow"><span class="ml">Port ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(vipPort.name || '—')}</span></div>
+      <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(vipPort.status || '—')}</span></div>
+      <div class="mrow"><span class="ml">IP address</span><span class="mv" style="font-family:monospace">${esc(vipPort.ip_address || '—')}</span></div>
+      <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(vipPort.mac_address || '—')}</span></div>
+      <div class="mrow"><span class="ml">Network ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.network_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Subnet ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.subnet_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Device owner</span><span class="mv">${esc(vipPort.device_owner || '—')}</span></div>
+      <div class="mrow"><span class="ml">Device ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.device_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Admin state</span><span class="mv">${vipPort.admin_state_up ? 'UP' : 'DOWN'}</span></div>
+      <div class="mrow"><span class="ml">Project</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.project_id || '—')}</span></div>`;
+  }
+  h += `</div></div>`;
+
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">OVN Logical Port</div>`;
+  if (!vipPort || !vipPort.id) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">VIP port ID is not available.</div>`;
+  } else if (lbDetailState.vipOvn.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading OVN logical port details…</div>`;
+  } else if (lbDetailState.vipOvn.error) {
+    h += `<div class="card-body"><div class="err-block">${esc(lbDetailState.vipOvn.error)}</div></div>`;
+  } else if (lbDetailState.vipOvn.data) {
+    const ovn = lbDetailState.vipOvn.data;
+    const ext = ovn.external_ids || {};
+    const opts = ovn.options || {};
+    h += `<div class="card-body">
+      <div class="mrow"><span class="ml">UUID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.id)}</span></div>
+      ${ovn.up !== null ? `<div class="mrow"><span class="ml">Up</span><span class="mv ${ovn.up ? 'green' : 'red'}">${ovn.up ? 'true' : 'false'}</span></div>` : ''}
+      ${ovn.enabled !== null ? `<div class="mrow"><span class="ml">Enabled</span><span class="mv ${ovn.enabled ? 'green' : 'red'}">${ovn.enabled ? 'true' : 'false'}</span></div>` : ''}
+      ${ovn.tag !== null ? `<div class="mrow"><span class="ml">Tag (VLAN)</span><span class="mv" style="font-family:monospace">${esc(String(ovn.tag))}</span></div>` : ''}
+      ${opts['requested-chassis'] ? `<div class="mrow"><span class="ml">Chassis</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(opts['requested-chassis'])}</span></div>` : ''}
+      ${ovn.dynamic_addresses ? `<div class="mrow"><span class="ml">Dynamic addr</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ovn.dynamic_addresses)}</span></div>` : ''}
+      ${ovn.port_security?.length ? `<div class="mrow"><span class="ml">Port security</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ovn.port_security.join(', '))}</span></div>` : ''}
+      ${ext['neutron:port_name'] ? `<div class="mrow"><span class="ml">Port name</span><span class="mv">${esc(ext['neutron:port_name'])}</span></div>` : ''}
+      ${ext['neutron:device_owner'] ? `<div class="mrow"><span class="ml">Device owner</span><span class="mv">${esc(ext['neutron:device_owner'])}</span></div>` : ''}
+      ${ext['neutron:device_id'] ? `<div class="mrow"><span class="ml">Device ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:device_id'])}</span></div>` : ''}
+      ${ext['neutron:network_id'] ? `<div class="mrow"><span class="ml">Network ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:network_id'])}</span></div>` : ''}
+      ${ext['neutron:project_id'] ? `<div class="mrow"><span class="ml">Project ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:project_id'])}</span></div>` : ''}
+    </div>`;
+  } else {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">OVN logical port details are not available.</div>`;
+  }
+  h += `</div>`;
 
   const listeners = ld.listeners || [];
   h += `<div class="card" style="margin-bottom:10px">

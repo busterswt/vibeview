@@ -112,7 +112,7 @@ const routerDetailState = { loading: false, data: null, ovn: { loading: false, d
 // Load balancer view state
 const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedLoadBalancer = null;
-const lbDetailState = { loading: false, data: null };
+const lbDetailState = { loading: false, data: null, vipOvn: { loading: false, data: null, error: null } };
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
