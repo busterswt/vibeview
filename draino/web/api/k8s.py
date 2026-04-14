@@ -54,6 +54,36 @@ async def api_k8s_services(request: Request, namespace: str | None = None):
         return {"items": [], "error": str(exc)}
 
 
+@router.get("/api/k8s/gatewayclasses")
+async def api_k8s_gatewayclasses(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_gatewayclasses, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/gateways")
+async def api_k8s_gateways(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_gateways, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/httproutes")
+async def api_k8s_httproutes(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_httproutes, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
 @router.get("/api/k8s/pvs")
 async def api_k8s_pvs(request: Request):
     session = _require_session_record()(request)
@@ -70,6 +100,16 @@ async def api_k8s_pvcs(request: Request, namespace: str | None = None):
     loop = asyncio.get_running_loop()
     try:
         return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_pvcs, namespace, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/operators")
+async def api_k8s_operators(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_operators, session.server.k8s_auth), "error": None}
     except Exception as exc:
         return {"items": [], "error": str(exc)}
 

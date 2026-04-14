@@ -192,3 +192,138 @@ def test_get_k8s_pvc_workload_summary_cross_references_longhorn_replicas(monkeyp
     assert payload["items"][0]["replica_count"] == 2
     assert payload["items"][0]["replica_nodes"] == ["cmp-a01", "cmp-a02"]
     assert payload["replica_nodes"][0]["node"] == "cmp-a01"
+
+
+def test_list_k8s_gateway_api_resources(monkeypatch):
+    class FakeCore:
+        def list_namespace(self):
+            return SimpleNamespace(items=[SimpleNamespace(metadata=SimpleNamespace(name="envoy-gateway"))])
+
+    class FakeCustom:
+        def list_cluster_custom_object(self, group, version, plural):
+            assert group == "gateway.networking.k8s.io"
+            assert version == "v1"
+            assert plural == "gatewayclasses"
+            return {
+                "items": [
+                    {
+                        "metadata": {"name": "envoy-gateway", "creationTimestamp": "2026-04-14T01:00:00Z"},
+                        "spec": {"controllerName": "gateway.envoyproxy.io/gatewayclass-controller"},
+                        "status": {"conditions": [{"type": "Accepted", "status": "True"}]},
+                    },
+                ],
+            }
+
+        def list_namespaced_custom_object(self, group, version, namespace, plural):
+            assert group == "gateway.networking.k8s.io"
+            assert version == "v1"
+            assert namespace == "envoy-gateway"
+            if plural == "gateways":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"namespace": "envoy-gateway", "name": "flex-gateway", "creationTimestamp": "2026-04-14T01:00:00Z"},
+                            "spec": {"gatewayClassName": "envoy-gateway", "listeners": [{"name": "https"}, {"name": "http"}]},
+                            "status": {
+                                "addresses": [{"value": "203.0.113.10"}],
+                                "conditions": [{"type": "Accepted", "status": "True"}, {"type": "Programmed", "status": "True"}],
+                                "listeners": [{"name": "https", "attachedRoutes": 3}, {"name": "http", "attachedRoutes": 1}],
+                            },
+                        },
+                    ],
+                }
+            if plural == "httproutes":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"namespace": "envoy-gateway", "name": "app-route", "creationTimestamp": "2026-04-14T01:05:00Z"},
+                            "spec": {
+                                "hostnames": ["app.example.com"],
+                                "parentRefs": [{"name": "flex-gateway", "sectionName": "https"}],
+                                "rules": [{"backendRefs": [{"name": "app-service", "port": 8080}]}],
+                            },
+                            "status": {
+                                "parents": [{
+                                    "conditions": [
+                                        {"type": "Accepted", "status": "True"},
+                                        {"type": "ResolvedRefs", "status": "True"},
+                                    ],
+                                }],
+                            },
+                        },
+                    ],
+                }
+            return {"items": []}
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CoreV1Api", lambda api_client: FakeCore())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    gatewayclasses = k8s_inventory_ops.list_k8s_gatewayclasses()
+    gateways = k8s_inventory_ops.list_k8s_gateways()
+    routes = k8s_inventory_ops.list_k8s_httproutes()
+
+    assert gatewayclasses[0]["name"] == "envoy-gateway"
+    assert gatewayclasses[0]["accepted"] == "True"
+    assert gateways[0]["name"] == "flex-gateway"
+    assert gateways[0]["attached_routes"] == 4
+    assert gateways[0]["listener_names"] == ["https", "http"]
+    assert routes[0]["name"] == "app-route"
+    assert routes[0]["parent_refs"] == ["flex-gateway/https"]
+    assert routes[0]["backend_refs"] == ["app-service:8080"]
+
+
+def test_list_k8s_operators_derives_version_from_workloads(monkeypatch):
+    deployment = SimpleNamespace(
+        metadata=SimpleNamespace(
+            namespace="longhorn-system",
+            name="longhorn-manager",
+            labels={"app.kubernetes.io/name": "longhorn-manager"},
+            creation_timestamp=None,
+        ),
+        spec=SimpleNamespace(
+            replicas=1,
+            template=SimpleNamespace(
+                spec=SimpleNamespace(
+                    containers=[SimpleNamespace(image="longhornio/longhorn-manager:v1.7.2")],
+                ),
+            ),
+        ),
+        status=SimpleNamespace(replicas=1, ready_replicas=1),
+    )
+
+    class FakeApps:
+        def list_deployment_for_all_namespaces(self):
+            return SimpleNamespace(items=[deployment])
+
+        def list_daemon_set_for_all_namespaces(self):
+            return SimpleNamespace(items=[])
+
+        def list_stateful_set_for_all_namespaces(self):
+            return SimpleNamespace(items=[])
+
+    class FakeApiExtensions:
+        def list_custom_resource_definition(self):
+            return SimpleNamespace(items=[
+                SimpleNamespace(
+                    metadata=SimpleNamespace(name="volumes.longhorn.io", creation_timestamp=None),
+                    spec=SimpleNamespace(
+                        group="longhorn.io",
+                        names=SimpleNamespace(kind="Volume"),
+                        scope="Namespaced",
+                        versions=[SimpleNamespace(name="v1beta2", served=True)],
+                    ),
+                ),
+            ])
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "AppsV1Api", lambda api_client: FakeApps())
+    monkeypatch.setattr(k8s_inventory_ops.client, "ApiextensionsV1Api", lambda api_client: FakeApiExtensions())
+
+    items = k8s_inventory_ops.list_k8s_operators()
+
+    assert items[0]["name"] == "longhorn-manager"
+    assert items[0]["kind"] == "Deployment"
+    assert items[0]["version"] == "v1.7.2"
+    assert items[0]["ready"] == "1/1"
+    assert items[0]["managed_crds"] >= 1

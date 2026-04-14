@@ -1105,10 +1105,14 @@ const K8S_RES_META = {
   namespaces: { label: 'Namespaces',        icon: '📦', url: '/api/k8s/namespaces' },
   pods:       { label: 'Pods',              icon: '⬡',  url: '/api/k8s/pods'       },
   services:   { label: 'Services',          icon: '🔗', url: '/api/k8s/services'   },
+  gatewayclasses: { label: 'GatewayClasses', icon: '🏛️', url: '/api/k8s/gatewayclasses' },
+  gateways:   { label: 'Gateways',          icon: '🚪', url: '/api/k8s/gateways'   },
+  httproutes: { label: 'HTTPRoutes',        icon: '🛣️', url: '/api/k8s/httproutes' },
   lbs:        { label: 'LoadBalancers',     icon: '⚡', url: '/api/k8s/services'   }, // filtered client-side
   pvcs:       { label: 'PV Claims',         icon: '📋', url: '/api/k8s/pvcs'       },
   pvs:        { label: 'Persistent Vols',   icon: '💾', url: '/api/k8s/pvs'        },
   crds:       { label: 'Custom Resources',  icon: '🔧', url: '/api/k8s/crds'       },
+  operators:  { label: 'Operators',         icon: '🧰', url: '/api/k8s/operators'  },
 };
 
 const k8sResCache = {}; // type → { loading, data, error }
@@ -1281,6 +1285,49 @@ function renderK8sTable(type, rows) {
           </tr>`;
         }).join('') + `</tbody></table>`;
 
+    case 'gatewayclasses':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Controller</th><th>Accepted</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td>${esc(r.name)}</td>
+          <td style="font-size:10px;color:var(--dim);font-family:monospace">${esc(r.controller || '—')}</td>
+          <td>${badge(r.accepted || 'Unknown', r.accepted === 'True' ? 'running' : r.accepted === 'False' ? 'failed' : 'pending')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'gateways':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Class</th><th>Addresses</th><th>Listeners</th><th>Attached Routes</th><th>Accepted</th><th>Programmed</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td>${esc(r.gateway_class || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc((r.addresses || []).join(', ') || '—')}</td>
+          <td title="${esc((r.listener_names || []).join(', '))}">${esc(String(r.listener_count ?? 0))}</td>
+          <td>${esc(String(r.attached_routes ?? 0))}</td>
+          <td>${badge(r.accepted || 'Unknown', r.accepted === 'True' ? 'running' : r.accepted === 'False' ? 'failed' : 'pending')}</td>
+          <td>${badge(r.programmed || 'Unknown', r.programmed === 'True' ? 'running' : r.programmed === 'False' ? 'failed' : 'pending')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'httproutes':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Hostnames</th><th>Parents</th><th>Rules</th><th>Backends</th><th>Accepted</th><th>ResolvedRefs</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td style="font-size:10px">${esc((r.hostnames || []).join(', ') || '—')}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc((r.parent_refs || []).join(', ') || '—')}</td>
+          <td>${esc(String(r.rules ?? 0))}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc((r.backend_refs || []).join(', ') || '—')}</td>
+          <td>${badge(r.accepted || 'Unknown', r.accepted === 'True' ? 'running' : r.accepted === 'False' ? 'failed' : 'pending')}</td>
+          <td>${badge(r.resolved_refs || 'Unknown', r.resolved_refs === 'True' ? 'running' : r.resolved_refs === 'False' ? 'failed' : 'pending')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
     case 'pvs':
       return `<table class="data-table"><thead><tr>
         <th>Name</th><th>Capacity</th><th>Access</th><th>Reclaim</th><th>Status</th><th>Claim</th><th>StorageClass</th><th>Age</th>
@@ -1327,6 +1374,21 @@ function renderK8sTable(type, rows) {
           <td>${esc(r.kind)}</td>
           <td><span class="k8s-badge ${r.scope === 'Namespaced' ? 'clusterip' : 'lb'}">${esc(r.scope)}</span></td>
           <td style="font-size:10px;color:var(--dim)">${(r.versions || []).join(', ')}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'operators':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Name</th><th>Kind</th><th>Ready</th><th>Version</th><th>Managed CRDs</th><th>Images</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `<tr>
+          <td style="color:var(--dim)">${esc(r.namespace)}</td>
+          <td>${esc(r.name)}</td>
+          <td>${badge(r.kind, r.kind === 'DaemonSet' ? 'nodeport' : r.kind === 'StatefulSet' ? 'lb' : 'clusterip')}</td>
+          <td style="font-family:monospace">${esc(r.ready || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.version || 'unknown')}</td>
+          <td>${esc(String(r.managed_crds ?? 0))}</td>
+          <td style="font-size:10px;color:var(--dim)">${esc((r.images || []).join(', ') || '—')}</td>
           <td style="color:var(--dim)">${k8sAge(r.created)}</td>
         </tr>`).join('') + `</tbody></table>`;
 

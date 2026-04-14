@@ -781,3 +781,188 @@ def list_k8s_crds(auth: K8sAuth | None = None) -> list[dict]:
             "created": _ts(crd),
         })
     return result
+
+
+def _condition_status(conditions, condition_type: str) -> str:
+    for cond in conditions or []:
+        cond_kind = getattr(cond, "type", None) if not isinstance(cond, dict) else cond.get("type")
+        if cond_kind != condition_type:
+            continue
+        return getattr(cond, "status", None) if not isinstance(cond, dict) else cond.get("status", "")
+    return ""
+
+
+def _condition_status_from_dict_list(conditions: list[dict] | None, condition_type: str) -> str:
+    for cond in conditions or []:
+        if cond.get("type") == condition_type:
+            return str(cond.get("status") or "")
+    return ""
+
+
+def _safe_list_custom_objects(group: str, version: str, plural: str, *, namespaced: bool, auth: K8sAuth | None = None) -> list[dict]:
+    api = client.CustomObjectsApi(_api_client(auth))
+    if namespaced:
+        core = client.CoreV1Api(_api_client(auth))
+        items: list[dict] = []
+        for namespace in core.list_namespace().items:
+            chunk = api.list_namespaced_custom_object(group, version, namespace.metadata.name, plural)
+            items.extend(chunk.get("items") or [])
+        return items
+    return (api.list_cluster_custom_object(group, version, plural) or {}).get("items") or []
+
+
+def list_k8s_gatewayclasses(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("gateway.networking.k8s.io", "v1", "gatewayclasses", namespaced=False, auth=auth):
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        conditions = status.get("conditions") or []
+        result.append({
+            "name": (item.get("metadata") or {}).get("name", ""),
+            "controller": spec.get("controllerName", ""),
+            "accepted": _condition_status_from_dict_list(conditions, "Accepted") or "Unknown",
+            "created": ((item.get("metadata") or {}).get("creationTimestamp") or ""),
+        })
+    return result
+
+
+def list_k8s_gateways(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("gateway.networking.k8s.io", "v1", "gateways", namespaced=True, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        addresses = [addr.get("value", "") for addr in (status.get("addresses") or []) if addr.get("value")]
+        listeners = status.get("listeners") or []
+        attached_routes = sum(int(listener.get("attachedRoutes") or 0) for listener in listeners)
+        listener_names = [listener.get("name", "") for listener in listeners if listener.get("name")]
+        accepted = _condition_status_from_dict_list(status.get("conditions") or [], "Accepted") or "Unknown"
+        programmed = _condition_status_from_dict_list(status.get("conditions") or [], "Programmed") or "Unknown"
+        result.append({
+            "namespace": metadata.get("namespace", ""),
+            "name": metadata.get("name", ""),
+            "gateway_class": spec.get("gatewayClassName", ""),
+            "addresses": addresses,
+            "listener_count": len(spec.get("listeners") or []),
+            "listener_names": listener_names,
+            "attached_routes": attached_routes,
+            "accepted": accepted,
+            "programmed": programmed,
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def list_k8s_httproutes(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("gateway.networking.k8s.io", "v1", "httproutes", namespaced=True, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        parent_refs = []
+        for ref in spec.get("parentRefs") or []:
+            name = ref.get("name", "")
+            section = ref.get("sectionName", "")
+            parent_refs.append(f"{name}/{section}" if section else name)
+        backend_refs = []
+        for rule in spec.get("rules") or []:
+            for backend in rule.get("backendRefs") or []:
+                backend_name = backend.get("name", "")
+                backend_port = backend.get("port")
+                if backend_name:
+                    backend_refs.append(f"{backend_name}:{backend_port}" if backend_port else backend_name)
+        route_parents = status.get("parents") or []
+        accepted = "Unknown"
+        resolved_refs = "Unknown"
+        if route_parents:
+            accepted = _condition_status_from_dict_list(route_parents[0].get("conditions") or [], "Accepted") or "Unknown"
+            resolved_refs = _condition_status_from_dict_list(route_parents[0].get("conditions") or [], "ResolvedRefs") or "Unknown"
+        result.append({
+            "namespace": metadata.get("namespace", ""),
+            "name": metadata.get("name", ""),
+            "hostnames": spec.get("hostnames") or [],
+            "parent_refs": parent_refs,
+            "rules": len(spec.get("rules") or []),
+            "backend_refs": backend_refs,
+            "accepted": accepted,
+            "resolved_refs": resolved_refs,
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def _images_and_version(pod_spec) -> tuple[list[str], str]:
+    images = [container.image for container in (getattr(pod_spec, "containers", None) or []) if getattr(container, "image", None)]
+    versions = []
+    for image in images:
+        if "@" in image:
+            versions.append(image.split("@", 1)[1])
+        elif ":" in image.rsplit("/", 1)[-1]:
+            versions.append(image.rsplit(":", 1)[1])
+        else:
+            versions.append("latest")
+    unique_versions = sorted(set(versions))
+    return images, ", ".join(unique_versions)
+
+
+def _is_operator_workload(name: str, labels: dict[str, str], images: list[str]) -> bool:
+    name_l = name.lower()
+    if any(token in name_l for token in ("operator", "controller", "manager")):
+        return True
+    for value in labels.values():
+        text = str(value).lower()
+        if any(token in text for token in ("operator", "controller", "manager")):
+            return True
+    for image in images:
+        text = image.lower()
+        if any(token in text for token in ("operator", "controller", "manager")):
+            return True
+    return False
+
+
+def list_k8s_operators(auth: K8sAuth | None = None) -> list[dict]:
+    api = client.AppsV1Api(_api_client(auth))
+    crds = list_k8s_crds(auth)
+
+    def _crd_matches(name: str) -> int:
+        tokens = [token for token in name.lower().replace("_", "-").split("-") if token and token not in {"operator", "controller", "manager"}]
+        if not tokens:
+            return 0
+        matched = 0
+        for crd in crds:
+            haystack = " ".join([crd.get("name", ""), crd.get("group", ""), crd.get("kind", "")]).lower()
+            if any(token in haystack for token in tokens):
+                matched += 1
+        return matched
+
+    items: list[dict] = []
+    for kind, workload_list in (
+        ("Deployment", api.list_deployment_for_all_namespaces().items),
+        ("DaemonSet", api.list_daemon_set_for_all_namespaces().items),
+        ("StatefulSet", api.list_stateful_set_for_all_namespaces().items),
+    ):
+        for item in workload_list:
+            labels = dict(item.metadata.labels or {})
+            images, version = _images_and_version(item.spec.template.spec)
+            name = item.metadata.name
+            if not _is_operator_workload(name, labels, images):
+                continue
+            ready = getattr(item.status, "ready_replicas", None) or 0
+            desired = (
+                getattr(item.status, "replicas", None)
+                or getattr(item.status, "desired_number_scheduled", None)
+                or getattr(item.spec, "replicas", None)
+                or 0
+            )
+            items.append({
+                "namespace": item.metadata.namespace,
+                "name": name,
+                "kind": kind,
+                "ready": f"{ready}/{desired}",
+                "version": version or "unknown",
+                "images": images,
+                "managed_crds": _crd_matches(name),
+                "created": _ts(item),
+            })
+    items.sort(key=lambda entry: (entry["namespace"], entry["name"]))
+    return items

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VibeView — Vibing Cloud Infrastructure Since 2026</title>
+<title>VibeView — Vibing Cloud Infrastructure Since Last Week</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="no-hints">
@@ -13,7 +13,7 @@
   <div class="logo">
     <div>
       <div>VibeView</div>
-      <div class="logo-sub">Vibing Cloud Infrastructure Since 2026</div>
+      <div class="logo-sub">Vibing Cloud Infrastructure Since Last Week</div>
     </div>
   </div>
   <nav class="top-nav">
@@ -190,6 +190,18 @@
           <span>🔗</span> Services <span class="hint">Port Groups</span>
           <span class="tree-badge" id="k8s-cnt-services"></span>
         </div>
+        <div class="k8s-res-item" data-res="gatewayclasses" onclick="selectK8sResource('gatewayclasses')">
+          <span>🏛️</span> GatewayClasses <span class="hint">Gateway API</span>
+          <span class="tree-badge" id="k8s-cnt-gatewayclasses"></span>
+        </div>
+        <div class="k8s-res-item" data-res="gateways"    onclick="selectK8sResource('gateways')">
+          <span>🚪</span> Gateways <span class="hint">Listeners</span>
+          <span class="tree-badge" id="k8s-cnt-gateways"></span>
+        </div>
+        <div class="k8s-res-item" data-res="httproutes"  onclick="selectK8sResource('httproutes')">
+          <span>🛣️</span> HTTPRoutes <span class="hint">Routing</span>
+          <span class="tree-badge" id="k8s-cnt-httproutes"></span>
+        </div>
         <div class="k8s-res-item" data-res="lbs"         onclick="selectK8sResource('lbs')">
           <span>⚡</span> LoadBalancers <span class="hint">LBaaS</span>
           <span class="tree-badge" id="k8s-cnt-lbs"></span>
@@ -205,6 +217,10 @@
         <div class="k8s-res-item" data-res="crds"        onclick="selectK8sResource('crds')">
           <span>🔧</span> Custom Resources <span class="hint">Extensions</span>
           <span class="tree-badge" id="k8s-cnt-crds"></span>
+        </div>
+        <div class="k8s-res-item" data-res="operators"   onclick="selectK8sResource('operators')">
+          <span>🧰</span> Operators <span class="hint">Controllers</span>
+          <span class="tree-badge" id="k8s-cnt-operators"></span>
         </div>
       </div>
     </div>
