@@ -749,12 +749,12 @@ def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
         created_at = str(item.get("created_at") or "")
         updated_at = str(item.get("updated_at") or "")
         deleted_at = str(item.get("deleted_at") or "")
-        if deleted_at:
-            entry["recent_deletes"] = int(entry.get("recent_deletes") or 0) + (1 if _parse_window_ts(deleted_at, activity.get("since")) else 0)
-        elif created_at:
-            entry["recent_creates"] = int(entry.get("recent_creates") or 0) + (1 if _parse_window_ts(created_at, activity.get("since")) else 0)
-        elif updated_at:
-            entry["recent_updates"] = int(entry.get("recent_updates") or 0) + (1 if _parse_window_ts(updated_at, activity.get("since")) else 0)
+        if deleted_at and _parse_window_ts(deleted_at, activity.get("since")):
+            entry["recent_deletes"] = int(entry.get("recent_deletes") or 0) + 1
+        elif created_at and _parse_window_ts(created_at, activity.get("since")):
+            entry["recent_creates"] = int(entry.get("recent_creates") or 0) + 1
+        elif updated_at and _parse_window_ts(updated_at, activity.get("since")):
+            entry["recent_updates"] = int(entry.get("recent_updates") or 0) + 1
 
     project_items: list[dict] = []
     for entry in project_map.values():
@@ -784,7 +784,11 @@ def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
 
     placement_by_host = {item.get("hypervisor"): item for item in placement_items}
     hypervisor_items: list[dict] = []
+    unresolved_host_instances = 0
     for host, entry in host_map.items():
+        if not host or host == "unknown":
+            unresolved_host_instances += int(entry.get("active_instances") or 0)
+            continue
         placement_item = placement_by_host.get(host, {})
         vcpu_pct = _safe_pct(placement_item.get("vcpus_used"), placement_item.get("vcpus_effective") or placement_item.get("vcpus"))
         ram_pct = _safe_pct(placement_item.get("memory_mb_used"), placement_item.get("memory_mb_effective") or placement_item.get("memory_mb"))
@@ -875,6 +879,11 @@ def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
             "severity": "medium",
             "message": f"{len(deleted_visible)} deleted instances remain queryable in Nova. Useful operationally, but not durable history.",
         })
+    if unresolved_host_instances:
+        findings.append({
+            "severity": "medium",
+            "message": f"{unresolved_host_instances} active instances did not expose a compute host in the Nova response.",
+        })
     hottest_host = placement_hotspots[0] if placement_hotspots else None
     if hottest_host:
         findings.append({
@@ -942,6 +951,7 @@ def build_nova_activity_capacity_report(server: DrainoServer) -> dict:
                     "recent_changed": recent_changed,
                     "hypervisors": len(placement_items),
                     "projects": len(project_items),
+                    "unresolved_host_instances": unresolved_host_instances,
                 },
             },
         },

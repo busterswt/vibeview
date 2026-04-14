@@ -534,9 +534,9 @@ function renderNovaActivityCapacityReport(activeMeta, report, nowLabel) {
       <div class="card">
         <div class="card-title"><span>Recent Activity Window</span></div>
         <div class="card-body report-chart-strip">
-          ${renderReportBreakdownBar('Creates', recent.created ?? 0, Math.max(recent.changed ?? 0, 1), 'good')}
-          ${renderReportBreakdownBar('Deletes', recent.deleted ?? 0, Math.max(recent.changed ?? 0, 1), 'bad')}
-          ${renderReportBreakdownBar('Updates', recent.updated ?? 0, Math.max(recent.changed ?? 0, 1), 'blue')}
+          ${renderReportBreakdownBar('Creates', recent.created ?? 0, Math.max(recent.changed ?? 0, 1), 'good').replace(`${Number(recent.created ?? 0)} / ${Math.max(Number(recent.changed ?? 0), 1)}`, `${Number(recent.created ?? 0)}`)}
+          ${renderReportBreakdownBar('Deletes', recent.deleted ?? 0, Math.max(recent.changed ?? 0, 1), 'bad').replace(`${Number(recent.deleted ?? 0)} / ${Math.max(Number(recent.changed ?? 0), 1)}`, `${Number(recent.deleted ?? 0)}`)}
+          ${renderReportBreakdownBar('Updates', recent.updated ?? 0, Math.max(recent.changed ?? 0, 1), 'blue').replace(`${Number(recent.updated ?? 0)} / ${Math.max(Number(recent.changed ?? 0), 1)}`, `${Number(recent.updated ?? 0)}`)}
         </div>
       </div>
       <div class="card">

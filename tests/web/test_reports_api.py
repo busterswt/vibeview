@@ -346,7 +346,7 @@ def test_build_nova_activity_capacity_report_summarises_api_only_snapshot(monkey
                     "status": "SHUTOFF",
                     "project_id": "proj-a",
                     "project_name": "analytics-prod",
-                    "host": "cmp-42",
+                    "host": "",
                     "availability_zone": "az-a",
                     "created_at": "2026-04-12T10:00:00Z",
                     "updated_at": "2026-04-14T11:00:00Z",
@@ -429,6 +429,12 @@ def test_build_nova_activity_capacity_report_summarises_api_only_snapshot(monkey
     assert payload["report"]["hypervisor_items"][0]["hypervisor"] == "cmp-42"
     assert payload["report"]["deleted_items"][0]["name"] == "job-old"
     assert payload["report"]["debug"]["counts"]["projects"] == 2
+    analytics = next(item for item in payload["report"]["project_items"] if item["project_name"] == "analytics-prod")
+    assert analytics["recent_creates"] == 1
+    assert analytics["recent_deletes"] == 1
+    assert analytics["recent_updates"] == 1
+    assert payload["report"]["debug"]["counts"]["unresolved_host_instances"] == 1
+    assert all(item["hypervisor"] != "unknown" for item in payload["report"]["hypervisor_items"])
 
 
 def test_nova_activity_capacity_reports_endpoints_return_json_and_csv(monkeypatch):
