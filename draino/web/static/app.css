@@ -189,7 +189,8 @@ body {
 .k8s-badge.active   { background: #e8f5e9; color: #2e7d32; }
 #net-detail-wrap,
 #router-detail-wrap,
-#lb-detail-wrap {
+#lb-detail-wrap,
+#k8s-detail-wrap {
   width: 560px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
@@ -199,7 +200,8 @@ body {
 }
 #net-detail-wrap.open,
 #router-detail-wrap.open,
-#lb-detail-wrap.open { display: block; }
+#lb-detail-wrap.open,
+#k8s-detail-wrap.open { display: block; }
 .net-detail-inner { padding: 14px; }
 .net-detail-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .net-detail-inner .data-table td { overflow-wrap: anywhere; word-break: break-word; }

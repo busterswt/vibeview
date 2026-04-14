@@ -745,25 +745,11 @@ def list_k8s_pvs(auth: K8sAuth | None = None) -> list[dict]:
 
 
 def list_k8s_pvcs(namespace: str | None = None, auth: K8sAuth | None = None) -> list[dict]:
-    v1 = client.CoreV1Api(_api_client(auth))
-    raw = (
-        v1.list_persistent_volume_claim_for_all_namespaces()
-        if not namespace
-        else v1.list_namespaced_persistent_volume_claim(namespace)
-    )
-    result = []
-    for pvc in raw.items:
-        result.append({
-            "namespace": pvc.metadata.namespace,
-            "name": pvc.metadata.name,
-            "status": pvc.status.phase or "",
-            "volume": pvc.spec.volume_name or "",
-            "capacity": (pvc.status.capacity or {}).get("storage", ""),
-            "access_modes": ",".join(pvc.spec.access_modes or []),
-            "storageclass": pvc.spec.storage_class_name or "",
-            "created": _ts(pvc),
-        })
-    return result
+    summary = get_k8s_pvc_workload_summary(auth=auth)
+    items = summary.get("items") or []
+    if namespace:
+        items = [item for item in items if item.get("namespace") == namespace]
+    return items
 
 
 def list_k8s_crds(auth: K8sAuth | None = None) -> list[dict]:

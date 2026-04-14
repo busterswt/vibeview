@@ -194,6 +194,52 @@ def test_get_k8s_pvc_workload_summary_cross_references_longhorn_replicas(monkeyp
     assert payload["replica_nodes"][0]["node"] == "cmp-a01"
 
 
+def test_list_k8s_pvcs_reuses_pvc_workload_summary(monkeypatch):
+    monkeypatch.setattr(
+        k8s_inventory_ops,
+        "get_k8s_pvc_workload_summary",
+        lambda auth=None: {
+            "items": [
+                {
+                    "namespace": "db",
+                    "name": "data-0",
+                    "status": "Bound",
+                    "volume": "pvc-123",
+                    "capacity": "100Gi",
+                    "access_modes": "RWO",
+                    "storageclass": "longhorn",
+                    "replica_count": 2,
+                    "replica_nodes": ["cmp-a01", "cmp-a02"],
+                    "consumer_pods": ["mariadb-0"],
+                    "consumer_nodes": ["cmp-a01"],
+                },
+                {
+                    "namespace": "web",
+                    "name": "content-0",
+                    "status": "Bound",
+                    "volume": "pvc-456",
+                    "capacity": "10Gi",
+                    "access_modes": "RWX",
+                    "storageclass": "nfs",
+                    "replica_count": None,
+                    "replica_nodes": [],
+                    "consumer_pods": ["nginx-0"],
+                    "consumer_nodes": ["cmp-b01"],
+                },
+            ],
+            "error": None,
+        },
+    )
+
+    items = k8s_inventory_ops.list_k8s_pvcs()
+    namespaced = k8s_inventory_ops.list_k8s_pvcs(namespace="db")
+
+    assert len(items) == 2
+    assert items[0]["replica_nodes"] == ["cmp-a01", "cmp-a02"]
+    assert items[0]["consumer_pods"] == ["mariadb-0"]
+    assert namespaced == [items[0]]
+
+
 def test_list_k8s_gateway_api_resources(monkeypatch):
     class FakeCore:
         def list_namespace(self):

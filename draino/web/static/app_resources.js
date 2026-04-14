@@ -1117,6 +1117,8 @@ const K8S_RES_META = {
 
 const k8sResCache = {}; // type → { loading, data, error }
 let k8sActiveResource = null;
+let k8sSelectedItemKey = null;
+const k8sDetailState = { type: null, item: null };
 const k8sPageState = {}; // type → { page, filter }
 const K8S_PAGE_SIZE = 50;
 
@@ -1136,7 +1138,219 @@ function k8sAge(isoStr) {
   return `${Math.floor(diff/86400/365)}y`;
 }
 
+function k8sJoin(values) {
+  if (!values || !values.length) return '—';
+  return values.join(', ');
+}
+
+function k8sListHtml(values, empty = '—') {
+  if (!values || !values.length) return `<span class="mv">${esc(empty)}</span>`;
+  return values.map(v => `<div class="mv">${esc(v)}</div>`).join('');
+}
+
+function k8sDetailRows(rows) {
+  return rows.map(([label, value]) => `<div class="mrow"><span class="ml">${esc(label)}</span><span class="mv">${value}</span></div>`).join('');
+}
+
+function k8sItemKey(type, row) {
+  switch (type) {
+    case 'namespaces': return row.name || '';
+    case 'pods': return `${row.namespace || ''}/${row.name || ''}`;
+    case 'services':
+    case 'lbs':
+    case 'pvcs':
+    case 'gateways':
+    case 'httproutes':
+      return `${row.namespace || ''}/${row.name || ''}`;
+    case 'gatewayclasses':
+    case 'pvs':
+    case 'crds':
+      return row.name || '';
+    case 'operators':
+      return `${row.namespace || ''}/${row.kind || ''}/${row.name || ''}`;
+    default:
+      return JSON.stringify(row);
+  }
+}
+
+function closeK8sDetail() {
+  k8sSelectedItemKey = null;
+  k8sDetailState.type = null;
+  k8sDetailState.item = null;
+  const wrap = document.getElementById('k8s-detail-wrap');
+  if (wrap) {
+    wrap.classList.remove('open');
+    wrap.innerHTML = '';
+  }
+}
+
+function selectK8sObject(type, key) {
+  const cached = k8sResCache[type];
+  const rows = cached?.data || [];
+  const item = rows.find(r => k8sItemKey(type, r) === key);
+  if (!item) return;
+  k8sSelectedItemKey = key;
+  k8sDetailState.type = type;
+  k8sDetailState.item = item;
+  const wrap = document.getElementById('k8s-detail-wrap');
+  if (wrap) wrap.classList.add('open');
+  renderK8sContent();
+  renderK8sDetail();
+}
+
+function renderK8sDetail() {
+  const wrap = document.getElementById('k8s-detail-wrap');
+  if (!wrap) return;
+  const { type, item } = k8sDetailState;
+  if (!type || !item) {
+    wrap.classList.remove('open');
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const title = item.name || K8S_RES_META[type]?.label || 'Kubernetes Object';
+  const subtitle = item.namespace ? `${item.namespace} / ${K8S_RES_META[type]?.label || type}` : (K8S_RES_META[type]?.label || type);
+  let body = '';
+
+  switch (type) {
+    case 'namespaces':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Status', `<span class="k8s-badge ${item.status === 'Active' ? 'active' : 'failed'}">${esc(item.status || '—')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'pods':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Phase', `<span class="k8s-badge ${item.phase === 'Running' ? 'running' : item.phase === 'Pending' ? 'pending' : 'failed'}">${esc(item.phase || '—')}</span>`],
+        ['Ready', `<span style="font-family:monospace">${esc(item.ready || '—')}</span>`],
+        ['Restarts', esc(String(item.restarts ?? '—'))],
+        ['Node', esc(item.node || '—')],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'services':
+    case 'lbs':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Type', `<span class="k8s-badge ${item.type === 'LoadBalancer' ? 'lb' : item.type === 'NodePort' ? 'nodeport' : 'clusterip'}">${esc(item.type || '—')}</span>`],
+        ['Cluster IP', `<span style="font-family:monospace">${esc(item.cluster_ip || '—')}</span>`],
+        ['External IPs', k8sListHtml(item.external_ips || [])],
+        ['Ports', `<span style="font-family:monospace">${esc(item.ports || '—')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'gatewayclasses':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Controller', `<span style="font-family:monospace">${esc(item.controller || '—')}</span>`],
+        ['Accepted', `<span class="k8s-badge ${item.accepted === 'True' ? 'running' : item.accepted === 'False' ? 'failed' : 'pending'}">${esc(item.accepted || 'Unknown')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'gateways':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['GatewayClass', esc(item.gateway_class || '—')],
+        ['Addresses', k8sListHtml(item.addresses || [])],
+        ['Listeners', esc(String(item.listener_count ?? 0))],
+        ['Listener Names', k8sListHtml(item.listener_names || [])],
+        ['Attached Routes', esc(String(item.attached_routes ?? 0))],
+        ['Accepted', `<span class="k8s-badge ${item.accepted === 'True' ? 'running' : item.accepted === 'False' ? 'failed' : 'pending'}">${esc(item.accepted || 'Unknown')}</span>`],
+        ['Programmed', `<span class="k8s-badge ${item.programmed === 'True' ? 'running' : item.programmed === 'False' ? 'failed' : 'pending'}">${esc(item.programmed || 'Unknown')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'httproutes':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Hostnames', k8sListHtml(item.hostnames || [])],
+        ['Parent Refs', k8sListHtml(item.parent_refs || [])],
+        ['Rules', esc(String(item.rules ?? 0))],
+        ['Backend Refs', k8sListHtml(item.backend_refs || [])],
+        ['Accepted', `<span class="k8s-badge ${item.accepted === 'True' ? 'running' : item.accepted === 'False' ? 'failed' : 'pending'}">${esc(item.accepted || 'Unknown')}</span>`],
+        ['ResolvedRefs', `<span class="k8s-badge ${item.resolved_refs === 'True' ? 'running' : item.resolved_refs === 'False' ? 'failed' : 'pending'}">${esc(item.resolved_refs || 'Unknown')}</span>`],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'pvs':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Capacity', `<span style="font-family:monospace">${esc(item.capacity || '—')}</span>`],
+        ['Access Modes', esc(item.access_modes || '—')],
+        ['Reclaim Policy', esc(item.reclaim_policy || '—')],
+        ['Status', `<span class="k8s-badge ${item.status === 'Bound' ? 'bound' : item.status === 'Released' ? 'released' : 'pending'}">${esc(item.status || '—')}</span>`],
+        ['Claim', esc(item.claim || '—')],
+        ['StorageClass', esc(item.storageclass || '—')],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'pvcs':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Status', `<span class="k8s-badge ${item.status === 'Bound' ? 'bound' : item.status === 'Pending' ? 'pending' : 'failed'}">${esc(item.status || '—')}</span>`],
+        ['Volume', esc(item.volume || '—')],
+        ['Capacity', `<span style="font-family:monospace">${esc(item.capacity || '—')}</span>`],
+        ['Access Modes', esc(item.access_modes || '—')],
+        ['StorageClass', esc(item.storageclass || '—')],
+        ['Replicas', esc(String(item.replica_count ?? '—'))],
+        ['Replica Nodes', k8sListHtml(item.replica_nodes || [])],
+        ['Consumer Pods', k8sListHtml(item.consumer_pods || [])],
+        ['Consumer Nodes', k8sListHtml(item.consumer_nodes || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'crds':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', `<span style="font-family:monospace">${esc(item.name || '—')}</span>`],
+        ['Group', esc(item.group || '—')],
+        ['Kind', esc(item.kind || '—')],
+        ['Scope', `<span class="k8s-badge ${item.scope === 'Namespaced' ? 'clusterip' : 'lb'}">${esc(item.scope || '—')}</span>`],
+        ['Versions', k8sListHtml(item.versions || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'operators':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Kind', `<span class="k8s-badge ${item.kind === 'DaemonSet' ? 'nodeport' : item.kind === 'StatefulSet' ? 'lb' : 'clusterip'}">${esc(item.kind || '—')}</span>`],
+        ['Ready', `<span style="font-family:monospace">${esc(item.ready || '—')}</span>`],
+        ['Version', `<span style="font-family:monospace">${esc(item.version || 'unknown')}</span>`],
+        ['Managed CRDs', esc(String(item.managed_crds ?? 0))],
+        ['Images', k8sListHtml(item.images || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    default:
+      body = `<div class="card"><div class="card-body"><div class="mrow"><span class="ml">Raw</span><span class="mv"><pre style="margin:0;white-space:pre-wrap">${esc(JSON.stringify(item, null, 2))}</pre></span></div></div></div>`;
+      break;
+  }
+
+  wrap.innerHTML = `
+    <div class="net-detail-inner">
+      <div class="net-detail-head">
+        <div>
+          <div style="font-size:16px;font-weight:700">${esc(title)}</div>
+          <div style="font-size:11px;color:var(--dim);margin-top:2px">${esc(subtitle)}</div>
+        </div>
+        <button class="btn btn-outline small-btn" onclick="closeK8sDetail()">Close</button>
+      </div>
+      ${body}
+    </div>`;
+}
+
 async function selectK8sResource(type) {
+  if (k8sActiveResource !== type) closeK8sDetail();
   k8sActiveResource = type;
   // Highlight sidebar
   document.querySelectorAll('.k8s-res-item').forEach(el =>
@@ -1192,6 +1406,7 @@ function renderK8sContent() {
   const focusedInput = captureFocusedInput(wrap, '.dv-filter');
   if (!k8sActiveResource) {
     wrap.innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 16px">Select a resource type from the navigator.</div>`;
+    renderK8sDetail();
     return;
   }
   const type   = k8sActiveResource;
@@ -1202,11 +1417,13 @@ function renderK8sContent() {
   if (!cached || cached.loading) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>${meta.icon} ${meta.label}</h2></div>
       <div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div>`;
+    renderK8sDetail();
     return;
   }
   if (cached.error) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>${meta.icon} ${meta.label}</h2></div>
       <div class="err-block" style="margin:8px 0">${esc(cached.error)}</div>`;
+    renderK8sDetail();
     return;
   }
 
@@ -1231,19 +1448,27 @@ function renderK8sContent() {
 
   wrap.innerHTML = h;
   restoreFocusedInput(wrap, focusedInput);
+  const stillExists = (cached.data || []).some(r => k8sItemKey(type, r) === k8sSelectedItemKey);
+  if (type !== k8sDetailState.type || !stillExists) closeK8sDetail();
+  renderK8sDetail();
 }
 
 function renderK8sTable(type, rows) {
   if (!rows.length) return `<div style="color:var(--dim);padding:12px 0;font-size:12px">No items match the filter.</div>`;
 
   const badge = (text, cls) => `<span class="k8s-badge ${cls}">${esc(text)}</span>`;
+  const rowOpen = (r) => {
+    const key = k8sItemKey(type, r);
+    const sel = key === k8sSelectedItemKey ? ' class="selected"' : '';
+    return `<tr${sel} style="cursor:pointer" onclick="selectK8sObject('${type}','${esc(key)}')">`;
+  };
 
   switch (type) {
     case 'namespaces':
       return `<table class="data-table"><thead><tr>
         <th>Name</th><th>Status</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td><strong>${esc(r.name)}</strong></td>
           <td>${badge(r.status, r.status === 'Active' ? 'active' : 'failed')}</td>
           <td style="color:var(--dim)">${k8sAge(r.created)}</td>
@@ -1255,7 +1480,7 @@ function renderK8sTable(type, rows) {
         </tr></thead><tbody>` +
         rows.map(r => {
           const phCls = r.phase === 'Running' ? 'running' : r.phase === 'Pending' ? 'pending' : 'failed';
-          return `<tr>
+          return `${rowOpen(r)}
             <td style="color:var(--dim)">${esc(r.namespace)}</td>
             <td>${esc(r.name)}</td>
             <td>${badge(r.phase, phCls)}</td>
@@ -1274,7 +1499,7 @@ function renderK8sTable(type, rows) {
         rows.map(r => {
           const tCls = r.type === 'LoadBalancer' ? 'lb' : r.type === 'NodePort' ? 'nodeport' : 'clusterip';
           const extIp = r.external_ips?.length ? r.external_ips.join(', ') : '—';
-          return `<tr>
+          return `${rowOpen(r)}
             <td style="color:var(--dim)">${esc(r.namespace)}</td>
             <td>${esc(r.name)}</td>
             <td>${badge(r.type, tCls)}</td>
@@ -1289,7 +1514,7 @@ function renderK8sTable(type, rows) {
       return `<table class="data-table"><thead><tr>
         <th>Name</th><th>Controller</th><th>Accepted</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td>${esc(r.name)}</td>
           <td style="font-size:10px;color:var(--dim);font-family:monospace">${esc(r.controller || '—')}</td>
           <td>${badge(r.accepted || 'Unknown', r.accepted === 'True' ? 'running' : r.accepted === 'False' ? 'failed' : 'pending')}</td>
@@ -1300,7 +1525,7 @@ function renderK8sTable(type, rows) {
       return `<table class="data-table"><thead><tr>
         <th>Namespace</th><th>Name</th><th>Class</th><th>Addresses</th><th>Listeners</th><th>Attached Routes</th><th>Accepted</th><th>Programmed</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td style="color:var(--dim)">${esc(r.namespace)}</td>
           <td>${esc(r.name)}</td>
           <td>${esc(r.gateway_class || '—')}</td>
@@ -1316,7 +1541,7 @@ function renderK8sTable(type, rows) {
       return `<table class="data-table"><thead><tr>
         <th>Namespace</th><th>Name</th><th>Hostnames</th><th>Parents</th><th>Rules</th><th>Backends</th><th>Accepted</th><th>ResolvedRefs</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td style="color:var(--dim)">${esc(r.namespace)}</td>
           <td>${esc(r.name)}</td>
           <td style="font-size:10px">${esc((r.hostnames || []).join(', ') || '—')}</td>
@@ -1334,7 +1559,7 @@ function renderK8sTable(type, rows) {
         </tr></thead><tbody>` +
         rows.map(r => {
           const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Released' ? 'released' : 'pending';
-          return `<tr>
+          return `${rowOpen(r)}
             <td>${esc(r.name)}</td>
             <td style="font-family:monospace">${esc(r.capacity)}</td>
             <td style="font-size:10px;color:var(--dim)">${esc(r.access_modes)}</td>
@@ -1352,7 +1577,7 @@ function renderK8sTable(type, rows) {
         </tr></thead><tbody>` +
         rows.map(r => {
           const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Pending' ? 'pending' : 'failed';
-          return `<tr>
+          return `${rowOpen(r)}
             <td style="color:var(--dim)">${esc(r.namespace)}</td>
             <td>${esc(r.name)}</td>
             <td>${badge(r.status, stCls)}</td>
@@ -1368,7 +1593,7 @@ function renderK8sTable(type, rows) {
       return `<table class="data-table"><thead><tr>
         <th>Name</th><th>Group</th><th>Kind</th><th>Scope</th><th>Versions</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td style="font-size:10px;font-family:monospace">${esc(r.name)}</td>
           <td style="font-size:10px;color:var(--dim)">${esc(r.group)}</td>
           <td>${esc(r.kind)}</td>
@@ -1381,7 +1606,7 @@ function renderK8sTable(type, rows) {
       return `<table class="data-table"><thead><tr>
         <th>Namespace</th><th>Name</th><th>Kind</th><th>Ready</th><th>Version</th><th>Managed CRDs</th><th>Images</th><th>Age</th>
         </tr></thead><tbody>` +
-        rows.map(r => `<tr>
+        rows.map(r => `${rowOpen(r)}
           <td style="color:var(--dim)">${esc(r.namespace)}</td>
           <td>${esc(r.name)}</td>
           <td>${badge(r.kind, r.kind === 'DaemonSet' ? 'nodeport' : r.kind === 'StatefulSet' ? 'lb' : 'clusterip')}</td>
