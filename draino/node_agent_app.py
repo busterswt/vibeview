@@ -13,7 +13,7 @@ from .node_agent_host_ops import (
     _get_host_signals,
     _get_network_interfaces,
 )
-from .node_agent_metrics_ops import _get_host_metrics, _get_host_network_stats
+from .node_agent_metrics_ops import _get_host_instance_port_stats, _get_host_metrics, _get_host_network_stats
 
 node_agent_app = FastAPI(title="VibeView Node Agent")
 
@@ -78,6 +78,13 @@ def host_network_stats(authorization: str | None = Header(default=None)) -> dict
     node_agent_common._authorise(authorization)
     node_agent_common._LOGGER.info("host network stats requested node=%s", node_agent_common._node_name())
     return _get_host_network_stats()
+
+
+@node_agent_app.get("/host/instance-port-stats")
+def host_instance_port_stats(authorization: str | None = Header(default=None)) -> dict:
+    node_agent_common._authorise(authorization)
+    node_agent_common._LOGGER.info("instance port stats requested node=%s", node_agent_common._node_name())
+    return _get_host_instance_port_stats()
 
 
 @node_agent_app.post("/reboot", status_code=status.HTTP_202_ACCEPTED)

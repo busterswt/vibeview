@@ -420,6 +420,43 @@ function refreshSelectedNodeNetworkStats() {
   loadNodeNetworkStats(selectedNode);
 }
 
+async function loadNodeInstancePortStats(nodeName, force = false) {
+  const cached = nodeInstancePortStatsCache[nodeName];
+  if (!force && cached?.loading) return;
+  nodeInstancePortStatsCache[nodeName] = {
+    ...(cached || {}),
+    loading: true,
+    error: null,
+  };
+  if (selectedNode === nodeName && activeTab === 'instances') renderInstancesTab(nodes[nodeName]);
+  try {
+    const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/instance-port-stats`);
+    const json = await resp.json();
+    const ports = json.ports || [];
+    nodeInstancePortStatsCache[nodeName] = {
+      loading: false,
+      portsById: Object.fromEntries(ports.map(item => [item.port_id, item])),
+      error: json.error || null,
+      fetchedAt: new Date(),
+    };
+  } catch (e) {
+    nodeInstancePortStatsCache[nodeName] = {
+      loading: false,
+      portsById: {},
+      error: String(e),
+      fetchedAt: new Date(),
+    };
+  }
+  if (selectedNode === nodeName && activeTab === 'instances') renderInstancesTab(nodes[nodeName]);
+}
+
+function refreshSelectedInstancePortStats() {
+  if (activeView !== 'infrastructure' || activeTab !== 'instances' || !selectedNode || !nodes[selectedNode]) return;
+  const instanceId = expandedInstanceIdByNode[selectedNode];
+  if (!instanceId) return;
+  loadNodeInstancePortStats(selectedNode, true);
+}
+
 function toggleNodeInterfaceStats(nodeName, ifaceName, enabled) {
   const set = enabledNetStatsSet(nodeName);
   if (enabled) {
@@ -1138,6 +1175,8 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
 function renderPortDetailPanel(port) {
   const ovn = port.ovn || {};
   const ovnPort = ovn.port || {};
+  const portStatsCache = nodeInstancePortStatsCache[selectedNode] || { loading: false, portsById: {}, error: null, fetchedAt: null };
+  const portStats = (port.id && portStatsCache.portsById && portStatsCache.portsById[port.id]) || null;
   const allowedAddressPairs = (port.allowed_address_pairs || [])
     .map((pair) => [pair.ip_address, pair.mac_address].filter(Boolean).join(' '))
     .filter(Boolean);
@@ -1157,6 +1196,17 @@ function renderPortDetailPanel(port) {
             <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
             <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Host Interface</div>
+          <div class="card-body">
+            ${portStatsCache.error ? `<div class="err-block">${esc(portStatsCache.error)}</div>` : `
+              <div class="mrow"><span class="ml">OVS Interface</span><span class="mv mono">${esc(portStats?.interface_name || '—')}</span></div>
+              <div class="mrow"><span class="ml">Operstate</span><span class="mv">${esc(portStats?.operstate || (portStatsCache.loading ? 'loading…' : '—'))}</span></div>
+              <div class="mrow"><span class="ml">RX</span><span class="mv mono">${portStats ? esc(fmtNetRate(portStats.rx_bytes_per_second)) : (portStatsCache.loading ? '<span class="spinner">⟳</span>' : '—')}</span></div>
+              <div class="mrow"><span class="ml">TX</span><span class="mv mono">${portStats ? esc(fmtNetRate(portStats.tx_bytes_per_second)) : (portStatsCache.loading ? '<span class="spinner">⟳</span>' : '—')}</span></div>
+            `}
           </div>
         </div>
         <div class="card">
@@ -1190,6 +1240,7 @@ function toggleInstanceDetail(instanceId) {
   expandedInstanceIdByNode[nodeName] = instanceId;
   renderInstancesTab(nodes[nodeName]);
   loadInstanceDetail(nodeName, instanceId);
+  loadNodeInstancePortStats(nodeName);
 }
 
 function togglePortDetail(instanceId, portId) {

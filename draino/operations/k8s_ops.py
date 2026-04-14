@@ -301,6 +301,14 @@ def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> 
         return {"interfaces": [], "error": str(exc)}
 
 
+def get_node_instance_port_stats(node_name: str, hostname: str | None = None) -> dict:
+    """Return OVS-backed per-instance port stats via the node agent."""
+    try:
+        return node_agent_client.get_host_instance_port_stats(node_name)
+    except Exception as exc:
+        return {"ports": [], "error": str(exc)}
+
+
 def drain_node(
     name: str,
     log: LogFn,

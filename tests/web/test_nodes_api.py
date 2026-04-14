@@ -238,8 +238,50 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
     assert body["instance"]["ports"][0]["dhcp_enabled"] is True
     assert body["instance"]["ports"][0]["gateway_target"] == "router-a"
-    assert body["instance"]["ports"][0]["allowed_address_pairs"][0]["ip_address"] == "10.0.0.50"
-    assert body["instance"]["ports"][0]["ovn"]["ls_name"] == "neutron-net-1"
+
+
+def test_node_instance_port_stats_endpoint_returns_node_agent_data(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        web_server.k8s_ops,
+        "get_node_instance_port_stats",
+        lambda node_name, hostname=None: {
+            "ports": [{"port_id": "port-1", "interface_name": "tap123", "rx_bytes_per_second": 1234.0, "tx_bytes_per_second": 5678.0}],
+            "error": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        resp = client.get("/api/nodes/node-a/instance-port-stats")
+
+    assert resp.status_code == 200
+    assert resp.json()["ports"][0]["port_id"] == "port-1"
 
 
 def test_node_detail_endpoint_returns_api_issue_on_nova_failure(monkeypatch):

@@ -279,6 +279,49 @@ def test_node_agent_host_network_stats_computes_rates(monkeypatch):
     assert eth0["tx_bytes_per_second"] == 1500.0
 
 
+def test_get_node_instance_port_stats_uses_node_agent(monkeypatch):
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_instance_port_stats",
+        lambda node_name: {
+            "ports": [{"port_id": "port-1", "interface_name": "tap123", "rx_bytes_per_second": 1234.0, "tx_bytes_per_second": 5678.0}],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_instance_port_stats("node-1", "hv-1")
+
+    assert result["ports"][0]["port_id"] == "port-1"
+    assert result["ports"][0]["interface_name"] == "tap123"
+
+
+def test_node_agent_instance_port_stats_computes_rates(monkeypatch):
+    outputs = iter([
+        "port-1|tap123|1000|2000|up\nport-2|tap456|5000|7000|down\n",
+        "port-1|tap123|3000|5000|up\nport-2|tap456|9000|11000|down\n",
+    ])
+    times = iter([1000.0, 1002.0])
+
+    monkeypatch.setattr(
+        node_agent_metrics_ops,
+        "_run_host_shell",
+        lambda script, timeout=10: subprocess.CompletedProcess(args=["sh"], returncode=0, stdout=next(outputs), stderr=""),
+    )
+    monkeypatch.setattr(node_agent_metrics_ops.time, "time", lambda: next(times))
+    node_agent_metrics_ops._instance_port_prev_samples.clear()
+
+    first = node_agent_metrics_ops._get_host_instance_port_stats()
+    second = node_agent_metrics_ops._get_host_instance_port_stats()
+
+    assert first["error"] is None
+    assert first["ports"][0]["rx_bytes_per_second"] is None
+    port = next(item for item in second["ports"] if item["port_id"] == "port-1")
+    assert port["interface_name"] == "tap123"
+    assert port["operstate"] == "up"
+    assert port["rx_bytes_per_second"] == 1000.0
+    assert port["tx_bytes_per_second"] == 1500.0
+
+
 def test_get_ovn_edge_nodes_reads_other_config_from_json(monkeypatch):
     payload = {
         "headings": [

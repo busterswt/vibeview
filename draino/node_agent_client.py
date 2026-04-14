@@ -85,6 +85,10 @@ def get_host_network_stats(node_name: str) -> dict:
     return _request_json(node_name, "GET", "/host/network-stats")
 
 
+def get_host_instance_port_stats(node_name: str) -> dict:
+    return _request_json(node_name, "GET", "/host/instance-port-stats")
+
+
 def get_ready_node_names(agent_config: NodeAgentConfig | None = None) -> set[str]:
     config_data = agent_config or load_config_from_env()
 

@@ -14,6 +14,8 @@ _host_metrics_history: list[dict] = []
 _host_metrics_lock = threading.Lock()
 _host_network_prev_samples: dict[str, tuple[float, int, int]] = {}
 _host_network_prev_lock = threading.Lock()
+_instance_port_prev_samples: dict[str, tuple[float, int, int]] = {}
+_instance_port_prev_lock = threading.Lock()
 
 
 def _get_host_metrics() -> dict:
@@ -225,3 +227,74 @@ done
 
     results.sort(key=lambda item: item["name"])
     return {"interfaces": results, "error": None}
+
+
+def _get_host_instance_port_stats() -> dict:
+    try:
+        proc = _run_host_shell(
+            r"""
+if ! command -v ovs-vsctl >/dev/null 2>&1; then
+  echo "__ERROR__ ovs-vsctl not found"
+  exit 0
+fi
+ovs-vsctl --data=bare --no-heading --columns=name list Interface 2>/dev/null | while read -r name; do
+  [ -n "$name" ] || continue
+  iface_id=$(ovs-vsctl --if-exists get Interface "$name" external_ids:iface-id 2>/dev/null | tr -d '"')
+  [ -n "$iface_id" ] || continue
+  [ -r "/sys/class/net/$name/statistics/rx_bytes" ] || continue
+  rx=$(cat "/sys/class/net/$name/statistics/rx_bytes" 2>/dev/null)
+  tx=$(cat "/sys/class/net/$name/statistics/tx_bytes" 2>/dev/null)
+  oper=$(cat "/sys/class/net/$name/operstate" 2>/dev/null)
+  printf '%s|%s|%s|%s|%s\n' "$iface_id" "$name" "${rx:-0}" "${tx:-0}" "${oper:-unknown}"
+done
+""",
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"ports": [], "error": str(exc)}
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr = proc.stderr.strip()
+        return {"ports": [], "error": stderr or f"instance port stats command exited {proc.returncode}"}
+
+    if "__ERROR__" in proc.stdout:
+        return {"ports": [], "error": "ovs-vsctl not found"}
+
+    now = time.time()
+    results: list[dict] = []
+    with _instance_port_prev_lock:
+        for raw_line in proc.stdout.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("__ERROR__"):
+                continue
+            parts = line.split("|")
+            if len(parts) != 5:
+                continue
+            port_id, iface_name, rx_raw, tx_raw, operstate = parts
+            try:
+                rx_bytes = int(rx_raw)
+                tx_bytes = int(tx_raw)
+            except ValueError:
+                continue
+            rx_rate_bps = None
+            tx_rate_bps = None
+            previous = _instance_port_prev_samples.get(port_id)
+            if previous is not None:
+                prev_time, prev_rx, prev_tx = previous
+                elapsed = now - prev_time
+                if elapsed > 0:
+                    rx_rate_bps = max(0.0, (rx_bytes - prev_rx) / elapsed)
+                    tx_rate_bps = max(0.0, (tx_bytes - prev_tx) / elapsed)
+            _instance_port_prev_samples[port_id] = (now, rx_bytes, tx_bytes)
+            results.append({
+                "port_id": port_id,
+                "interface_name": iface_name,
+                "operstate": operstate or "unknown",
+                "rx_bytes": rx_bytes,
+                "tx_bytes": tx_bytes,
+                "rx_bytes_per_second": rx_rate_bps,
+                "tx_bytes_per_second": tx_rate_bps,
+            })
+
+    results.sort(key=lambda item: (item["port_id"], item["interface_name"]))
+    return {"ports": results, "error": None}
