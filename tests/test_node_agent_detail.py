@@ -314,6 +314,34 @@ def test_get_node_instance_port_stats_uses_node_agent(monkeypatch):
     assert result["ports"][0]["interface_name"] == "tap123"
 
 
+def test_get_node_instance_port_stats_prefers_tap_candidate_over_ovs_name(monkeypatch):
+    port_id = "0013ffe7-3f6f-4037-9187-874dccf05624"
+    monkeypatch.setattr(
+        k8s_ops,
+        "get_ovs_interface_port_bindings",
+        lambda node_name, auth=None: {port_id: "attached-mac=fa:16:3e:01:6b:ec"},
+    )
+    monkeypatch.setattr(
+        k8s_ops.node_agent_client,
+        "get_host_interface_stats",
+        lambda node_name, interface_names: {
+            "interfaces": [{
+                "name": "tap0013ffe7-3f",
+                "operstate": "up",
+                "rx_bytes_per_second": 1234.0,
+                "tx_bytes_per_second": 5678.0,
+            }],
+            "error": None,
+        },
+    )
+
+    result = k8s_ops.get_node_instance_port_stats("node-1", [port_id], None, "hv-1")
+
+    assert result["ports"][0]["port_id"] == port_id
+    assert result["ports"][0]["interface_name"] == "tap0013ffe7-3f"
+    assert result["ports"][0]["operstate"] == "up"
+
+
 def test_node_agent_instance_port_stats_computes_rates(monkeypatch):
     outputs = iter([
         "port-1|tap123|1000|2000|up\nport-2|tap456|5000|7000|down\n",

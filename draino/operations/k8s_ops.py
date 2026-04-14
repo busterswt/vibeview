@@ -302,6 +302,23 @@ def get_node_network_interfaces(node_name: str, hostname: str | None = None) -> 
         return {"interfaces": [], "error": str(exc)}
 
 
+def _port_interface_candidates(port_id: str, ovs_interface_name: str | None = None) -> list[str]:
+    short = (port_id or "")[:11]
+    candidates: list[str] = []
+    if short:
+        candidates.append(f"tap{short}")
+    if ovs_interface_name:
+        candidates.append(ovs_interface_name)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
 def get_node_instance_port_stats(
     node_name: str,
     port_ids: list[str],
@@ -315,8 +332,11 @@ def get_node_instance_port_stats(
         return {"ports": [], "error": str(exc)}
 
     requested_port_ids = [port_id for port_id in port_ids if port_id]
-    port_to_iface = {port_id: bindings[port_id] for port_id in requested_port_ids if port_id in bindings}
-    interface_names = sorted(set(port_to_iface.values()))
+    port_to_candidates = {
+        port_id: _port_interface_candidates(port_id, bindings.get(port_id))
+        for port_id in requested_port_ids
+    }
+    interface_names = sorted({name for names in port_to_candidates.values() for name in names})
 
     try:
         iface_stats = node_agent_client.get_host_interface_stats(node_name, interface_names)
@@ -327,18 +347,19 @@ def get_node_instance_port_stats(
     stats_by_name = {item.get("name"): item for item in interfaces if item.get("name")}
     ports: list[dict] = []
     for port_id in requested_port_ids:
-        iface_name = port_to_iface.get(port_id)
+        candidates = port_to_candidates.get(port_id, [])
+        stats = next((stats_by_name[name] for name in candidates if name in stats_by_name), None)
+        iface_name = stats.get("name") if stats else (candidates[0] if candidates else None)
         if not iface_name:
             continue
-        stats = stats_by_name.get(iface_name, {})
         ports.append({
             "port_id": port_id,
             "interface_name": iface_name,
-            "operstate": stats.get("operstate"),
-            "rx_bytes": stats.get("rx_bytes"),
-            "tx_bytes": stats.get("tx_bytes"),
-            "rx_bytes_per_second": stats.get("rx_bytes_per_second"),
-            "tx_bytes_per_second": stats.get("tx_bytes_per_second"),
+            "operstate": stats.get("operstate") if stats else None,
+            "rx_bytes": stats.get("rx_bytes") if stats else None,
+            "tx_bytes": stats.get("tx_bytes") if stats else None,
+            "rx_bytes_per_second": stats.get("rx_bytes_per_second") if stats else None,
+            "tx_bytes_per_second": stats.get("tx_bytes_per_second") if stats else None,
         })
 
     return {
