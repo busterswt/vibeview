@@ -890,23 +890,6 @@ function buildOpenStackAuthPayload() {
   const panel = document.getElementById('auth-os-panel');
   if (!panel || panel.classList.contains('hidden')) return null;
 
-  const hasPasswordAuth = [
-    document.getElementById('auth-os-url').value.trim(),
-    document.getElementById('auth-os-user').value.trim(),
-    document.getElementById('auth-os-pass').value,
-    document.getElementById('auth-os-project').value.trim(),
-  ].some(Boolean);
-  const hasAppCredAuth = [
-    document.getElementById('auth-os-app-url').value.trim(),
-    document.getElementById('auth-os-app-id').value.trim(),
-    document.getElementById('auth-os-app-secret').value,
-  ].some(Boolean);
-  const hasCloudsYamlAuth = [
-    document.getElementById('auth-os-clouds-yaml').value.trim(),
-    document.getElementById('auth-os-cloud-name').value.trim(),
-  ].some(Boolean);
-  if (!hasPasswordAuth && !hasAppCredAuth && !hasCloudsYamlAuth) return null;
-
   if (authMode.os === 'password') {
     return {
       mode: 'password',
