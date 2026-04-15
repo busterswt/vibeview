@@ -33,6 +33,21 @@ def test_resolve_remote_track_digest_uses_top_level_manifest_digest(monkeypatch)
     assert digest == "sha256:toplevel"
 
 
+def test_resolve_remote_track_digest_accepts_lowercase_digest_header(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_ghcr_manifest_request",
+        lambda repository_path, reference, token=None: (
+            {"mediaType": "application/vnd.oci.image.manifest.v1+json"},
+            {"docker-content-digest": "sha256:lowercase"},
+        ),
+    )
+
+    digest = web_server._resolve_remote_track_digest("ghcr.io/busterswt/vibeview", "main")
+
+    assert digest == "sha256:lowercase"
+
+
 def test_compute_update_status_falls_back_to_configured_tag_digest(monkeypatch):
     monkeypatch.setattr(web_server, "_get_running_image_digest", lambda: None)
     monkeypatch.setattr(web_server, "_IMAGE_TAG", "0.1.0")

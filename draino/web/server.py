@@ -268,7 +268,8 @@ def _resolve_remote_track_digest(image_repository: str, reference: str) -> str |
         repository_path = repository_path[len("ghcr.io/"):]
 
     _manifest, headers = _ghcr_manifest_request(repository_path, reference)
-    return headers.get("Docker-Content-Digest")
+    lower_headers = {str(key).lower(): value for key, value in headers.items()}
+    return lower_headers.get("docker-content-digest")
 
 
 def _get_running_image_digest() -> str | None:
