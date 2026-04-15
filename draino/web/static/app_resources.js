@@ -1,6 +1,6 @@
 'use strict';
 
-const networkingOverlayState = globalThis.networkingOverlayState || {
+const sharedNetworkingOverlayState = globalThis.networkingOverlayState || {
   loading: false,
   loaded: false,
   error: null,
@@ -15,7 +15,7 @@ const networkingOverlayState = globalThis.networkingOverlayState || {
   clusternetworks: [],
   networkdomains: [],
 };
-globalThis.networkingOverlayState = networkingOverlayState;
+globalThis.networkingOverlayState = sharedNetworkingOverlayState;
 
 // ════════════════════════════════════════════════════════════════════════════
 // § NETWORKS VIEW
@@ -95,9 +95,9 @@ function armDetailWatchdog(kind, id, timeoutMs, onTimeout) {
 }
 
 async function ensureNetworkingOverlayData() {
-  if (networkingOverlayState.loaded || networkingOverlayState.loading) return;
-  networkingOverlayState.loading = true;
-  networkingOverlayState.error = null;
+  if (sharedNetworkingOverlayState.loaded || sharedNetworkingOverlayState.loading) return;
+  sharedNetworkingOverlayState.loading = true;
+  sharedNetworkingOverlayState.error = null;
   try {
     const loaders = [
       ['vpcs', '/api/k8s/vpcs'],
@@ -114,16 +114,16 @@ async function ensureNetworkingOverlayData() {
     for (const [index, [key]] of loaders.entries()) {
       const json = results[index] || {};
       if (json.error) throw new Error(json.error);
-      networkingOverlayState[key] = json.items || [];
+      sharedNetworkingOverlayState[key] = json.items || [];
       if (key === 'services') {
-        networkingOverlayState.lbs = (json.items || []).filter(item => item.type === 'LoadBalancer');
+        sharedNetworkingOverlayState.lbs = (json.items || []).filter(item => item.type === 'LoadBalancer');
       }
     }
-    networkingOverlayState.loaded = true;
+    sharedNetworkingOverlayState.loaded = true;
   } catch (e) {
-    networkingOverlayState.error = String(e);
+    sharedNetworkingOverlayState.error = String(e);
   } finally {
-    networkingOverlayState.loading = false;
+    sharedNetworkingOverlayState.loading = false;
     if (selectedNetwork) renderNetworkDetail();
     if (selectedRouter) renderRouterDetail();
     if (selectedLoadBalancer) renderLoadBalancerDetail();
@@ -132,7 +132,7 @@ async function ensureNetworkingOverlayData() {
 
 function gatewayRoutesForGateway(gateway) {
   if (!gateway) return [];
-  return (networkingOverlayState.httproutes || []).filter(route =>
+  return (sharedNetworkingOverlayState.httproutes || []).filter(route =>
     (route.parent_refs || []).some(parent => {
       const [parentName] = String(parent || '').split('/');
       return parentName === gateway.name && route.namespace === gateway.namespace;
@@ -149,23 +149,23 @@ function renderOverlayCard(title, body) {
 
 function renderNetworkOverlayCard(network) {
   ensureNetworkingOverlayData();
-  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+  if (sharedNetworkingOverlayState.loading && !sharedNetworkingOverlayState.loaded) {
     return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
   }
-  if (networkingOverlayState.error) {
-    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  if (sharedNetworkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(sharedNetworkingOverlayState.error)}</div>`);
   }
   const cidrs = (network.subnets || []).map(item => item.cidr).filter(Boolean);
-  const matchingServices = (networkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
-  const matchingGateways = (networkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
-  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
+  const matchingServices = (sharedNetworkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
+  const matchingGateways = (sharedNetworkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
+  const matchingSubnets = (sharedNetworkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
   const subnetNames = new Set(matchingSubnets.map(item => item.name));
-  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  const matchingVpcs = (sharedNetworkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
   const routeMap = new Map();
   for (const gateway of matchingGateways) {
     for (const route of gatewayRoutesForGateway(gateway)) routeMap.set(`${route.namespace}/${route.name}`, route);
   }
-  const matchingDomains = (networkingOverlayState.networkdomains || []).filter(item =>
+  const matchingDomains = (sharedNetworkingOverlayState.networkdomains || []).filter(item =>
     endpointMatchesCidrs(item.external_endpoints, cidrs),
   );
   if (!matchingServices.length && !matchingGateways.length && !routeMap.size && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) {
@@ -188,19 +188,19 @@ function renderNetworkOverlayCard(network) {
 
 function renderRouterOverlayCard(router) {
   ensureNetworkingOverlayData();
-  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+  if (sharedNetworkingOverlayState.loading && !sharedNetworkingOverlayState.loaded) {
     return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
   }
-  if (networkingOverlayState.error) {
-    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  if (sharedNetworkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(sharedNetworkingOverlayState.error)}</div>`);
   }
   const cidrs = (router.connected_subnets || []).map(item => item.cidr).filter(Boolean);
-  const matchingServices = (networkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
-  const matchingGateways = (networkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
-  const matchingDomains = (networkingOverlayState.networkdomains || []).filter(item => endpointMatchesCidrs(item.external_endpoints, cidrs));
-  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
+  const matchingServices = (sharedNetworkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
+  const matchingGateways = (sharedNetworkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
+  const matchingDomains = (sharedNetworkingOverlayState.networkdomains || []).filter(item => endpointMatchesCidrs(item.external_endpoints, cidrs));
+  const matchingSubnets = (sharedNetworkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
   const subnetNames = new Set(matchingSubnets.map(item => item.name));
-  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  const matchingVpcs = (sharedNetworkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
   if (!matchingServices.length && !matchingGateways.length && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) return '';
   return renderOverlayCard('Kubernetes Overlay', `
     <div class="mrow"><span class="ml">Connected subnets</span><span class="mv">${cidrs.length || '—'}</span></div>
@@ -217,24 +217,24 @@ function renderRouterOverlayCard(router) {
 
 function renderLoadBalancerOverlayCard(lb) {
   ensureNetworkingOverlayData();
-  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+  if (sharedNetworkingOverlayState.loading && !sharedNetworkingOverlayState.loaded) {
     return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
   }
-  if (networkingOverlayState.error) {
-    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  if (sharedNetworkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(sharedNetworkingOverlayState.error)}</div>`);
   }
   const ips = [lb.vip_address, lb.floating_ip].filter(Boolean);
-  const matchingServices = (networkingOverlayState.lbs || []).filter(item =>
+  const matchingServices = (sharedNetworkingOverlayState.lbs || []).filter(item =>
     (item.external_ips || []).some(value => ips.includes(value)),
   );
-  const matchingGateways = (networkingOverlayState.gateways || []).filter(item =>
+  const matchingGateways = (sharedNetworkingOverlayState.gateways || []).filter(item =>
     (item.addresses || []).some(value => ips.includes(value)),
   );
-  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item =>
+  const matchingSubnets = (sharedNetworkingOverlayState.subnets || []).filter(item =>
     ips.some(value => ipInCidr(value, item.cidr)),
   );
   const subnetNames = new Set(matchingSubnets.map(item => item.name));
-  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  const matchingVpcs = (sharedNetworkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
   const routeMap = new Map();
   for (const gateway of matchingGateways) {
     for (const route of gatewayRoutesForGateway(gateway)) routeMap.set(`${route.namespace}/${route.name}`, route);
