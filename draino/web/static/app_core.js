@@ -157,6 +157,22 @@ const routerDetailState = { loading: false, data: null, ovn: { loading: false, d
 const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedLoadBalancer = null;
 const lbDetailState = { loading: false, data: null, vipOvn: { loading: false, data: null, error: null } };
+const networkingOverlayState = globalThis.networkingOverlayState || {
+  loading: false,
+  loaded: false,
+  error: null,
+  vpcs: [],
+  subnets: [],
+  vlans: [],
+  providernetworks: [],
+  services: [],
+  lbs: [],
+  gateways: [],
+  httproutes: [],
+  clusternetworks: [],
+  networkdomains: [],
+};
+globalThis.networkingOverlayState = networkingOverlayState;
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };

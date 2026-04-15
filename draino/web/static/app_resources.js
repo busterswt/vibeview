@@ -1,5 +1,22 @@
 'use strict';
 
+const networkingOverlayState = globalThis.networkingOverlayState || {
+  loading: false,
+  loaded: false,
+  error: null,
+  vpcs: [],
+  subnets: [],
+  vlans: [],
+  providernetworks: [],
+  services: [],
+  lbs: [],
+  gateways: [],
+  httproutes: [],
+  clusternetworks: [],
+  networkdomains: [],
+};
+globalThis.networkingOverlayState = networkingOverlayState;
+
 // ════════════════════════════════════════════════════════════════════════════
 // § NETWORKS VIEW
 // ════════════════════════════════════════════════════════════════════════════
