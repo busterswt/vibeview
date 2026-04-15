@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Nova Activity & Capacity Snapshot</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --border: #d1d9e0;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  min-height: 100vh;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+}
+
+.logo { color: white; font-weight: 700; }
+.logo-sub { font-size: 10px; font-weight: 400; color: #90a4ae; }
+
+.top-nav { display: flex; gap: 4px; margin-left: 24px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.bc-link { color: var(--blue); }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#content {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.header-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 16px 18px;
+}
+
+.title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+.sub { margin-top: 4px; color: var(--dim); line-height: 1.5; max-width: 900px; }
+.meta-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: #35546c;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.hero-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.hero-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.hero-foot.good { color: var(--green); }
+.hero-foot.warn { color: var(--yellow); }
+.hero-foot.bad { color: var(--red); }
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 14px;
+}
+
+.grid-three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.card-title {
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 14px; }
+
+.note {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border: 1px solid #ffe0b2;
+  background: #fff8e1;
+  color: #8d5c10;
+  border-radius: 4px;
+}
+
+.finding-list { display: grid; gap: 8px; }
+.finding-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.finding-row:last-child { border-bottom: none; }
+
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sev.high { background: var(--red-bg); color: var(--red); }
+.sev.medium { background: var(--yellow-bg); color: var(--yellow); }
+.sev.low { background: var(--green-bg); color: var(--green); }
+.finding-text { font-size: 12px; line-height: 1.5; }
+
+.chart-strip { display: grid; gap: 10px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) 72px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3eaf1;
+  overflow: hidden;
+}
+.bar-fill { height: 100%; border-radius: 999px; }
+.bar-fill.blue { background: var(--blue); }
+.bar-fill.red { background: var(--red); }
+.bar-fill.yellow { background: var(--yellow); }
+.bar-fill.green { background: var(--green); }
+.bar-value { color: var(--dim); font-size: 11px; text-align: right; }
+
+.table-wrap {
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.data-table th {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  background: #fafbfc;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.tag.good { background: var(--green-bg); color: var(--green); }
+.tag.warn { background: var(--yellow-bg); color: var(--yellow); }
+.tag.bad { background: var(--red-bg); color: var(--red); }
+.tag.blue { background: var(--blue-bg); color: var(--blue); }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+@media (max-width: 980px) {
+  .hero-grid,
+  .grid-two,
+  .grid-three {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">VibeView <span class="logo-sub">Vibing Cloud Infrastructure Since Last Week</span></div>
+    <nav class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Networking</a>
+      <a href="#">Storage</a>
+      <a href="#">Kubernetes</a>
+      <a href="#" class="active">Reports</a>
+      <a href="#">Metrics</a>
+    </nav>
+    <div class="top-right">
+      <span class="mock-pill">MOCKUP</span>
+      <button class="btn">Export CSV</button>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Reports</span>
+    <span>/</span>
+    <span>Nova Activity & Capacity Snapshot</span>
+    <div class="bc-actions">
+      <button class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <section class="header-card">
+      <div class="title">Nova Activity &amp; Capacity Snapshot</div>
+      <div class="sub">Current Nova estate, recent queryable instance changes, and Placement-backed headroom. This is API-derived only and does not persist historical snapshots.</div>
+      <div class="meta-row">
+        <span class="meta-pill">Nova current state</span>
+        <span class="meta-pill">Placement live usage</span>
+        <span class="meta-pill">Recent change window: 24h</span>
+        <span class="meta-pill">All projects</span>
+        <span class="meta-pill">Generated 2026-04-14 20:58 CDT</span>
+      </div>
+    </section>
+
+    <div class="note">This report does not track state over time. “Deleted visible” and “Changed since 24h” only reflect records currently queryable from Nova and may be limited by API retention and deployment policy.</div>
+
+    <section class="hero-grid">
+      <div class="hero">
+        <div class="hero-label">Active Instances</div>
+        <div class="hero-value">8,412</div>
+        <div class="hero-foot good">7,986 ACTIVE / 188 SHUTOFF / 238 other</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Deleted Visible</div>
+        <div class="hero-value">217</div>
+        <div class="hero-foot warn">Currently queryable deleted servers</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">Changed Since 24h</div>
+        <div class="hero-value">463</div>
+        <div class="hero-foot warn">182 creates / 97 deletes / 184 updates</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">vCPU Headroom</div>
+        <div class="hero-value">18.4%</div>
+        <div class="hero-foot bad">92,640 used / 113,408 effective</div>
+      </div>
+      <div class="hero">
+        <div class="hero-label">RAM Headroom</div>
+        <div class="hero-value">24.9%</div>
+        <div class="hero-foot warn">268.1 TiB used / 357.2 TiB effective</div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Highest-Risk Findings</div>
+        <div class="card-body">
+          <div class="finding-list">
+            <div class="finding-row">
+              <span class="sev high">High</span>
+              <div class="finding-text">Compute AZ <span class="mono">iad3-az2</span> is at <strong>94%</strong> vCPU effective usage and <strong>89%</strong> RAM effective usage from Placement.</div>
+            </div>
+            <div class="finding-row">
+              <span class="sev high">High</span>
+              <div class="finding-text">Project <span class="mono">analytics-prod</span> accounted for <strong>61</strong> instance creates and <strong>44</strong> deletes in the last 24h, indicating elevated churn.</div>
+            </div>
+            <div class="finding-row">
+              <span class="sev medium">Medium</span>
+              <div class="finding-text"><strong>217</strong> deleted instances remain visible to Nova. This is useful operationally, but not a durable historical signal.</div>
+            </div>
+            <div class="finding-row">
+              <span class="sev medium">Medium</span>
+              <div class="finding-text">Hypervisor <span class="mono">cmp-42</span> is carrying <strong>188</strong> active instances and the highest RAM allocation in the fleet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Current Capacity by AZ</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>iad3-az1 vCPU</div>
+              <div class="bar-track"><div class="bar-fill green" style="width: 71%;"></div></div>
+              <div class="bar-value">71%</div>
+            </div>
+            <div class="bar-row">
+              <div>iad3-az2 vCPU</div>
+              <div class="bar-track"><div class="bar-fill red" style="width: 94%;"></div></div>
+              <div class="bar-value">94%</div>
+            </div>
+            <div class="bar-row">
+              <div>iad3-az3 vCPU</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width: 83%;"></div></div>
+              <div class="bar-value">83%</div>
+            </div>
+            <div class="bar-row">
+              <div>iad3-az1 RAM</div>
+              <div class="bar-track"><div class="bar-fill green" style="width: 68%;"></div></div>
+              <div class="bar-value">68%</div>
+            </div>
+            <div class="bar-row">
+              <div>iad3-az2 RAM</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width: 89%;"></div></div>
+              <div class="bar-value">89%</div>
+            </div>
+            <div class="bar-row">
+              <div>iad3-az3 RAM</div>
+              <div class="bar-track"><div class="bar-fill blue" style="width: 74%;"></div></div>
+              <div class="bar-value">74%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-three">
+      <div class="card">
+        <div class="card-title">Recent Activity Window</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>Creates</div>
+              <div class="bar-track"><div class="bar-fill green" style="width: 72%;"></div></div>
+              <div class="bar-value">182</div>
+            </div>
+            <div class="bar-row">
+              <div>Deletes</div>
+              <div class="bar-track"><div class="bar-fill red" style="width: 39%;"></div></div>
+              <div class="bar-value">97</div>
+            </div>
+            <div class="bar-row">
+              <div>Updates</div>
+              <div class="bar-track"><div class="bar-fill blue" style="width: 74%;"></div></div>
+              <div class="bar-value">184</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Active Status Mix</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>ACTIVE</div>
+              <div class="bar-track"><div class="bar-fill green" style="width: 95%;"></div></div>
+              <div class="bar-value">7,986</div>
+            </div>
+            <div class="bar-row">
+              <div>SHUTOFF</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width: 18%;"></div></div>
+              <div class="bar-value">188</div>
+            </div>
+            <div class="bar-row">
+              <div>ERROR</div>
+              <div class="bar-track"><div class="bar-fill red" style="width: 3%;"></div></div>
+              <div class="bar-value">24</div>
+            </div>
+            <div class="bar-row">
+              <div>VERIFY_RESIZE</div>
+              <div class="bar-track"><div class="bar-fill blue" style="width: 2%;"></div></div>
+              <div class="bar-value">19</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Placement Hotspots</div>
+        <div class="card-body">
+          <div class="chart-strip">
+            <div class="bar-row">
+              <div>cmp-42 RAM</div>
+              <div class="bar-track"><div class="bar-fill red" style="width: 96%;"></div></div>
+              <div class="bar-value">96%</div>
+            </div>
+            <div class="bar-row">
+              <div>cmp-31 vCPU</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width: 90%;"></div></div>
+              <div class="bar-value">90%</div>
+            </div>
+            <div class="bar-row">
+              <div>cmp-17 RAM</div>
+              <div class="bar-track"><div class="bar-fill yellow" style="width: 88%;"></div></div>
+              <div class="bar-value">88%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Top Projects by Active Instances</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Active</th>
+              <th>vCPU</th>
+              <th>RAM</th>
+              <th>Primary AZ</th>
+              <th>24h Changes</th>
+              <th>Deleted Visible</th>
+              <th>Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">analytics-prod</td>
+              <td>1,214</td>
+              <td>9,712</td>
+              <td>32.0 TiB</td>
+              <td>iad3-az2</td>
+              <td>105</td>
+              <td>41</td>
+              <td><span class="tag bad">High churn</span></td>
+            </tr>
+            <tr>
+              <td class="mono">customer-edge</td>
+              <td>931</td>
+              <td>7,448</td>
+              <td>21.8 TiB</td>
+              <td>iad3-az1</td>
+              <td>22</td>
+              <td>9</td>
+              <td><span class="tag good">Stable</span></td>
+            </tr>
+            <tr>
+              <td class="mono">data-platform</td>
+              <td>844</td>
+              <td>6,752</td>
+              <td>28.4 TiB</td>
+              <td>iad3-az3</td>
+              <td>47</td>
+              <td>18</td>
+              <td><span class="tag warn">Growing</span></td>
+            </tr>
+            <tr>
+              <td class="mono">ci-build-farm</td>
+              <td>517</td>
+              <td>2,068</td>
+              <td>5.7 TiB</td>
+              <td>iad3-az2</td>
+              <td>137</td>
+              <td>62</td>
+              <td><span class="tag bad">Burst churn</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="card-title">Busiest Hypervisors</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>AZ</th>
+                <th>Instances</th>
+                <th>vCPU Used %</th>
+                <th>RAM Used %</th>
+                <th>Project Mix</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">cmp-42</td>
+                <td>iad3-az2</td>
+                <td>188</td>
+                <td>93%</td>
+                <td>96%</td>
+                <td>18 projects</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-31</td>
+                <td>iad3-az2</td>
+                <td>176</td>
+                <td>90%</td>
+                <td>84%</td>
+                <td>13 projects</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-17</td>
+                <td>iad3-az3</td>
+                <td>171</td>
+                <td>81%</td>
+                <td>88%</td>
+                <td>14 projects</td>
+              </tr>
+              <tr>
+                <td class="mono">cmp-08</td>
+                <td>iad3-az1</td>
+                <td>165</td>
+                <td>79%</td>
+                <td>82%</td>
+                <td>11 projects</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Deleted Instances Still Visible</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Instance</th>
+                <th>Project</th>
+                <th>Host</th>
+                <th>Deleted At</th>
+                <th>Flavor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">build-agent-4f82</td>
+                <td>ci-build-farm</td>
+                <td>cmp-22</td>
+                <td>2026-04-14 18:11</td>
+                <td>m1.large</td>
+              </tr>
+              <tr>
+                <td class="mono">etl-runner-a1c7</td>
+                <td>analytics-prod</td>
+                <td>cmp-41</td>
+                <td>2026-04-14 17:44</td>
+                <td>m1.xlarge</td>
+              </tr>
+              <tr>
+                <td class="mono">cache-warm-9d2a</td>
+                <td>customer-edge</td>
+                <td>cmp-06</td>
+                <td>2026-04-14 16:59</td>
+                <td>m1.medium</td>
+              </tr>
+              <tr>
+                <td class="mono">job-worker-f7a0</td>
+                <td>ci-build-farm</td>
+                <td>cmp-18</td>
+                <td>2026-04-14 16:31</td>
+                <td>m1.small</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
