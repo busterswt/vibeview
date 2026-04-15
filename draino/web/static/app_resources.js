@@ -67,6 +67,16 @@ async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
   }
 }
 
+function armDetailWatchdog(kind, id, timeoutMs, onTimeout) {
+  return setTimeout(() => {
+    try {
+      onTimeout();
+    } catch (_) {
+      // ignore watchdog callback errors
+    }
+  }, timeoutMs);
+}
+
 async function ensureNetworkingOverlayData() {
   if (networkingOverlayState.loaded || networkingOverlayState.loading) return;
   networkingOverlayState.loading = true;
@@ -421,6 +431,12 @@ async function selectLoadBalancer(id) {
   lbDetailState.data = null;
   lbDetailState.vipOvn = { loading: false, data: null, error: null };
   renderLoadBalancerDetail();
+  const watchdog = armDetailWatchdog('loadbalancer', id, 12000, () => {
+    if (selectedLoadBalancer !== id || !lbDetailState.loading) return;
+    lbDetailState.loading = false;
+    lbDetailState.data = { error: 'Timed out after 12s while loading load balancer details' };
+    renderLoadBalancerDetail();
+  });
   try {
     const json = await fetchJsonWithTimeout(`/api/load-balancers/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
@@ -430,6 +446,7 @@ async function selectLoadBalancer(id) {
   } catch (e) {
     lbDetailState.data = { error: String(e) };
   } finally {
+    clearTimeout(watchdog);
     lbDetailState.loading = false;
     renderLoadBalancerDetail();
   }
@@ -656,6 +673,12 @@ async function selectNetwork(id) {
   netDetailState.loading = true;
   netDetailState.data    = null;
   renderNetworkDetail();
+  const watchdog = armDetailWatchdog('network', id, 12000, () => {
+    if (selectedNetwork !== id || !netDetailState.loading) return;
+    netDetailState.loading = false;
+    netDetailState.data = { error: 'Timed out after 12s while loading network details' };
+    renderNetworkDetail();
+  });
   try {
     const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
@@ -666,6 +689,7 @@ async function selectNetwork(id) {
   } catch (e) {
     netDetailState.data = { error: String(e) };
   } finally {
+    clearTimeout(watchdog);
     netDetailState.loading = false;
     renderNetworkDetail();
   }
@@ -1182,6 +1206,12 @@ async function selectRouter(id) {
   routerDetailState.loading = true;
   routerDetailState.data = null;
   renderRouterDetail();
+  const watchdog = armDetailWatchdog('router', id, 12000, () => {
+    if (selectedRouter !== id || !routerDetailState.loading) return;
+    routerDetailState.loading = false;
+    routerDetailState.data = { error: 'Timed out after 12s while loading router details' };
+    renderRouterDetail();
+  });
   try {
     const json = await fetchJsonWithTimeout(`/api/routers/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
@@ -1192,6 +1222,7 @@ async function selectRouter(id) {
   } catch (e) {
     routerDetailState.data = { error: String(e) };
   } finally {
+    clearTimeout(watchdog);
     routerDetailState.loading = false;
     renderRouterDetail();
   }
