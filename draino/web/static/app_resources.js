@@ -1211,10 +1211,12 @@ function closeK8sDetail() {
   k8sDetailState.type = null;
   k8sDetailState.item = null;
   const wrap = document.getElementById('k8s-detail-wrap');
+  const resizer = document.getElementById('k8s-detail-resizer');
   if (wrap) {
     wrap.classList.remove('open');
     wrap.innerHTML = '';
   }
+  if (resizer) resizer.classList.remove('open');
 }
 
 function selectK8sObject(type, key) {
@@ -1226,7 +1228,9 @@ function selectK8sObject(type, key) {
   k8sDetailState.type = type;
   k8sDetailState.item = item;
   const wrap = document.getElementById('k8s-detail-wrap');
+  const resizer = document.getElementById('k8s-detail-resizer');
   if (wrap) wrap.classList.add('open');
+  if (resizer) resizer.classList.add('open');
   renderK8sContent();
   renderK8sDetail();
 }
@@ -1238,6 +1242,7 @@ function renderK8sDetail() {
   if (!type || !item) {
     wrap.classList.remove('open');
     wrap.innerHTML = '';
+    document.getElementById('k8s-detail-resizer')?.classList.remove('open');
     return;
   }
 

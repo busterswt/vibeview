@@ -202,7 +202,14 @@ body {
 .k8s-badge.active   { background: #e8f5e9; color: #2e7d32; }
 #net-detail-wrap,
 #router-detail-wrap,
-#lb-detail-wrap,
+#lb-detail-wrap {
+  width: 560px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--white);
+  overflow-y: auto;
+  display: none;
+}
 #k8s-detail-wrap {
   width: 560px;
   flex-shrink: 0;
@@ -210,6 +217,18 @@ body {
   background: var(--white);
   overflow-y: auto;
   display: none;
+}
+#k8s-detail-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: linear-gradient(to right, transparent 0, #d9e1e7 50%, transparent 100%);
+  flex-shrink: 0;
+  display: none;
+}
+#k8s-detail-resizer.open { display: block; }
+#k8s-detail-resizer:hover,
+#k8s-detail-resizer.dragging {
+  background: linear-gradient(to right, transparent 0, #90caf9 50%, transparent 100%);
 }
 #net-detail-wrap.open,
 #router-detail-wrap.open,

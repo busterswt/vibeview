@@ -108,6 +108,14 @@ function applyTasksHeight(height) {
   localStorage.setItem('drainoTasksHeight', String(px));
 }
 
+function applyK8sDetailWidth(width) {
+  const panel = document.getElementById('k8s-detail-wrap');
+  if (!panel) return;
+  const px = Math.max(560, Math.min(1120, Math.round(width)));
+  panel.style.width = `${px}px`;
+  localStorage.setItem('vibeviewK8sDetailWidth', String(px));
+}
+
 function initSidebarResizer() {
   const sidebar = document.getElementById('sidebar');
   const resizer = document.getElementById('sidebar-resizer');
@@ -173,11 +181,49 @@ function initTasksResizer() {
   });
 }
 
+function initK8sDetailResizer() {
+  const panel = document.getElementById('k8s-detail-wrap');
+  const resizer = document.getElementById('k8s-detail-resizer');
+  if (!panel || !resizer) return;
+
+  const saved = Number(localStorage.getItem('vibeviewK8sDetailWidth'));
+  if (Number.isFinite(saved) && saved >= 560) applyK8sDetailWidth(saved);
+
+  resizer.addEventListener('mousedown', (event) => {
+    tasksDragging = false;
+    sidebarDragging = false;
+    resizer.classList.add('dragging');
+    document.body.dataset.k8sDetailDragging = 'true';
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (document.body.dataset.k8sDetailDragging !== 'true') return;
+    const view = document.getElementById('view-kubernetes');
+    const rect = view?.getBoundingClientRect();
+    if (!rect) return;
+    const width = rect.right - event.clientX;
+    const maxWidth = Math.max(560, rect.width - 260);
+    applyK8sDetailWidth(Math.max(560, Math.min(maxWidth, width)));
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (document.body.dataset.k8sDetailDragging !== 'true') return;
+    delete document.body.dataset.k8sDetailDragging;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INIT
 // ════════════════════════════════════════════════════════════════════════════
 
 initSidebarResizer();
 initTasksResizer();
+initK8sDetailResizer();
 initPollingInterval();
 bootstrapSession();
