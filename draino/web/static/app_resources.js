@@ -470,6 +470,7 @@ function renderLoadBalancerDetail() {
     wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(ld.error)}</div></div>`;
     return;
   }
+  try {
   const provCls = ld.provisioning_status === 'ACTIVE' ? 'st-active' : ld.provisioning_status === 'ERROR' ? 'st-error' : 'st-pending';
   let h = `<div class="net-detail-inner">
     <div class="net-detail-head">
@@ -633,6 +634,9 @@ function renderLoadBalancerDetail() {
   </div>`;
   wrap.innerHTML = h;
   syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
 }
 
 async function selectNetwork(id) {
@@ -733,6 +737,7 @@ function renderNetworkDetail() {
     wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(nd.error)}</div></div>`;
     return;
   }
+  try {
 
   const stCls = nd.status === 'ACTIVE' ? 'st-active' : nd.status === 'DOWN' ? 'st-down' : 'st-error';
   let h = `<div class="net-detail-inner">
@@ -818,9 +823,10 @@ function renderNetworkDetail() {
     h += `<div class="card-body"><div class="err-block">${esc(ovn.error)}</div></div>`;
   } else if (ovn.data) {
     const ls = ovn.data;
+    const lsUuid = String(ls.ls_uuid || '');
     h += `<div class="card-body">
       <div class="mrow"><span class="ml">Name</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ls.ls_name)}</span></div>
-      <div class="mrow"><span class="ml">UUID</span><span class="mv uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(ls.ls_uuid)}" onclick="navigator.clipboard?.writeText('${escAttr(ls.ls_uuid)}')">${ls.ls_uuid.slice(0,8)}…</span></div>
+      <div class="mrow"><span class="ml">UUID</span><span class="mv uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(lsUuid)}" onclick="navigator.clipboard?.writeText('${escAttr(lsUuid)}')">${lsUuid ? `${lsUuid.slice(0,8)}…` : '—'}</span></div>
     </div>`;
     if (ls.ports?.length) {
       h += `<div style="padding:0">
@@ -838,12 +844,13 @@ function renderNetworkDetail() {
         }
         if (!mac) mac = '—';
         const ipStr = ipList.length ? ipList.join(', ') : '—';
-        const isSpecial = p.id.startsWith('provnet-') || p.type === 'localnet';
-        const isSel = netDetailState.ovnSelectedPort === p.id;
+        const portId = String(p.id || '');
+        const isSpecial = portId.startsWith('provnet-') || p.type === 'localnet';
+        const isSel = netDetailState.ovnSelectedPort === portId;
         const portIdCell = isSpecial
-          ? `<span style="color:var(--dim);font-size:10px;font-family:monospace">${esc(p.id)}</span>`
-          : `<span style="font-family:monospace;font-size:10px" title="${escAttr(p.id)}">${p.id.slice(0,8)}…</span>`;
-        h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectOvnPort('${escAttr(p.id)}')">
+          ? `<span style="color:var(--dim);font-size:10px;font-family:monospace">${esc(portId || '—')}</span>`
+          : `<span style="font-family:monospace;font-size:10px" title="${escAttr(portId)}">${portId ? `${portId.slice(0,8)}…` : '—'}</span>`;
+        h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectOvnPort('${escAttr(portId)}')">
           <td>${portIdCell}</td>
           <td>${esc(typeLabel)}</td>
           <td style="font-family:monospace;font-size:10px">${esc(mac)}<br><span style="color:var(--dim)">${esc(ipStr)}</span></td>
@@ -866,6 +873,9 @@ function renderNetworkDetail() {
   h += `</div>`;
   wrap.innerHTML = h;
   syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
 }
 
 function selectSubnet(id) {
@@ -1222,6 +1232,7 @@ function renderRouterDetail() {
     wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(rd.error)}</div></div>`;
     return;
   }
+  try {
 
   const stCls = rd.status === 'ACTIVE' ? 'st-active' : rd.status === 'DOWN' ? 'st-down' : 'st-error';
   const gateway = rd.external_gateway || {};
@@ -1334,6 +1345,9 @@ function renderRouterDetail() {
 
   wrap.innerHTML = h;
   syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
