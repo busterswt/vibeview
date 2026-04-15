@@ -168,9 +168,7 @@ function renderNetworkOverlayCard(network) {
   const matchingDomains = (sharedNetworkingOverlayState.networkdomains || []).filter(item =>
     endpointMatchesCidrs(item.external_endpoints, cidrs),
   );
-  if (!matchingServices.length && !matchingGateways.length && !routeMap.size && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) {
-    return '';
-  }
+  const hasMatches = matchingServices.length || matchingGateways.length || routeMap.size || matchingDomains.length || matchingSubnets.length || matchingVpcs.length;
   return renderOverlayCard('Kubernetes Overlay', `
     <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
     <div class="mrow"><span class="ml">Kube-OVN subnets</span><span class="mv">${matchingSubnets.length || '—'}</span></div>
@@ -178,6 +176,7 @@ function renderNetworkOverlayCard(network) {
     <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
     <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
     <div class="mrow"><span class="ml">HTTPRoutes</span><span class="mv">${routeMap.size || '—'}</span></div>
+    ${!hasMatches ? `<div style="margin-top:8px;color:var(--dim);font-size:12px">No overlay relationships found for this network.</div>` : ''}
     ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
     ${matchingSubnets.length ? `<div class="mrow"><span class="ml">Subnet names</span><span class="mv">${esc(matchingSubnets.map(item => item.name).join(', '))}</span></div>` : ''}
     ${matchingDomains.length ? `<div class="mrow"><span class="ml">Namespaces</span><span class="mv">${esc(matchingDomains.map(item => item.namespace).join(', '))}</span></div>` : ''}
@@ -201,7 +200,7 @@ function renderRouterOverlayCard(router) {
   const matchingSubnets = (sharedNetworkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
   const subnetNames = new Set(matchingSubnets.map(item => item.name));
   const matchingVpcs = (sharedNetworkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
-  if (!matchingServices.length && !matchingGateways.length && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) return '';
+  const hasMatches = matchingServices.length || matchingGateways.length || matchingDomains.length || matchingSubnets.length || matchingVpcs.length;
   return renderOverlayCard('Kubernetes Overlay', `
     <div class="mrow"><span class="ml">Connected subnets</span><span class="mv">${cidrs.length || '—'}</span></div>
     <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
@@ -209,6 +208,7 @@ function renderRouterOverlayCard(router) {
     <div class="mrow"><span class="ml">Network domains</span><span class="mv">${matchingDomains.length || '—'}</span></div>
     <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
     <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
+    ${!hasMatches ? `<div style="margin-top:8px;color:var(--dim);font-size:12px">No overlay relationships found for this router.</div>` : ''}
     ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
     ${matchingServices.length ? `<div class="mrow"><span class="ml">Service VIPs</span><span class="mv" style="font-size:10px">${esc(matchingServices.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
     ${matchingGateways.length ? `<div class="mrow"><span class="ml">Gateway namespaces</span><span class="mv">${esc(matchingGateways.map(item => item.namespace).join(', '))}</span></div>` : ''}
@@ -239,7 +239,7 @@ function renderLoadBalancerOverlayCard(lb) {
   for (const gateway of matchingGateways) {
     for (const route of gatewayRoutesForGateway(gateway)) routeMap.set(`${route.namespace}/${route.name}`, route);
   }
-  if (!matchingServices.length && !matchingGateways.length && !routeMap.size && !matchingSubnets.length && !matchingVpcs.length) return '';
+  const hasMatches = matchingServices.length || matchingGateways.length || routeMap.size || matchingSubnets.length || matchingVpcs.length;
   return renderOverlayCard('Kubernetes Overlay', `
     <div class="mrow"><span class="ml">Matched addresses</span><span class="mv" style="font-family:monospace">${esc(ips.join(', ') || '—')}</span></div>
     <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
@@ -247,6 +247,7 @@ function renderLoadBalancerOverlayCard(lb) {
     <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
     <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
     <div class="mrow"><span class="ml">HTTPRoutes</span><span class="mv">${routeMap.size || '—'}</span></div>
+    ${!hasMatches ? `<div style="margin-top:8px;color:var(--dim);font-size:12px">No overlay relationships found for this load balancer.</div>` : ''}
     ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv" style="font-size:10px">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
     ${matchingServices.length ? `<div class="mrow"><span class="ml">Services</span><span class="mv" style="font-size:10px">${esc(matchingServices.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
     ${matchingGateways.length ? `<div class="mrow"><span class="ml">Gateways</span><span class="mv" style="font-size:10px">${esc(matchingGateways.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
