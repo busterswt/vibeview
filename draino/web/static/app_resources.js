@@ -51,6 +51,22 @@ function endpointMatchesCidrs(values, cidrs) {
   return (values || []).some(value => (cidrs || []).some(cidr => ipInCidr(value, cidr)));
 }
 
+async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const resp = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    return await resp.json();
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function ensureNetworkingOverlayData() {
   if (networkingOverlayState.loaded || networkingOverlayState.loading) return;
   networkingOverlayState.loading = true;
@@ -67,7 +83,7 @@ async function ensureNetworkingOverlayData() {
       ['clusternetworks', '/api/k8s/cluster-networks'],
       ['networkdomains', '/api/k8s/network-domains'],
     ];
-    const results = await Promise.all(loaders.map(([, url]) => fetch(url).then(resp => resp.json())));
+    const results = await Promise.all(loaders.map(([, url]) => fetchJsonWithTimeout(url, 8000)));
     for (const [index, [key]] of loaders.entries()) {
       const json = results[index] || {};
       if (json.error) throw new Error(json.error);
@@ -406,8 +422,7 @@ async function selectLoadBalancer(id) {
   lbDetailState.vipOvn = { loading: false, data: null, error: null };
   renderLoadBalancerDetail();
   try {
-    const resp = await fetch(`/api/load-balancers/${encodeURIComponent(id)}`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/load-balancers/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
     if (json.error) throw new Error(json.error);
     const meta = lbState.data?.find(item => item.id === id) || {};
@@ -423,8 +438,7 @@ async function selectLoadBalancer(id) {
     lbDetailState.vipOvn = { loading: true, data: null, error: null };
     renderLoadBalancerDetail();
     try {
-      const resp = await fetch(`/api/ovn/lsp/${encodeURIComponent(vipPortId)}`);
-      const json = await resp.json();
+      const json = await fetchJsonWithTimeout(`/api/ovn/lsp/${encodeURIComponent(vipPortId)}`, 8000);
       if (json.error) throw new Error(json.error);
       lbDetailState.vipOvn = { loading: false, data: json.port, error: null };
     } catch (e) {
@@ -639,8 +653,7 @@ async function selectNetwork(id) {
   netDetailState.data    = null;
   renderNetworkDetail();
   try {
-    const resp = await fetch(`/api/networks/${encodeURIComponent(id)}`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Neutron');
     if (json.error) throw new Error(json.error);
@@ -665,8 +678,7 @@ async function refreshSelectedNetworkDetail(options = {}) {
     renderNetworkDetail();
   }
   try {
-    const resp = await fetch(`/api/networks/${encodeURIComponent(selectedNetwork)}`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(selectedNetwork)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Neutron');
     if (json.error) throw new Error(json.error);
@@ -687,8 +699,7 @@ async function loadNetworkOvn(id) {
   netDetailState.ovn = { loading: true, data: null, error: null };
   renderNetworkDetail();
   try {
-    const resp = await fetch(`/api/networks/${encodeURIComponent(id)}/ovn`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(id)}/ovn`, 8000);
     if (json.error) throw new Error(json.error);
     netDetailState.ovn = { loading: false, data: json.ovn, error: null };
   } catch (e) {
@@ -988,8 +999,7 @@ async function selectOvnPort(portId) {
   netDetailState.ovnPortCache[portId] = { loading: true, data: null, error: null };
   renderNetworkDetail();
   try {
-    const resp = await fetch(`/api/ovn/lsp/${encodeURIComponent(portId)}`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/ovn/lsp/${encodeURIComponent(portId)}`, 8000);
     if (json.error) throw new Error(json.error);
     netDetailState.ovnPortCache[portId] = { loading: false, data: json.port, error: null };
   } catch (e) {
@@ -1163,8 +1173,7 @@ async function selectRouter(id) {
   routerDetailState.data = null;
   renderRouterDetail();
   try {
-    const resp = await fetch(`/api/routers/${encodeURIComponent(id)}`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/routers/${encodeURIComponent(id)}`, 10000);
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('Neutron');
     if (json.error) throw new Error(json.error);
@@ -1183,8 +1192,7 @@ async function loadRouterOvn(id) {
   routerDetailState.ovn = { loading: true, data: null, error: null };
   renderRouterDetail();
   try {
-    const resp = await fetch(`/api/routers/${encodeURIComponent(id)}/ovn`);
-    const json = await resp.json();
+    const json = await fetchJsonWithTimeout(`/api/routers/${encodeURIComponent(id)}/ovn`, 8000);
     if (json.error) throw new Error(json.error);
     routerDetailState.ovn = { loading: false, data: json.ovn, error: null };
   } catch (e) {
