@@ -54,6 +54,86 @@ async def api_k8s_services(request: Request, namespace: str | None = None):
         return {"items": [], "error": str(exc)}
 
 
+@router.get("/api/k8s/cluster-networks")
+async def api_k8s_cluster_networks(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_cluster_networks, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/network-domains")
+async def api_k8s_network_domains(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_network_domains, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/vpcs")
+async def api_k8s_vpcs(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_vpcs, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/subnets")
+async def api_k8s_subnets(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_subnets, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/vlans")
+async def api_k8s_vlans(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_vlans, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/provider-networks")
+async def api_k8s_provider_networks(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_provider_networks, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/provider-subnets")
+async def api_k8s_provider_subnets(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_provider_subnets, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
+@router.get("/api/k8s/ips")
+async def api_k8s_ips(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.list_k8s_kubeovn_ips, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
 @router.get("/api/k8s/deployments")
 async def api_k8s_deployments(request: Request):
     session = _require_session_record()(request)

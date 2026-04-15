@@ -205,3 +205,54 @@ def test_login_allows_k8s_only_session(monkeypatch):
         assert body["project_name"] is None
         assert body["role_names"] == []
         assert body["is_admin"] is False
+
+
+def test_k8s_networking_endpoints_return_items(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [{"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_cluster_networks", lambda auth=None: [{"name": "pod-network-10.244.1.0/24", "cidr": "10.244.1.0/24"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_network_domains", lambda auth=None: [{"namespace": "web", "name": "web"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_vpcs", lambda auth=None: [{"name": "tenant-a"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_subnets", lambda auth=None: [{"name": "tenant-a-apps"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_vlans", lambda auth=None: [{"name": "tenant-a-vlan"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_provider_networks", lambda auth=None: [{"name": "physnet1"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_provider_subnets", lambda auth=None: [{"name": "tenant-a-provider"}])
+    monkeypatch.setattr(web_server.k8s_ops, "list_k8s_kubeovn_ips", lambda auth=None: [{"name": "pod.web.frontend"}])
+
+    payload = {
+        "kubernetes": {
+            "server": "https://cluster.example:6443",
+            "token": "token-1",
+            "skip_tls_verify": True,
+        },
+        "openstack": None,
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        vpcs = client.get("/api/k8s/vpcs")
+        subnets = client.get("/api/k8s/subnets")
+        vlans = client.get("/api/k8s/vlans")
+        provider_networks = client.get("/api/k8s/provider-networks")
+        provider_subnets = client.get("/api/k8s/provider-subnets")
+        ips = client.get("/api/k8s/ips")
+        cluster_networks = client.get("/api/k8s/cluster-networks")
+        network_domains = client.get("/api/k8s/network-domains")
+
+    assert vpcs.status_code == 200
+    assert vpcs.json()["items"][0]["name"] == "tenant-a"
+    assert subnets.status_code == 200
+    assert subnets.json()["items"][0]["name"] == "tenant-a-apps"
+    assert vlans.status_code == 200
+    assert vlans.json()["items"][0]["name"] == "tenant-a-vlan"
+    assert provider_networks.status_code == 200
+    assert provider_networks.json()["items"][0]["name"] == "physnet1"
+    assert provider_subnets.status_code == 200
+    assert provider_subnets.json()["items"][0]["name"] == "tenant-a-provider"
+    assert ips.status_code == 200
+    assert ips.json()["items"][0]["name"] == "pod.web.frontend"
+    assert cluster_networks.status_code == 200
+    assert cluster_networks.json()["items"][0]["cidr"] == "10.244.1.0/24"
+    assert network_domains.status_code == 200
+    assert network_domains.json()["items"][0]["namespace"] == "web"

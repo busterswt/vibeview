@@ -25,6 +25,192 @@ function syncNetworkingDetailShell() {
   }
 }
 
+function isIpv4(value) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(value || '').trim());
+}
+
+function ipv4ToInt(value) {
+  if (!isIpv4(value)) return null;
+  const parts = String(value).trim().split('.').map(Number);
+  if (parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0;
+}
+
+function ipInCidr(ip, cidr) {
+  const ipInt = ipv4ToInt(ip);
+  if (ipInt == null) return false;
+  const [base, prefixRaw] = String(cidr || '').split('/');
+  const baseInt = ipv4ToInt(base);
+  const prefix = Number(prefixRaw);
+  if (baseInt == null || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (ipInt & mask) === (baseInt & mask);
+}
+
+function endpointMatchesCidrs(values, cidrs) {
+  return (values || []).some(value => (cidrs || []).some(cidr => ipInCidr(value, cidr)));
+}
+
+async function ensureNetworkingOverlayData() {
+  if (networkingOverlayState.loaded || networkingOverlayState.loading) return;
+  networkingOverlayState.loading = true;
+  networkingOverlayState.error = null;
+  try {
+    const loaders = [
+      ['vpcs', '/api/k8s/vpcs'],
+      ['subnets', '/api/k8s/subnets'],
+      ['vlans', '/api/k8s/vlans'],
+      ['providernetworks', '/api/k8s/provider-networks'],
+      ['services', '/api/k8s/services'],
+      ['gateways', '/api/k8s/gateways'],
+      ['httproutes', '/api/k8s/httproutes'],
+      ['clusternetworks', '/api/k8s/cluster-networks'],
+      ['networkdomains', '/api/k8s/network-domains'],
+    ];
+    const results = await Promise.all(loaders.map(([, url]) => fetch(url).then(resp => resp.json())));
+    for (const [index, [key]] of loaders.entries()) {
+      const json = results[index] || {};
+      if (json.error) throw new Error(json.error);
+      networkingOverlayState[key] = json.items || [];
+      if (key === 'services') {
+        networkingOverlayState.lbs = (json.items || []).filter(item => item.type === 'LoadBalancer');
+      }
+    }
+    networkingOverlayState.loaded = true;
+  } catch (e) {
+    networkingOverlayState.error = String(e);
+  } finally {
+    networkingOverlayState.loading = false;
+    if (selectedNetwork) renderNetworkDetail();
+    if (selectedRouter) renderRouterDetail();
+    if (selectedLoadBalancer) renderLoadBalancerDetail();
+  }
+}
+
+function gatewayRoutesForGateway(gateway) {
+  if (!gateway) return [];
+  return (networkingOverlayState.httproutes || []).filter(route =>
+    (route.parent_refs || []).some(parent => {
+      const [parentName] = String(parent || '').split('/');
+      return parentName === gateway.name && route.namespace === gateway.namespace;
+    }),
+  );
+}
+
+function renderOverlayCard(title, body) {
+  return `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">${title}</div>
+    <div class="card-body">${body}</div>
+  </div>`;
+}
+
+function renderNetworkOverlayCard(network) {
+  ensureNetworkingOverlayData();
+  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+    return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
+  }
+  if (networkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  }
+  const cidrs = (network.subnets || []).map(item => item.cidr).filter(Boolean);
+  const matchingServices = (networkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
+  const matchingGateways = (networkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
+  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
+  const subnetNames = new Set(matchingSubnets.map(item => item.name));
+  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  const routeMap = new Map();
+  for (const gateway of matchingGateways) {
+    for (const route of gatewayRoutesForGateway(gateway)) routeMap.set(`${route.namespace}/${route.name}`, route);
+  }
+  const matchingDomains = (networkingOverlayState.networkdomains || []).filter(item =>
+    endpointMatchesCidrs(item.external_endpoints, cidrs),
+  );
+  if (!matchingServices.length && !matchingGateways.length && !routeMap.size && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) {
+    return '';
+  }
+  return renderOverlayCard('Kubernetes Overlay', `
+    <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Kube-OVN subnets</span><span class="mv">${matchingSubnets.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Network domains</span><span class="mv">${matchingDomains.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">HTTPRoutes</span><span class="mv">${routeMap.size || '—'}</span></div>
+    ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
+    ${matchingSubnets.length ? `<div class="mrow"><span class="ml">Subnet names</span><span class="mv">${esc(matchingSubnets.map(item => item.name).join(', '))}</span></div>` : ''}
+    ${matchingDomains.length ? `<div class="mrow"><span class="ml">Namespaces</span><span class="mv">${esc(matchingDomains.map(item => item.namespace).join(', '))}</span></div>` : ''}
+    ${matchingServices.length ? `<div class="mrow"><span class="ml">Service VIPs</span><span class="mv" style="font-size:10px">${esc(matchingServices.map(item => `${item.namespace}/${item.name} → ${(item.external_ips || []).join(', ')}`).join(' | '))}</span></div>` : ''}
+    ${matchingGateways.length ? `<div class="mrow"><span class="ml">Gateway addrs</span><span class="mv" style="font-size:10px">${esc(matchingGateways.map(item => `${item.namespace}/${item.name} → ${(item.addresses || []).join(', ')}`).join(' | '))}</span></div>` : ''}
+  `);
+}
+
+function renderRouterOverlayCard(router) {
+  ensureNetworkingOverlayData();
+  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+    return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
+  }
+  if (networkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  }
+  const cidrs = (router.connected_subnets || []).map(item => item.cidr).filter(Boolean);
+  const matchingServices = (networkingOverlayState.lbs || []).filter(item => endpointMatchesCidrs(item.external_ips, cidrs));
+  const matchingGateways = (networkingOverlayState.gateways || []).filter(item => endpointMatchesCidrs(item.addresses, cidrs));
+  const matchingDomains = (networkingOverlayState.networkdomains || []).filter(item => endpointMatchesCidrs(item.external_endpoints, cidrs));
+  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item => (cidrs || []).includes(item.cidr));
+  const subnetNames = new Set(matchingSubnets.map(item => item.name));
+  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  if (!matchingServices.length && !matchingGateways.length && !matchingDomains.length && !matchingSubnets.length && !matchingVpcs.length) return '';
+  return renderOverlayCard('Kubernetes Overlay', `
+    <div class="mrow"><span class="ml">Connected subnets</span><span class="mv">${cidrs.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Kube-OVN subnets</span><span class="mv">${matchingSubnets.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Network domains</span><span class="mv">${matchingDomains.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
+    ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
+    ${matchingServices.length ? `<div class="mrow"><span class="ml">Service VIPs</span><span class="mv" style="font-size:10px">${esc(matchingServices.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
+    ${matchingGateways.length ? `<div class="mrow"><span class="ml">Gateway namespaces</span><span class="mv">${esc(matchingGateways.map(item => item.namespace).join(', '))}</span></div>` : ''}
+  `);
+}
+
+function renderLoadBalancerOverlayCard(lb) {
+  ensureNetworkingOverlayData();
+  if (networkingOverlayState.loading && !networkingOverlayState.loaded) {
+    return renderOverlayCard('Kubernetes Overlay', '<div style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading Kubernetes overlay relationships…</div>');
+  }
+  if (networkingOverlayState.error) {
+    return renderOverlayCard('Kubernetes Overlay', `<div class="err-block">${esc(networkingOverlayState.error)}</div>`);
+  }
+  const ips = [lb.vip_address, lb.floating_ip].filter(Boolean);
+  const matchingServices = (networkingOverlayState.lbs || []).filter(item =>
+    (item.external_ips || []).some(value => ips.includes(value)),
+  );
+  const matchingGateways = (networkingOverlayState.gateways || []).filter(item =>
+    (item.addresses || []).some(value => ips.includes(value)),
+  );
+  const matchingSubnets = (networkingOverlayState.subnets || []).filter(item =>
+    ips.some(value => ipInCidr(value, item.cidr)),
+  );
+  const subnetNames = new Set(matchingSubnets.map(item => item.name));
+  const matchingVpcs = (networkingOverlayState.vpcs || []).filter(item => (item.subnets || []).some(name => subnetNames.has(name)));
+  const routeMap = new Map();
+  for (const gateway of matchingGateways) {
+    for (const route of gatewayRoutesForGateway(gateway)) routeMap.set(`${route.namespace}/${route.name}`, route);
+  }
+  if (!matchingServices.length && !matchingGateways.length && !routeMap.size && !matchingSubnets.length && !matchingVpcs.length) return '';
+  return renderOverlayCard('Kubernetes Overlay', `
+    <div class="mrow"><span class="ml">Matched addresses</span><span class="mv" style="font-family:monospace">${esc(ips.join(', ') || '—')}</span></div>
+    <div class="mrow"><span class="ml">Kube-OVN VPCs</span><span class="mv">${matchingVpcs.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Kube-OVN subnets</span><span class="mv">${matchingSubnets.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">LoadBalancer services</span><span class="mv">${matchingServices.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">Gateways</span><span class="mv">${matchingGateways.length || '—'}</span></div>
+    <div class="mrow"><span class="ml">HTTPRoutes</span><span class="mv">${routeMap.size || '—'}</span></div>
+    ${matchingVpcs.length ? `<div class="mrow"><span class="ml">VPC names</span><span class="mv" style="font-size:10px">${esc(matchingVpcs.map(item => item.name).join(', '))}</span></div>` : ''}
+    ${matchingServices.length ? `<div class="mrow"><span class="ml">Services</span><span class="mv" style="font-size:10px">${esc(matchingServices.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
+    ${matchingGateways.length ? `<div class="mrow"><span class="ml">Gateways</span><span class="mv" style="font-size:10px">${esc(matchingGateways.map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
+    ${routeMap.size ? `<div class="mrow"><span class="ml">HTTPRoutes</span><span class="mv" style="font-size:10px">${esc(Array.from(routeMap.values()).map(item => `${item.namespace}/${item.name}`).join(', '))}</span></div>` : ''}
+  `);
+}
+
 async function loadNetworks(force = false) {
   if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
     const wrap = document.getElementById('net-wrap');
@@ -293,6 +479,7 @@ function renderLoadBalancerDetail() {
         <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(ld.flavor_id || '—')}</span></div>
       </div>
     </div>`;
+  h += renderLoadBalancerOverlayCard(ld);
 
   const vipPort = ld.vip_port || null;
   h += `<div class="card" style="margin-bottom:10px">
@@ -557,6 +744,7 @@ function renderNetworkDetail() {
         ${nd.project_id ? `<div class="mrow"><span class="ml">Project</span><span class="mv uuid-short" title="${esc(nd.project_id)}">${nd.project_id.slice(0, 8)}</span></div>` : ''}
       </div>
     </div>`;
+  h += renderNetworkOverlayCard(nd);
 
   // Subnets
   const subnets = nd.subnets || [];
@@ -1059,6 +1247,7 @@ function renderRouterDetail() {
         <div class="mrow"><span class="ml">External IPs</span><span class="mv">${gateway.external_fixed_ips?.length ? gateway.external_fixed_ips.map(item => esc(item.ip_address)).join(', ') : '<span style="color:var(--dim)">—</span>'}</span></div>
       </div>
     </div>`;
+  h += renderRouterOverlayCard(rd);
 
   const subnets = rd.connected_subnets || [];
   h += `<div class="card" style="margin-bottom:10px">
@@ -1144,6 +1333,14 @@ function renderRouterDetail() {
 // ════════════════════════════════════════════════════════════════════════════
 
 const K8S_RES_META = {
+  vpcs: { label: 'VPCs', icon: '🧩', url: '/api/k8s/vpcs' },
+  subnets: { label: 'Subnets', icon: '📐', url: '/api/k8s/subnets' },
+  vlans: { label: 'VLANs', icon: '🏷️', url: '/api/k8s/vlans' },
+  providernetworks: { label: 'Provider Networks', icon: '🛜', url: '/api/k8s/provider-networks' },
+  providersubnets: { label: 'Provider Subnets', icon: '🧱', url: '/api/k8s/provider-subnets' },
+  ips: { label: 'IPs', icon: '🧷', url: '/api/k8s/ips' },
+  clusternetworks: { label: 'Cluster Networks', icon: '🧭', url: '/api/k8s/cluster-networks' },
+  networkdomains: { label: 'Network Domains',  icon: '🪪', url: '/api/k8s/network-domains' },
   namespaces: { label: 'Namespaces',        icon: '📦', url: '/api/k8s/namespaces' },
   pods:       { label: 'Pods',              icon: '⬡',  url: '/api/k8s/pods'       },
   services:   { label: 'Services',          icon: '🔗', url: '/api/k8s/services'   },
@@ -1219,6 +1416,21 @@ function k8sDetailRows(rows) {
 
 function k8sItemKey(type, row) {
   switch (type) {
+    case 'vpcs':
+      return row.name || '';
+    case 'subnets':
+      return row.name || '';
+    case 'vlans':
+      return row.name || '';
+    case 'providernetworks':
+    case 'providersubnets':
+      return row.name || '';
+    case 'ips':
+      return row.name || `${row.namespace || ''}/${row.pod_name || ''}/${row.v4_ip || row.v6_ip || ''}`;
+    case 'clusternetworks':
+      return row.name || '';
+    case 'networkdomains':
+      return row.namespace || row.name || '';
     case 'namespaces': return row.name || '';
     case 'pods': return `${row.namespace || ''}/${row.name || ''}`;
     case 'services':
@@ -1289,6 +1501,121 @@ function renderK8sDetail() {
   let body = '';
 
   switch (type) {
+    case 'vpcs':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Default', item.default ? 'Yes' : 'No'],
+        ['Namespaces', esc(String(item.namespace_count ?? 0))],
+        ['Namespace Names', k8sListHtml(item.namespaces || [])],
+        ['Subnets', esc(String(item.subnet_count ?? 0))],
+        ['Subnet Names', k8sListHtml(item.subnets || [])],
+        ['Static Routes', esc(String(item.static_route_count ?? 0))],
+        ['Policy Routes', esc(String(item.policy_route_count ?? 0))],
+        ['Standby', item.standby ? 'Yes' : 'No'],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'subnets':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['CIDR', `<span style="font-family:monospace">${esc(item.cidr || '—')}</span>`],
+        ['Gateway', `<span style="font-family:monospace">${esc(item.gateway || '—')}</span>`],
+        ['Protocol', esc(item.protocol || '—')],
+        ['VPC', esc(item.vpc || '—')],
+        ['Provider', esc(item.provider || '—')],
+        ['Namespaces', esc(String(item.namespace_count ?? 0))],
+        ['Namespace Names', k8sListHtml(item.namespaces || [])],
+        ['NAT Outgoing', item.nat_outgoing ? 'Yes' : 'No'],
+        ['Private', item.private ? 'Yes' : 'No'],
+        ['Default', item.default ? 'Yes' : 'No'],
+        ['Exclude IPs', esc(String(item.exclude_ip_count ?? 0))],
+        ['Available IPs', esc(String(item.available_ips || '—'))],
+        ['Used IPs', esc(String(item.used_ips || '—'))],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'vlans':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Provider', esc(item.provider || '—')],
+        ['VLAN ID', `<span style="font-family:monospace">${esc(String(item.vlan_id || '—'))}</span>`],
+        ['Subnets', esc(String(item.subnet_count ?? 0))],
+        ['Subnet Names', k8sListHtml(item.subnets || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'providernetworks':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Default Interface', esc(item.default_interface || '—')],
+        ['Custom NICs', esc(String(item.nic_count ?? 0))],
+        ['Ready Nodes', esc(String(item.ready_node_count ?? 0))],
+        ['Excluded Nodes', esc(String(item.exclude_node_count ?? 0))],
+        ['Ready Node Names', k8sListHtml(item.ready_nodes || [])],
+        ['Excluded Node Names', k8sListHtml(item.exclude_nodes || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'providersubnets':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['CIDR', `<span style="font-family:monospace">${esc(item.cidr || '—')}</span>`],
+        ['Gateway', `<span style="font-family:monospace">${esc(item.gateway || '—')}</span>`],
+        ['Protocol', esc(item.protocol || '—')],
+        ['VPC', esc(item.vpc || '—')],
+        ['Provider', esc(item.provider || '—')],
+        ['Namespaces', esc(String(item.namespace_count ?? 0))],
+        ['Namespace Names', k8sListHtml(item.namespaces || [])],
+        ['Available IPs', esc(String(item.available_ips || '—'))],
+        ['Used IPs', esc(String(item.used_ips || '—'))],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'ips':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Name', esc(item.name || '—')],
+        ['Namespace', esc(item.namespace || '—')],
+        ['Pod', esc(item.pod_name || '—')],
+        ['Node', esc(item.node_name || '—')],
+        ['Subnet', esc(item.subnet || '—')],
+        ['IPv4', `<span style="font-family:monospace">${esc(item.v4_ip || '—')}</span>`],
+        ['IPv6', `<span style="font-family:monospace">${esc(item.v6_ip || '—')}</span>`],
+        ['MAC', `<span style="font-family:monospace">${esc(item.mac_address || '—')}</span>`],
+        ['Attach Subnets', k8sListHtml(item.attach_subnets || [])],
+        ['Attach IPs', k8sListHtml(item.attach_ips || [])],
+        ['Age', esc(k8sAge(item.created))],
+      ])}</div></div>`;
+      break;
+
+    case 'clusternetworks':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Type', esc(item.network_type || '—')],
+        ['CIDR', `<span style="font-family:monospace">${esc(item.cidr || '—')}</span>`],
+        ['Nodes', esc(String(item.node_count ?? 0))],
+        ['Node Names', k8sListHtml(item.nodes || [])],
+        ['LB IPs In Range', esc(String(item.load_balancer_ips ?? 0))],
+      ])}</div></div>`;
+      break;
+
+    case 'networkdomains':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Namespace', esc(item.namespace || '—')],
+        ['Services', esc(String(item.service_count ?? 0))],
+        ['LoadBalancers', esc(String(item.lb_count ?? 0))],
+        ['Gateways', esc(String(item.gateway_count ?? 0))],
+        ['HTTPRoutes', esc(String(item.route_count ?? 0))],
+        ['External Endpoints', k8sListHtml(item.external_endpoints || [])],
+        ['Services', k8sListHtml(item.service_names || [])],
+        ['Gateways', k8sListHtml(item.gateway_names || [])],
+        ['HTTPRoutes', k8sListHtml(item.route_names || [])],
+      ])}</div></div>`;
+      break;
+
     case 'namespaces':
       body += `<div class="card"><div class="card-body">${k8sDetailRows([
         ['Name', esc(item.name || '—')],
@@ -1596,6 +1923,113 @@ function renderK8sTable(type, rows) {
   };
 
   switch (type) {
+    case 'vpcs':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Default</th><th>Namespaces</th><th>Subnets</th><th>Static Routes</th><th>Policy Routes</th><th>Standby</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td>${r.default ? '✓' : '—'}</td>
+          <td>${esc(String(r.namespace_count ?? 0))}</td>
+          <td>${esc(String(r.subnet_count ?? 0))}</td>
+          <td>${esc(String(r.static_route_count ?? 0))}</td>
+          <td>${esc(String(r.policy_route_count ?? 0))}</td>
+          <td>${r.standby ? '✓' : '—'}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'subnets':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>CIDR</th><th>Gateway</th><th>VPC</th><th>Namespaces</th><th>NAT</th><th>Private</th><th>Used IPs</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.cidr || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.gateway || '—')}</td>
+          <td>${esc(r.vpc || '—')}</td>
+          <td>${esc(String(r.namespace_count ?? 0))}</td>
+          <td>${r.nat_outgoing ? '✓' : '—'}</td>
+          <td>${r.private ? '✓' : '—'}</td>
+          <td>${esc(String(r.used_ips || '—'))}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'vlans':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Provider</th><th>VLAN ID</th><th>Subnets</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td>${esc(r.provider || '—')}</td>
+          <td style="font-family:monospace">${esc(String(r.vlan_id || '—'))}</td>
+          <td>${esc(String(r.subnet_count ?? 0))}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'providernetworks':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Default Interface</th><th>NICs</th><th>Ready Nodes</th><th>Excluded Nodes</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td>${esc(r.default_interface || '—')}</td>
+          <td>${esc(String(r.nic_count ?? 0))}</td>
+          <td>${esc(String(r.ready_node_count ?? 0))}</td>
+          <td>${esc(String(r.exclude_node_count ?? 0))}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'providersubnets':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>CIDR</th><th>Gateway</th><th>VPC</th><th>Provider</th><th>Used IPs</th><th>Age</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.cidr || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.gateway || '—')}</td>
+          <td>${esc(r.vpc || '—')}</td>
+          <td>${esc(r.provider || '—')}</td>
+          <td>${esc(String(r.used_ips || '—'))}</td>
+          <td style="color:var(--dim)">${k8sAge(r.created)}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'ips':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Namespace</th><th>Pod</th><th>Node</th><th>Subnet</th><th>IPv4</th><th>MAC</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td>${esc(r.namespace || '—')}</td>
+          <td>${esc(r.pod_name || '—')}</td>
+          <td>${esc(r.node_name || '—')}</td>
+          <td>${esc(r.subnet || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.v4_ip || r.v6_ip || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.mac_address || '—')}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'clusternetworks':
+      return `<table class="data-table"><thead><tr>
+        <th>Name</th><th>Type</th><th>CIDR</th><th>Nodes</th><th>LB IPs In Range</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.name)}</td>
+          <td>${esc(r.network_type || '—')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.cidr || '—')}</td>
+          <td>${esc(String(r.node_count ?? 0))}</td>
+          <td>${esc(String(r.load_balancer_ips ?? 0))}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
+    case 'networkdomains':
+      return `<table class="data-table"><thead><tr>
+        <th>Namespace</th><th>Services</th><th>LoadBalancers</th><th>Gateways</th><th>HTTPRoutes</th><th>External Endpoints</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.namespace || r.name || '—')}</td>
+          <td>${esc(String(r.service_count ?? 0))}</td>
+          <td>${esc(String(r.lb_count ?? 0))}</td>
+          <td>${esc(String(r.gateway_count ?? 0))}</td>
+          <td>${esc(String(r.route_count ?? 0))}</td>
+          <td style="font-family:monospace;font-size:10px;color:var(--dim)">${esc((r.external_endpoints || []).join(', ') || '—')}</td>
+        </tr>`).join('') + `</tbody></table>`;
+
     case 'namespaces':
       return `<table class="data-table"><thead><tr>
         <th>Name</th><th>Status</th><th>Age</th>

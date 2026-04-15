@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import ipaddress
 import re
 
 from kubernetes import client
@@ -976,6 +977,258 @@ def list_k8s_services(namespace: str | None = None, auth: K8sAuth | None = None)
     return result
 
 
+def list_k8s_cluster_networks(auth: K8sAuth | None = None) -> list[dict]:
+    v1 = client.CoreV1Api(_api_client(auth))
+    try:
+        raw_nodes = v1.list_node().items
+        raw_services = v1.list_service_for_all_namespaces().items
+    except Exception:
+        return []
+
+    pod_cidrs: dict[str, dict] = {}
+    for node in raw_nodes:
+        cidrs = list(getattr(getattr(node, "spec", None), "pod_cidrs", None) or [])
+        single = getattr(getattr(node, "spec", None), "pod_cidr", None)
+        if single and single not in cidrs:
+            cidrs.append(single)
+        for cidr in [str(value).strip() for value in cidrs if str(value).strip()]:
+            entry = pod_cidrs.setdefault(cidr, {"nodes": set()})
+            entry["nodes"].add(node.metadata.name)
+
+    lb_ips: list[str] = []
+    for service in raw_services:
+        status = getattr(service, "status", None)
+        lb = getattr(status, "load_balancer", None)
+        ingress = getattr(lb, "ingress", None) or []
+        for item in ingress:
+            value = getattr(item, "ip", None) or getattr(item, "hostname", None) or ""
+            if value:
+                lb_ips.append(str(value))
+
+    result: list[dict] = []
+    for cidr, meta in sorted(pod_cidrs.items()):
+        try:
+            network = ipaddress.ip_network(cidr, strict=False)
+        except Exception:
+            network = None
+        lb_matches = 0
+        if network and network.version == 4:
+            for value in lb_ips:
+                try:
+                    if ipaddress.ip_address(value) in network:
+                        lb_matches += 1
+                except Exception:
+                    continue
+        result.append({
+            "name": f"pod-network-{cidr}",
+            "network_type": "Pod CIDR",
+            "cidr": cidr,
+            "node_count": len(meta["nodes"]),
+            "nodes": sorted(meta["nodes"]),
+            "load_balancer_ips": lb_matches,
+        })
+    return result
+
+
+def list_k8s_network_domains(auth: K8sAuth | None = None) -> list[dict]:
+    services = list_k8s_services(auth=auth)
+    gateways = list_k8s_gateways(auth=auth)
+    routes = list_k8s_httproutes(auth=auth)
+
+    domains: dict[str, dict] = {}
+    for service in services:
+        namespace = service.get("namespace") or "default"
+        item = domains.setdefault(namespace, {
+            "namespace": namespace,
+            "service_count": 0,
+            "lb_count": 0,
+            "gateway_count": 0,
+            "route_count": 0,
+            "_external_endpoints": set(),
+            "_service_names": set(),
+            "_gateway_names": set(),
+            "_route_names": set(),
+        })
+        item["service_count"] += 1
+        item["_service_names"].add(service.get("name") or "")
+        if service.get("type") == "LoadBalancer":
+            item["lb_count"] += 1
+        for value in service.get("external_ips") or []:
+            if value:
+                item["_external_endpoints"].add(str(value))
+
+    for gateway in gateways:
+        namespace = gateway.get("namespace") or "default"
+        item = domains.setdefault(namespace, {
+            "namespace": namespace,
+            "service_count": 0,
+            "lb_count": 0,
+            "gateway_count": 0,
+            "route_count": 0,
+            "_external_endpoints": set(),
+            "_service_names": set(),
+            "_gateway_names": set(),
+            "_route_names": set(),
+        })
+        item["gateway_count"] += 1
+        item["_gateway_names"].add(gateway.get("name") or "")
+        for value in gateway.get("addresses") or []:
+            if value:
+                item["_external_endpoints"].add(str(value))
+
+    for route in routes:
+        namespace = route.get("namespace") or "default"
+        item = domains.setdefault(namespace, {
+            "namespace": namespace,
+            "service_count": 0,
+            "lb_count": 0,
+            "gateway_count": 0,
+            "route_count": 0,
+            "_external_endpoints": set(),
+            "_service_names": set(),
+            "_gateway_names": set(),
+            "_route_names": set(),
+        })
+        item["route_count"] += 1
+        item["_route_names"].add(route.get("name") or "")
+
+    result: list[dict] = []
+    for namespace, item in sorted(domains.items()):
+        result.append({
+            "namespace": namespace,
+            "name": namespace,
+            "service_count": item["service_count"],
+            "lb_count": item["lb_count"],
+            "gateway_count": item["gateway_count"],
+            "route_count": item["route_count"],
+            "external_endpoints": sorted(item["_external_endpoints"]),
+            "service_names": sorted(value for value in item["_service_names"] if value),
+            "gateway_names": sorted(value for value in item["_gateway_names"] if value),
+            "route_names": sorted(value for value in item["_route_names"] if value),
+        })
+    return result
+
+
+def list_k8s_kubeovn_vpcs(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("kubeovn.io", "v1", "vpcs", namespaced=False, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        namespaces = sorted(str(value) for value in (spec.get("namespaces") or []) if str(value))
+        static_routes = spec.get("staticRoutes") or spec.get("static_routes") or []
+        policy_routes = spec.get("policyRoutes") or spec.get("policy_routes") or []
+        subnets = sorted(str(value) for value in (status.get("subnets") or spec.get("subnets") or []) if str(value))
+        result.append({
+            "name": metadata.get("name", ""),
+            "default": bool(spec.get("default")),
+            "namespace_count": len(namespaces),
+            "namespaces": namespaces,
+            "subnet_count": len(subnets),
+            "subnets": subnets,
+            "static_route_count": len(static_routes),
+            "policy_route_count": len(policy_routes),
+            "standby": bool(status.get("standby", False)),
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def list_k8s_kubeovn_subnets(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("kubeovn.io", "v1", "subnets", namespaced=False, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        namespaces = sorted(str(value) for value in (spec.get("namespaces") or []) if str(value))
+        exclude_ips = spec.get("excludeIps") or spec.get("exclude_ips") or []
+        result.append({
+            "name": metadata.get("name", ""),
+            "cidr": spec.get("cidrBlock", "") or spec.get("cidr", ""),
+            "gateway": spec.get("gateway", ""),
+            "protocol": spec.get("protocol", ""),
+            "vpc": spec.get("vpc", "") or "ovn-cluster",
+            "provider": spec.get("provider", ""),
+            "nat_outgoing": bool(spec.get("natOutgoing")),
+            "private": bool(spec.get("private")),
+            "default": bool(spec.get("default")),
+            "namespace_count": len(namespaces),
+            "namespaces": namespaces,
+            "exclude_ip_count": len(exclude_ips),
+            "available_ips": status.get("availableIPs", "") or status.get("availableIps", ""),
+            "used_ips": status.get("usingIPs", "") or status.get("usingIps", ""),
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def list_k8s_kubeovn_vlans(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("kubeovn.io", "v1", "vlans", namespaced=False, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        subnets = sorted(str(value) for value in (status.get("subnets") or spec.get("subnets") or []) if str(value))
+        result.append({
+            "name": metadata.get("name", ""),
+            "provider": spec.get("provider", ""),
+            "vlan_id": spec.get("id", "") or spec.get("vlanId", "") or spec.get("vlanID", "") or spec.get("vlan", ""),
+            "subnet_count": len(subnets),
+            "subnets": subnets,
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def list_k8s_kubeovn_provider_networks(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    items = _safe_list_custom_objects_first("kubeovn.io", "v1", ["provider-networks", "providernetworks"], namespaced=False, auth=auth)
+    for item in items:
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        ready_nodes = sorted(str(value) for value in (status.get("readyNodes") or status.get("ready_nodes") or []) if str(value))
+        exclude_nodes = sorted(str(value) for value in (spec.get("excludeNodes") or spec.get("exclude_nodes") or []) if str(value))
+        custom_interfaces = spec.get("customInterfaces") or spec.get("custom_interfaces") or {}
+        result.append({
+            "name": metadata.get("name", ""),
+            "default_interface": spec.get("defaultInterface", "") or spec.get("default_interface", ""),
+            "nic_count": len(custom_interfaces),
+            "exclude_node_count": len(exclude_nodes),
+            "ready_node_count": len(ready_nodes),
+            "exclude_nodes": exclude_nodes,
+            "ready_nodes": ready_nodes,
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
+def list_k8s_kubeovn_provider_subnets(auth: K8sAuth | None = None) -> list[dict]:
+    return [item for item in list_k8s_kubeovn_subnets(auth=auth) if item.get("provider")]
+
+
+def list_k8s_kubeovn_ips(auth: K8sAuth | None = None) -> list[dict]:
+    result = []
+    for item in _safe_list_custom_objects("kubeovn.io", "v1", "ips", namespaced=False, auth=auth):
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        result.append({
+            "name": metadata.get("name", ""),
+            "namespace": spec.get("namespace", "") or metadata.get("namespace", ""),
+            "pod_name": spec.get("podName", "") or spec.get("pod_name", ""),
+            "node_name": spec.get("nodeName", "") or spec.get("node_name", ""),
+            "subnet": spec.get("subnet", ""),
+            "v4_ip": spec.get("v4IPAddress", "") or spec.get("v4IpAddress", "") or spec.get("ipAddress", ""),
+            "v6_ip": spec.get("v6IPAddress", "") or spec.get("v6IpAddress", ""),
+            "mac_address": spec.get("macAddress", "") or spec.get("mac_address", ""),
+            "attach_subnets": sorted(str(value) for value in (spec.get("attachSubnets") or spec.get("attach_subnets") or []) if str(value)),
+            "attach_ips": sorted(str(value) for value in (spec.get("attachIPs") or spec.get("attach_ips") or []) if str(value)),
+            "created": metadata.get("creationTimestamp", ""),
+        })
+    return result
+
+
 def list_k8s_pvs(auth: K8sAuth | None = None) -> list[dict]:
     v1 = client.CoreV1Api(_api_client(auth))
     result = []
@@ -1047,6 +1300,17 @@ def _safe_list_custom_objects(group: str, version: str, plural: str, *, namespac
             items.extend(chunk.get("items") or [])
         return items
     return (api.list_cluster_custom_object(group, version, plural) or {}).get("items") or []
+
+
+def _safe_list_custom_objects_first(group: str, version: str, plurals: list[str], *, namespaced: bool, auth: K8sAuth | None = None) -> list[dict]:
+    for plural in plurals:
+        try:
+            items = _safe_list_custom_objects(group, version, plural, namespaced=namespaced, auth=auth)
+        except Exception:
+            continue
+        if items:
+            return items
+    return []
 
 
 def list_k8s_gatewayclasses(auth: K8sAuth | None = None) -> list[dict]:

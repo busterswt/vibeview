@@ -10,7 +10,7 @@ function topLevelView(name) {
 }
 
 function switchNetworkingSection(name) {
-  const valid = ['networking', 'routers', 'loadbalancers', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
+  const valid = ['networking', 'routers', 'loadbalancers', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
   if (!valid.includes(name)) return;
   activeNetworkingView = name;
   switchView('networking');
@@ -23,6 +23,14 @@ function isNetworkingK8sView(name = activeNetworkingView) {
 function networkingK8sType(name = activeNetworkingView) {
   return ({
     'k8s-services': 'services',
+    'k8s-clusternetworks': 'clusternetworks',
+    'k8s-networkdomains': 'networkdomains',
+    'k8s-vpcs': 'vpcs',
+    'k8s-subnets': 'subnets',
+    'k8s-vlans': 'vlans',
+    'k8s-providernetworks': 'providernetworks',
+    'k8s-providersubnets': 'providersubnets',
+    'k8s-ips': 'ips',
     'k8s-lbs': 'lbs',
     'k8s-gatewayclasses': 'gatewayclasses',
     'k8s-gateways': 'gateways',

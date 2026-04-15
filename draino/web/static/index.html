@@ -262,6 +262,38 @@
         </div>
 
         <div class="networking-section-label">Kubernetes</div>
+        <div class="networking-nav-item" data-networking-view="k8s-vpcs" data-k8s-res="vpcs" onclick="switchNetworkingSection('k8s-vpcs')">
+          <span>🧩</span> VPCs
+          <span class="tree-badge" id="networking-cnt-vpcs"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-subnets" data-k8s-res="subnets" onclick="switchNetworkingSection('k8s-subnets')">
+          <span>📐</span> Subnets
+          <span class="tree-badge" id="networking-cnt-subnets"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-vlans" data-k8s-res="vlans" onclick="switchNetworkingSection('k8s-vlans')">
+          <span>🏷️</span> VLANs
+          <span class="tree-badge" id="networking-cnt-vlans"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-providernetworks" data-k8s-res="providernetworks" onclick="switchNetworkingSection('k8s-providernetworks')">
+          <span>🛜</span> Provider Networks
+          <span class="tree-badge" id="networking-cnt-providernetworks"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-providersubnets" data-k8s-res="providersubnets" onclick="switchNetworkingSection('k8s-providersubnets')">
+          <span>📶</span> Provider Subnets
+          <span class="tree-badge" id="networking-cnt-providersubnets"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-ips" data-k8s-res="ips" onclick="switchNetworkingSection('k8s-ips')">
+          <span>🧷</span> IPs
+          <span class="tree-badge" id="networking-cnt-ips"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-clusternetworks" data-k8s-res="clusternetworks" onclick="switchNetworkingSection('k8s-clusternetworks')">
+          <span>🧭</span> Cluster Networks
+          <span class="tree-badge" id="networking-cnt-clusternetworks"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-networkdomains" data-k8s-res="networkdomains" onclick="switchNetworkingSection('k8s-networkdomains')">
+          <span>🪪</span> Network Domains
+          <span class="tree-badge" id="networking-cnt-networkdomains"></span>
+        </div>
         <div class="networking-nav-item" data-networking-view="k8s-services" data-k8s-res="services" onclick="switchNetworkingSection('k8s-services')">
           <span>🔗</span> Services &amp; VIPs
           <span class="tree-badge" id="networking-cnt-services"></span>

@@ -319,6 +319,324 @@ def test_list_k8s_gateway_api_resources(monkeypatch):
     assert routes[0]["backend_refs"] == ["app-service:8080"]
 
 
+def test_list_k8s_cluster_networks_summarizes_pod_cidrs(monkeypatch):
+    node_a = SimpleNamespace(
+        metadata=SimpleNamespace(name="cmp-a01"),
+        spec=SimpleNamespace(pod_cidr="10.244.1.0/24", pod_cidrs=["10.244.1.0/24"]),
+    )
+    node_b = SimpleNamespace(
+        metadata=SimpleNamespace(name="cmp-a02"),
+        spec=SimpleNamespace(pod_cidr="10.244.2.0/24", pod_cidrs=["10.244.2.0/24"]),
+    )
+    service = SimpleNamespace(
+        status=SimpleNamespace(
+            load_balancer=SimpleNamespace(ingress=[SimpleNamespace(ip="10.244.1.55")]),
+        ),
+    )
+
+    class FakeCore:
+        def list_node(self):
+            return SimpleNamespace(items=[node_a, node_b])
+
+        def list_service_for_all_namespaces(self):
+            return SimpleNamespace(items=[service])
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CoreV1Api", lambda api_client: FakeCore())
+
+    items = k8s_inventory_ops.list_k8s_cluster_networks()
+
+    assert len(items) == 2
+    assert items[0]["cidr"] == "10.244.1.0/24"
+    assert items[0]["node_count"] == 1
+    assert items[0]["load_balancer_ips"] == 1
+
+
+def test_list_k8s_network_domains_groups_services_gateways_and_routes(monkeypatch):
+    monkeypatch.setattr(
+        k8s_inventory_ops,
+        "list_k8s_services",
+        lambda auth=None, namespace=None: [
+            {
+                "namespace": "web",
+                "name": "frontend",
+                "type": "LoadBalancer",
+                "external_ips": ["203.0.113.10"],
+            },
+            {
+                "namespace": "web",
+                "name": "api",
+                "type": "ClusterIP",
+                "external_ips": [],
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        k8s_inventory_ops,
+        "list_k8s_gateways",
+        lambda auth=None: [
+            {
+                "namespace": "web",
+                "name": "public",
+                "addresses": ["203.0.113.10"],
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        k8s_inventory_ops,
+        "list_k8s_httproutes",
+        lambda auth=None: [
+            {
+                "namespace": "web",
+                "name": "frontend",
+            },
+        ],
+    )
+
+    items = k8s_inventory_ops.list_k8s_network_domains()
+
+    assert items == [{
+        "namespace": "web",
+        "name": "web",
+        "service_count": 2,
+        "lb_count": 1,
+        "gateway_count": 1,
+        "route_count": 1,
+        "external_endpoints": ["203.0.113.10"],
+        "service_names": ["api", "frontend"],
+        "gateway_names": ["public"],
+        "route_names": ["frontend"],
+    }]
+
+
+def test_list_k8s_kubeovn_vpcs_and_subnets(monkeypatch):
+    class FakeCustom:
+        def list_cluster_custom_object(self, group, version, plural):
+            assert group == "kubeovn.io"
+            assert version == "v1"
+            if plural == "vpcs":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"name": "tenant-a", "creationTimestamp": "2026-04-15T01:00:00Z"},
+                            "spec": {
+                                "default": False,
+                                "namespaces": ["apps", "db"],
+                                "staticRoutes": [{"policy": "dst"}],
+                                "policyRoutes": [{"match": "ip"}],
+                            },
+                            "status": {"subnets": ["tenant-a-apps", "tenant-a-db"], "standby": True},
+                        },
+                    ],
+                }
+            if plural == "subnets":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"name": "tenant-a-apps", "creationTimestamp": "2026-04-15T01:05:00Z"},
+                            "spec": {
+                                "cidrBlock": "10.244.10.0/24",
+                                "gateway": "10.244.10.1",
+                                "protocol": "IPv4",
+                                "vpc": "tenant-a",
+                                "provider": "ovn",
+                                "natOutgoing": True,
+                                "private": False,
+                                "default": False,
+                                "namespaces": ["apps"],
+                                "excludeIps": ["10.244.10.1"],
+                            },
+                            "status": {"availableIPs": "240", "usingIPs": "12"},
+                        },
+                    ],
+                }
+            return {"items": []}
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    vpcs = k8s_inventory_ops.list_k8s_kubeovn_vpcs()
+    subnets = k8s_inventory_ops.list_k8s_kubeovn_subnets()
+
+    assert vpcs == [{
+        "name": "tenant-a",
+        "default": False,
+        "namespace_count": 2,
+        "namespaces": ["apps", "db"],
+        "subnet_count": 2,
+        "subnets": ["tenant-a-apps", "tenant-a-db"],
+        "static_route_count": 1,
+        "policy_route_count": 1,
+        "standby": True,
+        "created": "2026-04-15T01:00:00Z",
+    }]
+    assert subnets == [{
+        "name": "tenant-a-apps",
+        "cidr": "10.244.10.0/24",
+        "gateway": "10.244.10.1",
+        "protocol": "IPv4",
+        "vpc": "tenant-a",
+        "provider": "ovn",
+        "nat_outgoing": True,
+        "private": False,
+        "default": False,
+        "namespace_count": 1,
+        "namespaces": ["apps"],
+        "exclude_ip_count": 1,
+        "available_ips": "240",
+        "used_ips": "12",
+        "created": "2026-04-15T01:05:00Z",
+    }]
+
+
+def test_list_k8s_kubeovn_vlans_and_provider_networks(monkeypatch):
+    class FakeCustom:
+        def list_cluster_custom_object(self, group, version, plural):
+            assert group == "kubeovn.io"
+            assert version == "v1"
+            if plural == "vlans":
+                return {
+                    "items": [
+                        {
+                            "metadata": {"name": "tenant-a-vlan", "creationTimestamp": "2026-04-15T02:00:00Z"},
+                            "spec": {"provider": "physnet1", "id": 120},
+                            "status": {"subnets": ["tenant-a-apps"]},
+                        },
+                    ],
+                }
+            if plural in ("provider-networks", "providernetworks"):
+                return {
+                    "items": [
+                        {
+                            "metadata": {"name": "physnet1", "creationTimestamp": "2026-04-15T02:05:00Z"},
+                            "spec": {
+                                "defaultInterface": "bond0.120",
+                                "excludeNodes": ["cmp-a03"],
+                                "customInterfaces": {"cmp-a01": "bond0.120", "cmp-a02": "bond0.120"},
+                            },
+                            "status": {"readyNodes": ["cmp-a01", "cmp-a02"]},
+                        },
+                    ],
+                }
+            return {"items": []}
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    vlans = k8s_inventory_ops.list_k8s_kubeovn_vlans()
+    provider_networks = k8s_inventory_ops.list_k8s_kubeovn_provider_networks()
+
+    assert vlans == [{
+        "name": "tenant-a-vlan",
+        "provider": "physnet1",
+        "vlan_id": 120,
+        "subnet_count": 1,
+        "subnets": ["tenant-a-apps"],
+        "created": "2026-04-15T02:00:00Z",
+    }]
+    assert provider_networks == [{
+        "name": "physnet1",
+        "default_interface": "bond0.120",
+        "nic_count": 2,
+        "exclude_node_count": 1,
+        "ready_node_count": 2,
+        "exclude_nodes": ["cmp-a03"],
+        "ready_nodes": ["cmp-a01", "cmp-a02"],
+        "created": "2026-04-15T02:05:00Z",
+    }]
+
+
+def test_list_k8s_kubeovn_provider_subnets_and_ips(monkeypatch):
+    monkeypatch.setattr(
+        k8s_inventory_ops,
+        "list_k8s_kubeovn_subnets",
+        lambda auth=None: [
+            {
+                "name": "tenant-a-apps",
+                "cidr": "10.42.0.0/24",
+                "gateway": "10.42.0.1",
+                "protocol": "IPv4",
+                "vpc": "tenant-a",
+                "provider": "",
+                "namespace_count": 1,
+                "namespaces": ["tenant-a"],
+                "available_ips": "240",
+                "used_ips": "12",
+                "created": "2026-04-15T02:00:00Z",
+            },
+            {
+                "name": "tenant-a-provider",
+                "cidr": "172.18.0.0/24",
+                "gateway": "172.18.0.1",
+                "protocol": "IPv4",
+                "vpc": "tenant-a",
+                "provider": "physnet1",
+                "namespace_count": 1,
+                "namespaces": ["tenant-a"],
+                "available_ips": "220",
+                "used_ips": "22",
+                "created": "2026-04-15T02:05:00Z",
+            },
+        ],
+    )
+
+    class FakeCustom:
+        def list_cluster_custom_object(self, group, version, plural):
+            assert group == "kubeovn.io"
+            assert version == "v1"
+            assert plural == "ips"
+            return {
+                "items": [
+                    {
+                        "metadata": {"name": "pod.web.frontend", "creationTimestamp": "2026-04-15T02:10:00Z"},
+                        "spec": {
+                            "namespace": "web",
+                            "podName": "frontend-0",
+                            "nodeName": "cmp-a01",
+                            "subnet": "tenant-a-provider",
+                            "v4IPAddress": "172.18.0.55",
+                            "macAddress": "fa:16:3e:aa:bb:cc",
+                            "attachSubnets": ["tenant-a-apps"],
+                            "attachIPs": ["10.42.0.55"],
+                        },
+                    },
+                ],
+            }
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    provider_subnets = k8s_inventory_ops.list_k8s_kubeovn_provider_subnets()
+    ips = k8s_inventory_ops.list_k8s_kubeovn_ips()
+
+    assert provider_subnets == [{
+        "name": "tenant-a-provider",
+        "cidr": "172.18.0.0/24",
+        "gateway": "172.18.0.1",
+        "protocol": "IPv4",
+        "vpc": "tenant-a",
+        "provider": "physnet1",
+        "namespace_count": 1,
+        "namespaces": ["tenant-a"],
+        "available_ips": "220",
+        "used_ips": "22",
+        "created": "2026-04-15T02:05:00Z",
+    }]
+    assert ips == [{
+        "name": "pod.web.frontend",
+        "namespace": "web",
+        "pod_name": "frontend-0",
+        "node_name": "cmp-a01",
+        "subnet": "tenant-a-provider",
+        "v4_ip": "172.18.0.55",
+        "v6_ip": "",
+        "mac_address": "fa:16:3e:aa:bb:cc",
+        "attach_subnets": ["tenant-a-apps"],
+        "attach_ips": ["10.42.0.55"],
+        "created": "2026-04-15T02:10:00Z",
+    }]
+
+
 def test_list_k8s_operators_derives_version_from_workloads(monkeypatch):
     deployment = SimpleNamespace(
         metadata=SimpleNamespace(
