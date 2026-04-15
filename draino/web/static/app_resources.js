@@ -19,6 +19,12 @@ function compactRouterMac(value) {
   return parts.slice(3).join(':');
 }
 
+function syncNetworkingDetailShell() {
+  if (activeView === 'networking' && typeof renderNetworkingWorkspace === 'function') {
+    renderNetworkingWorkspace();
+  }
+}
+
 async function loadNetworks(force = false) {
   if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
     const wrap = document.getElementById('net-wrap');
@@ -208,6 +214,7 @@ async function selectLoadBalancer(id) {
     r.classList.toggle('selected', r.dataset.lbId === id);
   });
   document.getElementById('lb-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
   lbDetailState.loading = true;
   lbDetailState.data = null;
   lbDetailState.vipOvn = { loading: false, data: null, error: null };
@@ -247,6 +254,7 @@ function closeLoadBalancerDetail() {
   lbDetailState.vipOvn = { loading: false, data: null, error: null };
   document.getElementById('lb-detail-wrap').classList.remove('open');
   document.querySelectorAll('#lb-wrap tr[data-lb-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
 }
 
 function renderLoadBalancerDetail() {
@@ -423,6 +431,7 @@ function renderLoadBalancerDetail() {
     </div>
   </div>`;
   wrap.innerHTML = h;
+  syncNetworkingDetailShell();
 }
 
 async function selectNetwork(id) {
@@ -438,6 +447,7 @@ async function selectNetwork(id) {
   });
   // Open detail pane and show spinner
   document.getElementById('net-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
   netDetailState.loading = true;
   netDetailState.data    = null;
   renderNetworkDetail();
@@ -510,6 +520,7 @@ function closeNetworkDetail() {
   netDetailState.metadataRepair = { subnetId: null, loading: false, message: '', error: null };
   document.getElementById('net-detail-wrap').classList.remove('open');
   document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
 }
 
 function renderNetworkDetail() {
@@ -655,6 +666,7 @@ function renderNetworkDetail() {
 
   h += `</div>`;
   wrap.innerHTML = h;
+  syncNetworkingDetailShell();
 }
 
 function selectSubnet(id) {
@@ -958,6 +970,7 @@ async function selectRouter(id) {
     r.classList.toggle('selected', r.dataset.routerId === id);
   });
   document.getElementById('router-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
   routerDetailState.loading = true;
   routerDetailState.data = null;
   renderRouterDetail();
@@ -998,6 +1011,7 @@ function closeRouterDetail() {
   routerDetailState.ovn = { loading: false, data: null, error: null };
   document.getElementById('router-detail-wrap').classList.remove('open');
   document.querySelectorAll('#router-wrap tr[data-router-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
 }
 
 function renderRouterDetail() {
@@ -1122,6 +1136,7 @@ function renderRouterDetail() {
   h += `</div></div>`;
 
   wrap.innerHTML = h;
+  syncNetworkingDetailShell();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1151,6 +1166,26 @@ let k8sSelectedItemKey = null;
 const k8sDetailState = { type: null, item: null };
 const k8sPageState = {}; // type → { page, filter }
 const K8S_PAGE_SIZE = 50;
+
+function isNetworkingK8sContext() {
+  return activeView === 'networking' && typeof isNetworkingK8sView === 'function' && isNetworkingK8sView();
+}
+
+function activeK8sContentInnerId() {
+  return isNetworkingK8sContext() ? 'networking-k8s-content-inner' : 'k8s-content-inner';
+}
+
+function activeK8sDetailWrapId() {
+  return isNetworkingK8sContext() ? 'networking-k8s-detail-wrap' : 'k8s-detail-wrap';
+}
+
+function activeK8sDetailResizerId() {
+  return isNetworkingK8sContext() ? 'networking-detail-resizer' : 'k8s-detail-resizer';
+}
+
+function syncActiveK8sShell() {
+  if (isNetworkingK8sContext()) syncNetworkingDetailShell();
+}
 
 function getK8sPage(type) {
   if (!k8sPageState[type]) k8sPageState[type] = { page: 1, filter: '' };
@@ -1210,13 +1245,14 @@ function closeK8sDetail() {
   k8sSelectedItemKey = null;
   k8sDetailState.type = null;
   k8sDetailState.item = null;
-  const wrap = document.getElementById('k8s-detail-wrap');
-  const resizer = document.getElementById('k8s-detail-resizer');
+  const wrap = document.getElementById(activeK8sDetailWrapId());
+  const resizer = document.getElementById(activeK8sDetailResizerId());
   if (wrap) {
     wrap.classList.remove('open');
     wrap.innerHTML = '';
   }
   if (resizer) resizer.classList.remove('open');
+  syncActiveK8sShell();
 }
 
 function selectK8sObject(type, key) {
@@ -1227,22 +1263,24 @@ function selectK8sObject(type, key) {
   k8sSelectedItemKey = key;
   k8sDetailState.type = type;
   k8sDetailState.item = item;
-  const wrap = document.getElementById('k8s-detail-wrap');
-  const resizer = document.getElementById('k8s-detail-resizer');
+  const wrap = document.getElementById(activeK8sDetailWrapId());
+  const resizer = document.getElementById(activeK8sDetailResizerId());
   if (wrap) wrap.classList.add('open');
   if (resizer) resizer.classList.add('open');
   renderK8sContent();
   renderK8sDetail();
+  syncActiveK8sShell();
 }
 
 function renderK8sDetail() {
-  const wrap = document.getElementById('k8s-detail-wrap');
+  const wrap = document.getElementById(activeK8sDetailWrapId());
   if (!wrap) return;
   const { type, item } = k8sDetailState;
   if (!type || !item) {
     wrap.classList.remove('open');
     wrap.innerHTML = '';
-    document.getElementById('k8s-detail-resizer')?.classList.remove('open');
+    document.getElementById(activeK8sDetailResizerId())?.classList.remove('open');
+    syncActiveK8sShell();
     return;
   }
 
@@ -1435,6 +1473,7 @@ function renderK8sDetail() {
       </div>
       ${body}
     </div>`;
+  syncActiveK8sShell();
 }
 
 async function selectK8sResource(type) {
@@ -1443,6 +1482,8 @@ async function selectK8sResource(type) {
   // Highlight sidebar
   document.querySelectorAll('.k8s-res-item').forEach(el =>
     el.classList.toggle('selected', el.dataset.res === type));
+  document.querySelectorAll('.networking-nav-item[data-k8s-res]').forEach(el =>
+    el.classList.toggle('selected', el.dataset.k8sRes === type));
   // Update breadcrumb node label
   const bcNode = document.getElementById('bc-node');
   if (bcNode) bcNode.textContent = K8S_RES_META[type]?.label || type;
@@ -1484,13 +1525,16 @@ async function refreshK8sResource() {
 
 function updateK8sCountBadges() {
   for (const [type, cached] of Object.entries(k8sResCache)) {
-    const el = document.getElementById(`k8s-cnt-${type}`);
-    if (el && cached.data) el.textContent = cached.data.length;
+    const ids = [`k8s-cnt-${type}`, `networking-cnt-${type}`];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el && cached.data) el.textContent = cached.data.length;
+    }
   }
 }
 
 function renderK8sContent() {
-  const wrap = document.getElementById('k8s-content-inner');
+  const wrap = document.getElementById(activeK8sContentInnerId());
   const focusedInput = captureFocusedInput(wrap, '.dv-filter');
   if (!k8sActiveResource) {
     wrap.innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 16px">Select a resource type from the navigator.</div>`;

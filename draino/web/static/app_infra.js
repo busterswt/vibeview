@@ -5,32 +5,87 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 function topLevelView(name) {
-  if (['networking', 'routers', 'loadbalancers'].includes(name)) return 'networking';
+  if (name === 'networking') return 'networking';
   return name;
 }
 
 function switchNetworkingSection(name) {
-  if (!['networking', 'routers', 'loadbalancers'].includes(name)) return;
+  const valid = ['networking', 'routers', 'loadbalancers', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
+  if (!valid.includes(name)) return;
   activeNetworkingView = name;
-  switchView(name);
+  switchView('networking');
+}
+
+function isNetworkingK8sView(name = activeNetworkingView) {
+  return String(name || '').startsWith('k8s-');
+}
+
+function networkingK8sType(name = activeNetworkingView) {
+  return ({
+    'k8s-services': 'services',
+    'k8s-lbs': 'lbs',
+    'k8s-gatewayclasses': 'gatewayclasses',
+    'k8s-gateways': 'gateways',
+    'k8s-httproutes': 'httproutes',
+  })[name] || null;
+}
+
+function networkingViewLabel(name = activeNetworkingView) {
+  if (name === 'networking') return 'Networks';
+  if (name === 'routers') return 'Routers';
+  if (name === 'loadbalancers') return 'Load Balancers';
+  const k8sType = networkingK8sType(name);
+  return k8sType ? (K8S_RES_META[k8sType]?.label || 'Kubernetes Networking') : 'Networking';
+}
+
+function renderNetworkingWorkspace() {
+  document.querySelectorAll('.networking-nav-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.networkingView === activeNetworkingView);
+  });
+
+  const panes = {
+    networking: document.getElementById('net-wrap'),
+    routers: document.getElementById('router-wrap'),
+    loadbalancers: document.getElementById('lb-wrap'),
+    k8s: document.getElementById('networking-k8s-content'),
+  };
+  Object.values(panes).forEach(pane => pane?.classList.remove('active'));
+  if (isNetworkingK8sView()) panes.k8s?.classList.add('active');
+  else panes[activeNetworkingView]?.classList.add('active');
+
+  const detailPanes = ['net-detail-wrap', 'router-detail-wrap', 'lb-detail-wrap', 'networking-k8s-detail-wrap'];
+  detailPanes.forEach(id => document.getElementById(id)?.classList.remove('open'));
+
+  if (activeNetworkingView === 'networking' && selectedNetwork && netDetailState.data) {
+    document.getElementById('net-detail-wrap')?.classList.add('open');
+  }
+  if (activeNetworkingView === 'routers' && selectedRouter && routerDetailState.data) {
+    document.getElementById('router-detail-wrap')?.classList.add('open');
+  }
+  if (activeNetworkingView === 'loadbalancers' && selectedLoadBalancer && lbDetailState.data) {
+    document.getElementById('lb-detail-wrap')?.classList.add('open');
+  }
+  if (isNetworkingK8sView() && k8sDetailState.type && k8sDetailState.item) {
+    document.getElementById('networking-k8s-detail-wrap')?.classList.add('open');
+  }
+
+  const detailWrap = document.getElementById('networking-detail-wrap');
+  const resizer = document.getElementById('networking-detail-resizer');
+  const open = detailPanes.some(id => document.getElementById(id)?.classList.contains('open'));
+  detailWrap?.classList.toggle('open', open);
+  resizer?.classList.toggle('open', open);
 }
 
 function switchView(name) {
   if (activeView === 'stress' && name !== 'stress' && typeof stopStressStatusPolling === 'function') {
     stopStressStatusPolling();
   }
-  if (['networking', 'routers', 'loadbalancers'].includes(name)) {
-    activeNetworkingView = name;
-  }
+  if (['routers', 'loadbalancers'].includes(name)) name = 'networking';
   activeView = name;
 
   // Top nav highlight
   document.querySelectorAll('.top-nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.view === topLevelView(name));
-  });
-  document.getElementById('subnav-bar')?.classList.toggle('open', topLevelView(name) === 'networking');
-  document.querySelectorAll('#networking-subnav a').forEach(a => {
-    a.classList.toggle('active', a.dataset.networkingView === activeNetworkingView);
   });
 
   // Show / hide body views
@@ -42,10 +97,10 @@ function switchView(name) {
   const bcSep  = document.getElementById('bc-sep');
   const bcNode = document.getElementById('bc-node');
   document.getElementById('bc-infra-actions').style.display = name === 'infrastructure' ? '' : 'none';
-  document.getElementById('bc-k8s-actions').style.display   = name === 'kubernetes'     ? '' : 'none';
-  document.getElementById('bc-net-actions').style.display   = name === 'networking'     ? '' : 'none';
-  document.getElementById('bc-router-actions').style.display = name === 'routers'       ? '' : 'none';
-  document.getElementById('bc-lb-actions').style.display    = name === 'loadbalancers'  ? '' : 'none';
+  document.getElementById('bc-k8s-actions').style.display   = (name === 'kubernetes' || (name === 'networking' && isNetworkingK8sView())) ? '' : 'none';
+  document.getElementById('bc-net-actions').style.display   = (name === 'networking' && activeNetworkingView === 'networking') ? '' : 'none';
+  document.getElementById('bc-router-actions').style.display = (name === 'networking' && activeNetworkingView === 'routers') ? '' : 'none';
+  document.getElementById('bc-lb-actions').style.display    = (name === 'networking' && activeNetworkingView === 'loadbalancers') ? '' : 'none';
   document.getElementById('bc-report-actions').style.display = name === 'reports'       ? '' : 'none';
   document.getElementById('bc-stress-actions').style.display = name === 'stress'        ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display   = name === 'storage'        ? '' : 'none';
@@ -66,11 +121,7 @@ function switchView(name) {
     const label = name === 'monitor'
       ? 'Monitor'
       : name === 'networking'
-        ? 'Networks'
-        : name === 'routers'
-          ? 'Routers'
-        : name === 'loadbalancers'
-          ? 'Load Balancers'
+        ? networkingViewLabel()
         : name === 'stress'
           ? 'Stress'
         : name === 'reports'
@@ -90,28 +141,33 @@ function switchView(name) {
       bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
     }
     if (name === 'monitor') renderMonitorView();
-    if (name === 'networking' && !hasOpenStackAuth()) {
-      document.getElementById('net-wrap').innerHTML = renderOpenStackUnavailablePanel('Networks', 'This view currently relies on OpenStack networking data. Provide OpenStack credentials to enable it.');
-      document.getElementById('net-detail-wrap')?.classList.remove('open');
-      return;
-    }
-    if (name === 'routers' && !hasOpenStackAuth()) {
-      document.getElementById('router-wrap').innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
-      document.getElementById('router-detail-wrap')?.classList.remove('open');
-      return;
-    }
-    if (name === 'loadbalancers' && !hasOpenStackAuth()) {
-      document.getElementById('lb-wrap').innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
-      document.getElementById('lb-detail-wrap')?.classList.remove('open');
-      return;
-    }
     if (name === 'storage' && !hasOpenStackAuth()) {
       document.getElementById('vol-wrap').innerHTML = renderOpenStackUnavailablePanel('Volumes', 'This view currently relies on Cinder inventory. Provide OpenStack credentials to enable it.');
       return;
     }
-    if (name === 'networking' && !netState.data && !netState.loading) loadNetworks();
-    if (name === 'routers'    && !routerState.data && !routerState.loading) loadRouters();
-    if (name === 'loadbalancers') loadLoadBalancers();
+    if (name === 'networking') {
+      renderNetworkingWorkspace();
+      if (!isNetworkingK8sView() && !hasOpenStackAuth()) {
+        if (activeNetworkingView === 'networking') {
+          document.getElementById('net-wrap').innerHTML = renderOpenStackUnavailablePanel('Networks', 'This view currently relies on OpenStack networking data. Provide OpenStack credentials to enable it.');
+        }
+        if (activeNetworkingView === 'routers') {
+          document.getElementById('router-wrap').innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
+        }
+        if (activeNetworkingView === 'loadbalancers') {
+          document.getElementById('lb-wrap').innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
+        }
+        renderNetworkingWorkspace();
+        return;
+      }
+      if (activeNetworkingView === 'networking' && !netState.data && !netState.loading) loadNetworks();
+      if (activeNetworkingView === 'routers' && !routerState.data && !routerState.loading) loadRouters();
+      if (activeNetworkingView === 'loadbalancers') loadLoadBalancers();
+      if (isNetworkingK8sView()) {
+        const k8sType = networkingK8sType();
+        if (k8sType) selectK8sResource(k8sType);
+      }
+    }
     if (name === 'storage'    && !volState.data && !volState.loading) loadVolumes();
     if (name === 'stress') {
       if (!hasOpenStackAuth()) {
@@ -122,15 +178,6 @@ function switchView(name) {
       if (typeof startStressStatusPolling === 'function') startStressStatusPolling();
     }
     if (name === 'reports') renderReportsView();
-    // Restore network detail panel visibility when returning
-    if (name === 'networking') {
-      const det = document.getElementById('net-detail-wrap');
-      if (selectedNetwork && netDetailState.data) det.classList.add('open');
-    }
-    if (name === 'routers') {
-      const det = document.getElementById('router-detail-wrap');
-      if (selectedRouter && routerDetailState.data) det.classList.add('open');
-    }
   }
 }
 

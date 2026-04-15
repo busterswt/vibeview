@@ -50,30 +50,6 @@ body {
   border-bottom: 2px solid var(--blue);
   gap: 0;
 }
-.subnav-group {
-  display: flex;
-  gap: 2px;
-  padding: 0 14px;
-  align-items: center;
-  height: 34px;
-}
-.subnav-group a {
-  color: var(--dim);
-  text-decoration: none;
-  padding: 5px 10px;
-  border-radius: 3px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.subnav-group a:hover { background: var(--hover); color: var(--text); }
-.subnav-group a.active { background: var(--blue-bg); color: var(--blue); font-weight: 700; }
-#subnav-bar {
-  display: none;
-  background: var(--white);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-#subnav-bar.open { display: block; }
 .logo { display: flex; align-items: baseline; gap: 10px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .logo-sub  { font-size: 11px; font-weight: 400; color: #90a4ae; }
 .top-nav   { display: flex; gap: 2px; margin-left: 28px; }
@@ -180,6 +156,71 @@ body {
 #view-routers        { flex-direction: row; }
 #view-loadbalancers  { flex-direction: row; }
 #view-storage        { flex-direction: column; }
+#networking-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#networking-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+#networking-content-inner {
+  min-height: 100%;
+}
+.networking-section-label {
+  padding: 12px 14px 6px;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.networking-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  margin: 1px 6px;
+}
+.networking-nav-item:hover { background: var(--hover); }
+.networking-nav-item.selected { background: var(--blue); color: #fff; }
+.networking-nav-item.selected .tree-badge { background: rgba(255,255,255,0.2); color: #fff; }
+.networking-nav-item .tree-badge { margin-left: auto; }
+.networking-pane { display: none; }
+.networking-pane.active { display: block; }
+#networking-k8s-content { min-height: 100%; }
+#networking-detail-wrap {
+  width: 560px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--white);
+  overflow-y: auto;
+  display: none;
+}
+#networking-detail-wrap.open { display: block; }
+#networking-detail-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: linear-gradient(to right, transparent 0, #d9e1e7 50%, transparent 100%);
+  flex-shrink: 0;
+  display: none;
+}
+#networking-detail-resizer.open { display: block; }
+#networking-detail-resizer:hover,
+#networking-detail-resizer.dragging {
+  background: linear-gradient(to right, transparent 0, #90caf9 50%, transparent 100%);
+}
+.networking-detail-pane { display: none; width: 100%; min-height: 100%; }
+.networking-detail-pane.open { display: block; }
 #k8s-sidebar { width: 220px; min-width: 220px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 #k8s-content { flex: 1; overflow-y: auto; padding: 16px; }
 .k8s-cluster-row { padding: 10px 12px 6px; font-size: 12px; font-weight: 700; color: var(--dim); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
@@ -200,16 +241,6 @@ body {
 .k8s-badge.bound    { background: #e8f5e9; color: #2e7d32; }
 .k8s-badge.released { background: #fff8e1; color: #f57f17; }
 .k8s-badge.active   { background: #e8f5e9; color: #2e7d32; }
-#net-detail-wrap,
-#router-detail-wrap,
-#lb-detail-wrap {
-  width: 560px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  background: var(--white);
-  overflow-y: auto;
-  display: none;
-}
 #k8s-detail-wrap {
   width: 560px;
   flex-shrink: 0;
@@ -230,9 +261,6 @@ body {
 #k8s-detail-resizer.dragging {
   background: linear-gradient(to right, transparent 0, #90caf9 50%, transparent 100%);
 }
-#net-detail-wrap.open,
-#router-detail-wrap.open,
-#lb-detail-wrap.open,
 #k8s-detail-wrap.open { display: block; }
 .net-detail-inner { padding: 14px; }
 .net-detail-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

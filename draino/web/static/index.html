@@ -20,7 +20,7 @@
     <a data-view="infrastructure" class="active" onclick="switchView('infrastructure')">Infrastructure</a>
     <a data-view="monitor"                       onclick="switchView('monitor')">Monitor</a>
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
-    <a data-view="networking"                    onclick="switchView(activeNetworkingView || 'networking')">Networking</a>
+    <a data-view="networking"                    onclick="switchView('networking')">Networking</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
     <a data-view="stress"                        onclick="switchView('stress')">Stress</a>
     <a data-view="reports"                       onclick="switchView('reports')">Reports</a>
@@ -47,14 +47,6 @@
       <div class="user-dot" id="user-dot">D</div>
       <span id="user-label">Auth required</span>
     </div>
-  </div>
-</div>
-
-<div id="subnav-bar">
-  <div class="subnav-group" id="networking-subnav">
-    <a data-networking-view="networking" class="active" onclick="switchNetworkingSection('networking')">Networks</a>
-    <a data-networking-view="routers" onclick="switchNetworkingSection('routers')">Routers</a>
-    <a data-networking-view="loadbalancers" onclick="switchNetworkingSection('loadbalancers')">Load Balancers</a>
   </div>
 </div>
 
@@ -255,26 +247,72 @@
 
   <!-- ── Networking view ── -->
   <div class="view" id="view-networking">
-    <div class="data-view-wrap" id="net-wrap">
-      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading networks…</div>
+    <div id="networking-sidebar">
+      <div class="sidebar-head">Navigator — Networking</div>
+      <div id="networking-tree">
+        <div class="networking-section-label">OpenStack</div>
+        <div class="networking-nav-item selected" data-networking-view="networking" onclick="switchNetworkingSection('networking')">
+          <span>🌐</span> Networks
+        </div>
+        <div class="networking-nav-item" data-networking-view="routers" onclick="switchNetworkingSection('routers')">
+          <span>🛣️</span> Routers
+        </div>
+        <div class="networking-nav-item" data-networking-view="loadbalancers" onclick="switchNetworkingSection('loadbalancers')">
+          <span>⚖️</span> Load Balancers
+        </div>
+
+        <div class="networking-section-label">Kubernetes</div>
+        <div class="networking-nav-item" data-networking-view="k8s-services" data-k8s-res="services" onclick="switchNetworkingSection('k8s-services')">
+          <span>🔗</span> Services &amp; VIPs
+          <span class="tree-badge" id="networking-cnt-services"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-lbs" data-k8s-res="lbs" onclick="switchNetworkingSection('k8s-lbs')">
+          <span>⚡</span> LoadBalancers
+          <span class="tree-badge" id="networking-cnt-lbs"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-gatewayclasses" data-k8s-res="gatewayclasses" onclick="switchNetworkingSection('k8s-gatewayclasses')">
+          <span>🏛️</span> GatewayClasses
+          <span class="tree-badge" id="networking-cnt-gatewayclasses"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-gateways" data-k8s-res="gateways" onclick="switchNetworkingSection('k8s-gateways')">
+          <span>🚪</span> Gateways
+          <span class="tree-badge" id="networking-cnt-gateways"></span>
+        </div>
+        <div class="networking-nav-item" data-networking-view="k8s-httproutes" data-k8s-res="httproutes" onclick="switchNetworkingSection('k8s-httproutes')">
+          <span>🛣️</span> HTTPRoutes
+          <span class="tree-badge" id="networking-cnt-httproutes"></span>
+        </div>
+      </div>
     </div>
-    <div id="net-detail-wrap"></div>
+    <div id="networking-content">
+      <div id="networking-content-inner">
+        <div class="networking-pane active" id="net-wrap">
+          <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading networks…</div>
+        </div>
+        <div class="networking-pane" id="router-wrap"></div>
+        <div class="networking-pane" id="lb-wrap"></div>
+        <div class="networking-pane" id="networking-k8s-content">
+          <div id="networking-k8s-content-inner">
+            <div style="color:var(--dim);text-align:center;padding:40px 16px">Select a Kubernetes networking resource from the navigator.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="networking-detail-resizer"></div>
+    <div id="networking-detail-wrap">
+      <div class="networking-detail-pane" id="net-detail-wrap"></div>
+      <div class="networking-detail-pane" id="router-detail-wrap"></div>
+      <div class="networking-detail-pane" id="lb-detail-wrap"></div>
+      <div class="networking-detail-pane" id="networking-k8s-detail-wrap"></div>
+    </div>
   </div>
 
   <!-- ── Routers view ── -->
   <div class="view" id="view-routers">
-    <div class="data-view-wrap" id="router-wrap">
-      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading routers…</div>
-    </div>
-    <div id="router-detail-wrap"></div>
   </div>
 
   <!-- ── Load Balancers view ── -->
   <div class="view" id="view-loadbalancers">
-    <div class="data-view-wrap" id="lb-wrap">
-      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading load balancers…</div>
-    </div>
-    <div id="lb-detail-wrap"></div>
   </div>
 
   <!-- ── Storage view ── -->

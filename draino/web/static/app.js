@@ -116,6 +116,14 @@ function applyK8sDetailWidth(width) {
   localStorage.setItem('vibeviewK8sDetailWidth', String(px));
 }
 
+function applyNetworkingDetailWidth(width) {
+  const panel = document.getElementById('networking-detail-wrap');
+  if (!panel) return;
+  const px = Math.max(560, Math.min(1120, Math.round(width)));
+  panel.style.width = `${px}px`;
+  localStorage.setItem('vibeviewNetworkingDetailWidth', String(px));
+}
+
 function initSidebarResizer() {
   const sidebar = document.getElementById('sidebar');
   const resizer = document.getElementById('sidebar-resizer');
@@ -218,6 +226,43 @@ function initK8sDetailResizer() {
   });
 }
 
+function initNetworkingDetailResizer() {
+  const panel = document.getElementById('networking-detail-wrap');
+  const resizer = document.getElementById('networking-detail-resizer');
+  if (!panel || !resizer) return;
+
+  const saved = Number(localStorage.getItem('vibeviewNetworkingDetailWidth'));
+  if (Number.isFinite(saved) && saved >= 560) applyNetworkingDetailWidth(saved);
+
+  resizer.addEventListener('mousedown', (event) => {
+    tasksDragging = false;
+    sidebarDragging = false;
+    resizer.classList.add('dragging');
+    document.body.dataset.networkingDetailDragging = 'true';
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (document.body.dataset.networkingDetailDragging !== 'true') return;
+    const view = document.getElementById('view-networking');
+    const rect = view?.getBoundingClientRect();
+    if (!rect) return;
+    const width = rect.right - event.clientX;
+    const maxWidth = Math.max(560, rect.width - 260);
+    applyNetworkingDetailWidth(Math.max(560, Math.min(maxWidth, width)));
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (document.body.dataset.networkingDetailDragging !== 'true') return;
+    delete document.body.dataset.networkingDetailDragging;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INIT
 // ════════════════════════════════════════════════════════════════════════════
@@ -225,5 +270,6 @@ function initK8sDetailResizer() {
 initSidebarResizer();
 initTasksResizer();
 initK8sDetailResizer();
+initNetworkingDetailResizer();
 initPollingInterval();
 bootstrapSession();
