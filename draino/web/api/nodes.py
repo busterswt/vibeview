@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 
 from fastapi import APIRouter, Request
@@ -12,6 +13,7 @@ from .api_issues import build_api_issue
 from ..latency import measure_latency
 
 router = APIRouter()
+_RESOURCE_DETAIL_TIMEOUT_SECONDS = float(os.getenv("DRAINO_RESOURCE_DETAIL_TIMEOUT_SECONDS", "10"))
 
 _get_session_record_getter: Callable[[], Callable[[Request], object]] | None = None
 _get_network_detail_getter: Callable[[], Callable[[str, openstack_ops.OpenStackAuth | None], dict]] | None = None
@@ -39,6 +41,14 @@ def _require_network_detail() -> Callable[[str, openstack_ops.OpenStackAuth | No
     return _get_network_detail_getter()
 
 
+async def _run_with_timeout(func, *args):
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(None, func, *args),
+        timeout=_RESOURCE_DETAIL_TIMEOUT_SECONDS,
+    )
+
+
 class AnnotationPatch(BaseModel):
     key: str
     value: str | None = None
@@ -55,10 +65,11 @@ class InstancePortStatsRequest(BaseModel):
 @router.get("/api/ovn/lsp/{port_id}")
 async def api_ovn_port_detail(port_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_port_detail, port_id, session.server.k8s_auth)
+        data = await _run_with_timeout(k8s_ops.get_ovn_port_detail, port_id, session.server.k8s_auth)
         return {"port": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {"port": None, "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading OVN port detail", "api_issue": None}
     except Exception as exc:
         return {"port": None, "error": str(exc), "api_issue": None}
 
@@ -66,10 +77,11 @@ async def api_ovn_port_detail(port_id: str, request: Request):
 @router.get("/api/networks/{network_id}/ovn")
 async def api_network_ovn(network_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_switch, network_id, session.server.k8s_auth)
+        data = await _run_with_timeout(k8s_ops.get_ovn_logical_switch, network_id, session.server.k8s_auth)
         return {"ovn": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {"ovn": None, "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading OVN network detail", "api_issue": None}
     except Exception as exc:
         return {"ovn": None, "error": str(exc), "api_issue": None}
 
@@ -294,9 +306,14 @@ async def api_node_instance_detail(node_name: str, instance_id: str, request: Re
 @router.get("/api/networks/{network_id}")
 async def api_network_detail(network_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, _require_network_detail(), network_id, session.server.openstack_auth)
+        data = await _run_with_timeout(_require_network_detail(), network_id, session.server.openstack_auth)
         return {"network": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "network": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading network details",
+            "api_issue": None,
+        }
     except Exception as exc:
         return {"network": None, "error": str(exc), "api_issue": build_api_issue("Neutron", f"GET /v2.0/networks/{network_id}", exc)}

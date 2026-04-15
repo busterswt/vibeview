@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 
 from fastapi import APIRouter, Request
@@ -20,6 +21,7 @@ from ..resource_helpers import (
 )
 
 router = APIRouter()
+_RESOURCE_DETAIL_TIMEOUT_SECONDS = float(os.getenv("DRAINO_RESOURCE_DETAIL_TIMEOUT_SECONDS", "10"))
 
 _get_session_record_getter: Callable[[], Callable[[Request], object]] | None = None
 
@@ -33,6 +35,14 @@ def _require_session_record() -> Callable[[Request], object]:
     if _get_session_record_getter is None:
         raise RuntimeError("resource routes are not configured")
     return _get_session_record_getter()
+
+
+async def _run_with_timeout(func, *args):
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(None, func, *args),
+        timeout=_RESOURCE_DETAIL_TIMEOUT_SECONDS,
+    )
 
 
 @router.get("/api/networks")
@@ -71,10 +81,15 @@ async def api_load_balancers(request: Request):
 @router.get("/api/load-balancers/{lb_id}")
 async def api_load_balancer_detail(lb_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, get_load_balancer_detail, lb_id, session.server.openstack_auth)
+        data = await _run_with_timeout(get_load_balancer_detail, lb_id, session.server.openstack_auth)
         return {"load_balancer": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "load_balancer": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading load balancer details",
+            "api_issue": None,
+        }
     except Exception as exc:
         return {"load_balancer": None, "error": str(exc), "api_issue": build_api_issue("Octavia", f"GET /v2/lbaas/loadbalancers/{lb_id}", exc)}
 
@@ -114,10 +129,15 @@ async def api_routers(request: Request):
 @router.get("/api/routers/{router_id}")
 async def api_router_detail(router_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, get_router_detail, router_id, session.server.openstack_auth)
+        data = await _run_with_timeout(get_router_detail, router_id, session.server.openstack_auth)
         return {"router": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "router": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading router details",
+            "api_issue": None,
+        }
     except Exception as exc:
         return {"router": None, "error": str(exc), "api_issue": build_api_issue("Neutron", f"GET /v2.0/routers/{router_id}", exc)}
 
@@ -125,9 +145,10 @@ async def api_router_detail(router_id: str, request: Request):
 @router.get("/api/routers/{router_id}/ovn")
 async def api_router_ovn(router_id: str, request: Request):
     session = _require_session_record()(request)
-    loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, k8s_ops.get_ovn_logical_router, router_id, session.server.k8s_auth)
+        data = await _run_with_timeout(k8s_ops.get_ovn_logical_router, router_id, session.server.k8s_auth)
         return {"ovn": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {"ovn": None, "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading OVN router detail", "api_issue": None}
     except Exception as exc:
         return {"ovn": None, "error": str(exc), "api_issue": None}

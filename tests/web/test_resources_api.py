@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 
 from draino.web import server as web_server
@@ -252,3 +254,37 @@ def test_load_balancer_detail_endpoint_returns_detail(monkeypatch):
     assert body["load_balancer"]["vip_port"]["mac_address"] == "fa:16:3e:11:22:33"
     assert body["load_balancer"]["ha_summary"] == "HA spread OK"
     assert body["load_balancer"]["pools"][0]["id"] == "pool-1"
+
+
+def test_load_balancer_detail_endpoint_times_out(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(resource_api, "_RESOURCE_DETAIL_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(resource_api, "get_load_balancer_detail", lambda lb_id, auth=None: time.sleep(0.05) or {})
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/load-balancers/lb-1")
+
+    assert resp.status_code == 200
+    assert "Timed out after 0s while loading load balancer details" in resp.json()["error"]

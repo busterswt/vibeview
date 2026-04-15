@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
 
 from draino.models import NodeState
 from draino.operations import k8s_ops
 from draino.web import server as web_server
+from draino.web.api import nodes as nodes_api
 
 
 def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
@@ -165,6 +168,40 @@ def test_node_network_stats_endpoint_returns_agent_data(monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["interfaces"][0]["name"] == "bond0"
+
+
+def test_network_detail_endpoint_times_out(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(nodes_api, "_RESOURCE_DETAIL_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(web_server, "_get_network_detail", lambda network_id, auth=None: time.sleep(0.05) or {})
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/networks/net-1")
+
+    assert resp.status_code == 200
+    assert "Timed out after 0s while loading network details" in resp.json()["error"]
 
 
 def test_node_irq_balance_endpoint_returns_agent_data(monkeypatch):
