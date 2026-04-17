@@ -1,5 +1,12 @@
 'use strict';
 
+const NODE_HINTS = {
+  compute: 'ESXi',
+  network: 'Edge',
+  etcd: 'Mgmt',
+  other: 'Host',
+};
+
 // ════════════════════════════════════════════════════════════════════════════
 // § VIEW SWITCHING (top nav)
 // ════════════════════════════════════════════════════════════════════════════
@@ -221,8 +228,15 @@ function taintLabel(t) {
 
 function treeItemHtml(name, nd) {
   const sel = name === selectedNode ? ' selected' : '';
-  const ico = nd.is_compute ? '🖥️' : nd.is_etcd ? '☣️' : '⚙️';
-  const hintTxt = nd.is_compute ? 'ESXi' : nd.is_etcd ? 'Mgmt' : 'Host';
+  const mismatch = nd.compute_missing_from_openstack ? ' warning' : '';
+  const ico = nd.is_compute ? '🖥️' : nd.is_network ? '🌐' : nd.is_etcd ? '☣️' : '⚙️';
+  const hintTxt = nd.is_compute
+    ? NODE_HINTS.compute
+    : nd.is_network
+      ? NODE_HINTS.network
+      : nd.is_etcd
+        ? NODE_HINTS.etcd
+        : NODE_HINTS.other;
   const dot = phaseColor(nd);
   const etcBdg = nd.is_etcd ? `<span class="tree-badge etcd">etcd</span>` : '';
   const mariadbBdg = nd.hosts_mariadb ? `<span class="tree-badge mariadb">mariadb</span>` : '';
@@ -230,6 +244,7 @@ function treeItemHtml(name, nd) {
     ? `<span class="tree-badge noagent" title="No ready node-agent pod on this node">NoAgent</span>`
     : '';
   const edgeBdg = nd.is_edge ? `<span class="tree-badge edge">edge</span>` : '';
+  const netBdg = nd.is_network ? `<span class="tree-badge blue">network</span>` : '';
   const noSched = noScheduleTaints(nd);
   const noSchedBdg = noSched.length
     ? `<span class="tree-badge nosched" title="${escAttr(noSched.map(taintLabel).join(', '))}">NoSchedule</span>`
@@ -237,6 +252,9 @@ function treeItemHtml(name, nd) {
   const rebootBdg = nd.reboot_required ? `<span class="tree-badge reboot">reboot</span>` : '';
   const kernelBdg = nd.latest_kernel_version && nd.kernel_version && nd.latest_kernel_version !== nd.kernel_version
     ? `<span class="tree-badge kernel">kernel</span>`
+    : '';
+  const computeMismatchBdg = nd.compute_missing_from_openstack
+    ? `<span class="tree-badge warn" title="Kubernetes compute label is set but this node was not found in OpenStack host summaries">NoNova</span>`
     : '';
 
   let vmBadge = '';
@@ -250,12 +268,12 @@ function treeItemHtml(name, nd) {
     if (extra > 0) aggHtml += `<span class="tree-badge agg">+${extra}</span>`;
   }
 
-  return `<div class="tree-item${sel}" onclick="selectNode('${escAttr(name)}')" data-node="${escAttr(name)}">
+  return `<div class="tree-item${sel}${mismatch}" onclick="selectNode('${escAttr(name)}')" data-node="${escAttr(name)}">
     <span class="ti-ico">${ico}</span>
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
     <span class="hint">${hintTxt}</span>
-    ${etcBdg}${mariadbBdg}${agentBdg}${edgeBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${vmBadge}${aggHtml}
+    ${etcBdg}${mariadbBdg}${agentBdg}${edgeBdg}${netBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${computeMismatchBdg}${vmBadge}${aggHtml}
   </div>`;
 }
 
@@ -274,26 +292,44 @@ function setNodeSort(direction) {
 
 function rebuildSidebar() {
   const compute = Object.entries(nodes).filter(([, nd]) => nd.is_compute);
-  const other = Object.entries(nodes).filter(([, nd]) => !nd.is_compute);
+  const network = Object.entries(nodes).filter(([, nd]) => !nd.is_compute && nd.is_network);
+  const other = Object.entries(nodes).filter(([, nd]) => !nd.is_compute && !nd.is_network);
 
   const byAZ = {};
   for (const [name, nd] of compute) {
-    const az = nd.availability_zone || 'nova';
-    (byAZ[az] = byAZ[az] || []).push([name, nd]);
+    const az = nd.availability_zone || 'unknown';
+    const group = (byAZ[az] = byAZ[az] || { compute: [], network: [] });
+    group.compute.push([name, nd]);
+  }
+  for (const [name, nd] of network) {
+    const az = nd.availability_zone || 'unknown';
+    const group = (byAZ[az] = byAZ[az] || { compute: [], network: [] });
+    group.network.push([name, nd]);
   }
   const azKeys = Object.keys(byAZ).sort((a, b) => compareNodeNames(a, b));
 
   let html = '';
   for (const az of azKeys) {
-    const entries = [...byAZ[az]].sort(([nameA], [nameB]) => compareNodeNames(nameA, nameB));
     const gid = `az:${az}`;
     const col = collapsedGroups.has(gid);
+    const computeEntries = [...byAZ[az].compute].sort(([nameA], [nameB]) => compareNodeNames(nameA, nameB));
+    const networkEntries = [...byAZ[az].network].sort(([nameA], [nameB]) => compareNodeNames(nameA, nameB));
+    const totalEntries = computeEntries.length + networkEntries.length;
     html += `<div class="tree-group" onclick="toggleGroup('${escAttr(gid)}')">
       <span class="tree-expand">${col ? '▶' : '▼'}</span>
       🌐 ${esc(az)}
-      <span class="tree-count">${entries.length}</span>
+      <span class="tree-count">${totalEntries}</span>
     </div>`;
-    if (!col) for (const [name, nd] of entries) html += treeItemHtml(name, nd);
+    if (!col) {
+      if (computeEntries.length) {
+        html += `<div class="tree-subgroup">🖥️ Compute <span class="tree-count">${computeEntries.length}</span></div>`;
+        for (const [name, nd] of computeEntries) html += treeItemHtml(name, nd);
+      }
+      if (networkEntries.length) {
+        html += `<div class="tree-subgroup">🌐 Network <span class="tree-count">${networkEntries.length}</span></div>`;
+        for (const [name, nd] of networkEntries) html += treeItemHtml(name, nd);
+      }
+    }
   }
 
   if (other.length) {
@@ -306,7 +342,7 @@ function rebuildSidebar() {
     if (!col) for (const [name, nd] of sortedOther) html += treeItemHtml(name, nd);
   }
 
-  if (!compute.length && !other.length) html = `<div class="tree-group" style="border-top:none;cursor:default">No nodes loaded</div>`;
+  if (!compute.length && !network.length && !other.length) html = `<div class="tree-group" style="border-top:none;cursor:default">No nodes loaded</div>`;
 
   document.getElementById('tree').innerHTML = html;
 }

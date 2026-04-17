@@ -65,6 +65,7 @@ class NodeState:
     # ── Node roles ────────────────────────────────────────────────────────
     node_agent_ready: bool = False
     is_edge:        bool = False           # True if OVN chassis is marked as gateway/edge
+    is_network:     bool = False           # True if node carries the OpenStack network label
     is_etcd:        bool = False            # True if node carries the etcd role label
     hosts_mariadb:  bool = False            # True if a MariaDB/Galera pod is scheduled here
     etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
@@ -74,6 +75,7 @@ class NodeState:
     # compute_status: None=loading | "up" | "disabled" | "down"
     is_compute:        bool = False
     compute_status:    Optional[str] = None
+    compute_missing_from_openstack: bool = False
     amphora_count:     Optional[int] = None
     vm_count:          Optional[int] = None
     availability_zone: Optional[str] = None   # Nova AZ (from host aggregate metadata)

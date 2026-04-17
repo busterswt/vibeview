@@ -68,6 +68,9 @@ class InventoryRefreshMixin:
             state.k8s_cordoned = node.get("cordoned", False)
             state.k8s_taints = list(node.get("taints", []))
             state.kernel_version = node.get("kernel_version")
+            state.is_compute = bool(node.get("is_compute", False))
+            state.is_network = (not state.is_compute) and bool(node.get("is_network", False))
+            state.availability_zone = node.get("availability_zone")
             ready_since = node.get("ready_since")
             if ready_since is not None:
                 state.uptime = format_uptime(ready_since)
@@ -203,10 +206,10 @@ class InventoryRefreshMixin:
                 state.is_edge = any(candidate in edge_aliases for candidate in candidates if candidate)
                 state.is_etcd = name in self._etcd_node_names
                 state.hosts_mariadb = any(candidate in mariadb_nodes for candidate in candidates if candidate)
-                state.availability_zone = summary.get("availability_zone")
+                state.availability_zone = state.availability_zone or summary.get("availability_zone")
                 state.aggregates = summary.get("aggregates", [])
+                state.compute_missing_from_openstack = bool(state.is_compute and not summary)
                 if state.phase == NodePhase.IDLE:
-                    state.is_compute = summary.get("is_compute", False)
                     state.compute_status = summary.get("compute_status")
                     state.amphora_count = summary.get("amphora_count")
                     state.vm_count = summary.get("vm_count")

@@ -4,6 +4,27 @@ from __future__ import annotations
 from kubernetes import client
 
 from .k8s_ops import K8sAuth, _api_client
+
+
+_COMPUTE_LABEL_KEY = "openstack-compute-node"
+_NETWORK_LABEL_KEY = "openstack-network-node"
+_ENABLED_LABEL_VALUE = "enabled"
+_AZ_ANNOTATION_KEY = "ovn.openstack.org/availability_zones"
+
+
+def _label_enabled(labels: dict | None, key: str) -> bool:
+    value = str((labels or {}).get(key, "")).strip().lower()
+    return value == _ENABLED_LABEL_VALUE
+
+
+def _availability_zone(annotations: dict | None) -> str | None:
+    raw = str((annotations or {}).get(_AZ_ANNOTATION_KEY, "")).strip()
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    return parts[0] if parts else None
+
+
 def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
     """Return a list of node info dicts."""
     v1 = client.CoreV1Api(_api_client(auth))
@@ -11,7 +32,9 @@ def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
     result: list[dict] = []
     for node in raw.items:
         name: str = node.metadata.name
-        hostname: str = node.metadata.labels.get("kubernetes.io/hostname", name)
+        labels = node.metadata.labels or {}
+        annotations = node.metadata.annotations or {}
+        hostname: str = labels.get("kubernetes.io/hostname", name)
         unschedulable: bool = bool(node.spec.unschedulable)
         ready = False
         ready_since = None
@@ -38,6 +61,9 @@ def get_nodes(auth: K8sAuth | None = None) -> list[dict]:
                 "ready": ready,
                 "ready_since": ready_since,
                 "kernel_version": kernel_version,
+                "is_compute": _label_enabled(labels, _COMPUTE_LABEL_KEY),
+                "is_network": _label_enabled(labels, _NETWORK_LABEL_KEY),
+                "availability_zone": _availability_zone(annotations),
             }
         )
     return result
@@ -306,5 +332,4 @@ def get_k8s_node_health_density_summary(auth: K8sAuth | None = None) -> dict:
 
     result["nodes"] = sorted(node_data.values(), key=lambda item: item["node"])
     return result
-
 
