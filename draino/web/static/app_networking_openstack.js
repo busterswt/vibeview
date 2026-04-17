@@ -1,0 +1,1197 @@
+'use strict';
+
+// ════════════════════════════════════════════════════════════════════════════
+// § NETWORKS VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function abbreviateRouterPortId(value) {
+  const text = String(value || '');
+  if (!text) return '—';
+  if (text.length <= 18) return text;
+  return `${text.slice(0, 8)}…${text.slice(-6)}`;
+}
+
+function compactRouterMac(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const parts = text.split(':');
+  if (parts.length !== 6) return text;
+  return parts.slice(3).join(':');
+}
+
+function syncNetworkingDetailShell() {
+  if (activeView === 'networking' && typeof renderNetworkingWorkspace === 'function') {
+    renderNetworkingWorkspace();
+  }
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const resp = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    return await resp.json();
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function armDetailWatchdog(kind, id, timeoutMs, onTimeout) {
+  return setTimeout(() => {
+    try {
+      onTimeout();
+    } catch (_) {
+      // ignore watchdog callback errors
+    }
+  }, timeoutMs);
+}
+
+async function loadNetworks(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('net-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Networks', 'This view currently relies on OpenStack networking data. Provide OpenStack credentials to enable it.');
+    return;
+  }
+  if (netState.loading) return;
+  if (netState.data && !force) { renderNetworksView(); return; }
+  netState.loading = true;
+  netState.data    = null;
+  renderNetworksView(); // show spinner
+  try {
+    const resp = await fetch('/api/networks');
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    netState.data  = json.networks || [];
+    netState.page  = 1;
+    if (json.error) appendNetError(json.error);
+  } catch (e) {
+    netState.data = [];
+    appendNetError(String(e));
+  } finally {
+    netState.loading = false;
+    renderNetworksView();
+  }
+}
+
+function renderNetworksView() {
+  const wrap = document.getElementById('net-wrap');
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
+  if (netState.loading) {
+    wrap.innerHTML = `<div class="data-view-toolbar"><h2>Neutron Networks <span class="hint">Port Groups / vDS</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading networks…</div>`;
+    return;
+  }
+  if (!netState.data) { wrap.innerHTML = ''; return; }
+
+  const filtered = applyFilter(netState.data, netState.filter, ['name','status','network_type','project_id']);
+  const { page, pageSize } = netState;
+  const paged = paginate(filtered, page, pageSize);
+
+  let rows = '';
+  for (const n of paged) {
+    const stCls = n.status === 'ACTIVE' ? 'st-active' : n.status === 'DOWN' ? 'st-down' : 'st-error';
+    const adm   = n.admin_state === 'up'
+      ? `<span class="sdot green"></span>up` : `<span class="sdot red"></span>down`;
+    const ext    = n.external ? `<span class="tag-amp">ext</span>` : '—';
+    const shared = n.shared ? '✓' : '—';
+    const routerPill = n.router_connected && n.router_id
+      ? `<button class="btn sm" style="padding:1px 8px;font-size:11px" onclick="event.stopPropagation();navigateToRouterFromNetwork('${escAttr(n.router_id)}')">Connected</button>`
+      : '<span style="color:var(--dim)">—</span>';
+    const rowSel = selectedNetwork === n.id ? ' selected' : '';
+    rows += `<tr class="${rowSel}" style="cursor:pointer" data-net-id="${escAttr(n.id)}" onclick="selectNetwork('${escAttr(n.id)}')">
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(n.name)}</td>
+      <td><span class="${stCls}">${esc(n.status)}</span></td>
+      <td>${adm}</td>
+      <td>${esc(n.network_type) || '<span style="color:var(--dim)">—</span>'}</td>
+      <td>${shared}</td>
+      <td>${ext}</td>
+      <td>${routerPill}</td>
+      <td>${n.subnet_count}</td>
+      <td class="uuid-short" title="${esc(n.project_id)}">${n.project_id.slice(0, 8) || '—'}</td>
+    </tr>`;
+  }
+
+  wrap.innerHTML = `
+    <div class="data-view-toolbar">
+      <h2>Neutron Networks <span class="hint">Port Groups / vDS</span></h2>
+      <input class="dv-filter" type="text" placeholder="Filter networks…"
+        value="${esc(netState.filter)}" oninput="netState.filter=this.value;netState.page=1;renderNetworksView()">
+      <span style="font-size:11px;color:var(--dim)">${filtered.length} of ${netState.data.length} networks</span>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>Name <span class="hint">Port Group</span></th>
+        <th>Status</th>
+        <th>Admin State</th>
+        <th>Type <span class="hint">vDS Type</span></th>
+        <th>Shared</th>
+        <th>External <span class="hint">Uplink</span></th>
+        <th>Router</th>
+        <th>Subnets</th>
+        <th>Project</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:20px">No networks match the filter.</td></tr>'}</tbody>
+    </table>
+    ${buildPager(netState, filtered.length, 'netState', 'renderNetworksView')}`;
+  restoreFocusedInput(wrap, focusedInput);
+}
+
+async function navigateToRouterFromNetwork(routerId) {
+  if (!routerId) return;
+  switchNetworkingSection('routers');
+  await loadRouters();
+  await selectRouter(routerId);
+}
+
+function appendNetError(msg) {
+  onLog({ node: '-', message: `Networks API error: ${msg}`, color: 'error' });
+}
+
+async function loadLoadBalancers(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('lb-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
+    return;
+  }
+  if (lbState.loading) return;
+  if (lbState.data && !force) { renderLoadBalancersView(); return; }
+  lbState.loading = true;
+  lbState.data = null;
+  renderLoadBalancersView();
+  try {
+    const resp = await fetch('/api/load-balancers');
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    lbState.data = json.load_balancers || [];
+    lbState.page = 1;
+    if (json.error) appendLoadBalancerError(json.error);
+  } catch (e) {
+    lbState.data = [];
+    appendLoadBalancerError(String(e));
+  } finally {
+    lbState.loading = false;
+    renderLoadBalancersView();
+  }
+}
+
+function renderLoadBalancersView() {
+  const wrap = document.getElementById('lb-wrap');
+  if (!wrap) return;
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
+  if (lbState.loading) {
+    wrap.innerHTML = `<div class="data-view-toolbar"><h2>Load Balancers <span class="hint">LBaaS / Octavia</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading load balancers…</div>`;
+    return;
+  }
+  if (!lbState.data) { wrap.innerHTML = ''; return; }
+  const filtered = applyFilter(lbState.data, lbState.filter, ['name', 'vip_address', 'floating_ip', 'project_id', 'provisioning_status', 'operating_status']);
+  const paged = paginate(filtered, lbState.page, lbState.pageSize);
+  wrap.innerHTML = `
+    <div class="data-view-toolbar">
+      <h2>Load Balancers <span class="hint">LBaaS / Octavia</span></h2>
+      <input class="dv-filter" type="text" placeholder="Filter load balancers…"
+        value="${esc(lbState.filter)}" oninput="lbState.filter=this.value;lbState.page=1;renderLoadBalancersView()">
+      <span style="font-size:11px;color:var(--dim)">${filtered.length} of ${lbState.data.length} load balancers</span>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Provisioning</th>
+        <th>VIP</th>
+        <th>Floating IP</th>
+        <th>Project</th>
+        <th>Listeners</th>
+        <th>Pools</th>
+        <th>Amphorae</th>
+      </tr></thead>
+      <tbody>${paged.map(item => {
+        const opCls = item.operating_status === 'ONLINE' ? 'st-active' : item.operating_status === 'ERROR' ? 'st-error' : 'st-pending';
+        const provCls = item.provisioning_status === 'ACTIVE' ? 'st-active' : item.provisioning_status === 'ERROR' ? 'st-error' : 'st-pending';
+        const rowSel = selectedLoadBalancer === item.id ? ' selected' : '';
+        return `<tr class="${rowSel}" style="cursor:pointer" data-lb-id="${escAttr(item.id)}" onclick="selectLoadBalancer('${escAttr(item.id)}')">
+          <td><div>${esc(item.name)}</div><div class="uuid-short">${esc(item.id)}</div></td>
+          <td><span class="${opCls}">${esc(item.operating_status || 'UNKNOWN')}</span></td>
+          <td><span class="${provCls}">${esc(item.provisioning_status || 'UNKNOWN')}</span></td>
+          <td>${esc(item.vip_address || '—')}</td>
+          <td>${item.floating_ip ? esc(item.floating_ip) : '<span style="color:var(--dim)">—</span>'}</td>
+          <td class="uuid-short" title="${esc(item.project_id || '')}">${esc((item.project_id || '').slice(0, 8) || '—')}</td>
+          <td>${esc(String(item.listener_count ?? 0))}</td>
+          <td>${esc(String(item.pool_count ?? 0))}</td>
+          <td>${esc(String(item.amphora_count ?? 0))}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:20px">No load balancers match the filter.</td></tr>'}</tbody>
+    </table>
+    ${buildPager(lbState, filtered.length, 'lbState', 'renderLoadBalancersView')}`;
+  restoreFocusedInput(wrap, focusedInput);
+}
+
+function appendLoadBalancerError(msg) {
+  onLog({ node: '-', message: `Load balancers API error: ${msg}`, color: 'error' });
+}
+
+async function selectLoadBalancer(id) {
+  selectedLoadBalancer = id;
+  document.querySelectorAll('#lb-wrap tr[data-lb-id]').forEach(r => {
+    r.classList.toggle('selected', r.dataset.lbId === id);
+  });
+  document.getElementById('lb-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
+  lbDetailState.loading = true;
+  lbDetailState.data = null;
+  lbDetailState.vipOvn = { loading: false, data: null, error: null };
+  renderLoadBalancerDetail();
+  const watchdog = armDetailWatchdog('loadbalancer', id, 12000, () => {
+    if (selectedLoadBalancer !== id || !lbDetailState.loading) return;
+    lbDetailState.loading = false;
+    lbDetailState.data = { error: 'Timed out after 12s while loading load balancer details' };
+    renderLoadBalancerDetail();
+  });
+  try {
+    const json = await fetchJsonWithTimeout(`/api/load-balancers/${encodeURIComponent(id)}`, 10000);
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    if (json.error) throw new Error(json.error);
+    const meta = lbState.data?.find(item => item.id === id) || {};
+    lbDetailState.data = { ...meta, ...json.load_balancer };
+  } catch (e) {
+    lbDetailState.data = { error: String(e) };
+  } finally {
+    clearTimeout(watchdog);
+    lbDetailState.loading = false;
+    renderLoadBalancerDetail();
+  }
+  const vipPortId = lbDetailState.data?.vip_port?.id || lbDetailState.data?.vip_port_id || '';
+  if (vipPortId) {
+    lbDetailState.vipOvn = { loading: true, data: null, error: null };
+    renderLoadBalancerDetail();
+    try {
+      const json = await fetchJsonWithTimeout(`/api/ovn/lsp/${encodeURIComponent(vipPortId)}`, 8000);
+      if (json.error) throw new Error(json.error);
+      lbDetailState.vipOvn = { loading: false, data: json.port, error: null };
+    } catch (e) {
+      lbDetailState.vipOvn = { loading: false, data: null, error: String(e) };
+    }
+    renderLoadBalancerDetail();
+  }
+}
+
+function closeLoadBalancerDetail() {
+  selectedLoadBalancer = null;
+  lbDetailState.data = null;
+  lbDetailState.vipOvn = { loading: false, data: null, error: null };
+  document.getElementById('lb-detail-wrap').classList.remove('open');
+  document.querySelectorAll('#lb-wrap tr[data-lb-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
+}
+
+function renderLoadBalancerDetail() {
+  const wrap = document.getElementById('lb-detail-wrap');
+  if (!wrap) return;
+  if (lbDetailState.loading) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div></div>`;
+    return;
+  }
+  const ld = lbDetailState.data;
+  if (!ld) { wrap.innerHTML = ''; return; }
+  if (ld.error) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(ld.error)}</div></div>`;
+    return;
+  }
+  try {
+  const provCls = ld.provisioning_status === 'ACTIVE' ? 'st-active' : ld.provisioning_status === 'ERROR' ? 'st-error' : 'st-pending';
+  let h = `<div class="net-detail-inner">
+    <div class="net-detail-head">
+      <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(ld.name)}</strong>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span class="${provCls}" style="font-size:11px">${esc(ld.provisioning_status || 'UNKNOWN')}</span>
+        <button class="btn" style="padding:1px 7px;font-size:11px" onclick="closeLoadBalancerDetail()">✕</button>
+      </div>
+    </div>
+    <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all;margin-bottom:10px">${esc(ld.id || '')}</div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Properties</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Operating status</span><span class="mv">${esc(ld.operating_status || 'UNKNOWN')}</span></div>
+        <div class="mrow"><span class="ml">Provisioning status</span><span class="mv">${esc(ld.provisioning_status || 'UNKNOWN')}</span></div>
+        <div class="mrow"><span class="ml">VIP address</span><span class="mv">${esc(ld.vip_address || '—')}</span></div>
+        <div class="mrow"><span class="ml">Floating IP</span><span class="mv">${esc(ld.floating_ip || '—')}</span></div>
+        <div class="mrow"><span class="ml">VIP subnet</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ld.vip_subnet_id || '—')}</span></div>
+        <div class="mrow"><span class="ml">Project</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ld.project_id || '—')}</span></div>
+        <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(ld.flavor_id || '—')}</span></div>
+      </div>
+    </div>`;
+  h += renderLoadBalancerOverlayCard(ld);
+
+  const vipPort = ld.vip_port || null;
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">VIP Port</div>
+    <div class="card-body">`;
+  if (!vipPort || !vipPort.id) {
+    h += `<div style="color:var(--dim);font-size:12px">VIP port details are not available.</div>`;
+  } else {
+    h += `
+      <div class="mrow"><span class="ml">Port ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(vipPort.name || '—')}</span></div>
+      <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(vipPort.status || '—')}</span></div>
+      <div class="mrow"><span class="ml">IP address</span><span class="mv" style="font-family:monospace">${esc(vipPort.ip_address || '—')}</span></div>
+      <div class="mrow"><span class="ml">MAC</span><span class="mv" style="font-family:monospace">${esc(vipPort.mac_address || '—')}</span></div>
+      <div class="mrow"><span class="ml">Network ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.network_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Subnet ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.subnet_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Device owner</span><span class="mv">${esc(vipPort.device_owner || '—')}</span></div>
+      <div class="mrow"><span class="ml">Device ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.device_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Admin state</span><span class="mv">${vipPort.admin_state_up ? 'UP' : 'DOWN'}</span></div>
+      <div class="mrow"><span class="ml">Project</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.project_id || '—')}</span></div>`;
+  }
+  h += `</div></div>`;
+
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">OVN Logical Port</div>`;
+  if (!vipPort || !vipPort.id) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">VIP port ID is not available.</div>`;
+  } else if (lbDetailState.vipOvn.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading OVN logical port details…</div>`;
+  } else if (lbDetailState.vipOvn.error) {
+    h += `<div class="card-body"><div class="err-block">${esc(lbDetailState.vipOvn.error)}</div></div>`;
+  } else if (lbDetailState.vipOvn.data) {
+    const ovn = lbDetailState.vipOvn.data;
+    const ext = ovn.external_ids || {};
+    const opts = ovn.options || {};
+    h += `<div class="card-body">
+      <div class="mrow"><span class="ml">UUID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(vipPort.id)}</span></div>
+      ${ovn.up !== null ? `<div class="mrow"><span class="ml">Up</span><span class="mv ${ovn.up ? 'green' : 'red'}">${ovn.up ? 'true' : 'false'}</span></div>` : ''}
+      ${ovn.enabled !== null ? `<div class="mrow"><span class="ml">Enabled</span><span class="mv ${ovn.enabled ? 'green' : 'red'}">${ovn.enabled ? 'true' : 'false'}</span></div>` : ''}
+      ${ovn.tag !== null ? `<div class="mrow"><span class="ml">Tag (VLAN)</span><span class="mv" style="font-family:monospace">${esc(String(ovn.tag))}</span></div>` : ''}
+      ${opts['requested-chassis'] ? `<div class="mrow"><span class="ml">Chassis</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(opts['requested-chassis'])}</span></div>` : ''}
+      ${ovn.dynamic_addresses ? `<div class="mrow"><span class="ml">Dynamic addr</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ovn.dynamic_addresses)}</span></div>` : ''}
+      ${ovn.port_security?.length ? `<div class="mrow"><span class="ml">Port security</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ovn.port_security.join(', '))}</span></div>` : ''}
+      ${ext['neutron:port_name'] ? `<div class="mrow"><span class="ml">Port name</span><span class="mv">${esc(ext['neutron:port_name'])}</span></div>` : ''}
+      ${ext['neutron:device_owner'] ? `<div class="mrow"><span class="ml">Device owner</span><span class="mv">${esc(ext['neutron:device_owner'])}</span></div>` : ''}
+      ${ext['neutron:device_id'] ? `<div class="mrow"><span class="ml">Device ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:device_id'])}</span></div>` : ''}
+      ${ext['neutron:network_id'] ? `<div class="mrow"><span class="ml">Network ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:network_id'])}</span></div>` : ''}
+      ${ext['neutron:project_id'] ? `<div class="mrow"><span class="ml">Project ID</span><span class="mv" style="font-family:monospace;font-size:10px;word-break:break-all">${esc(ext['neutron:project_id'])}</span></div>` : ''}
+    </div>`;
+  } else {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">OVN logical port details are not available.</div>`;
+  }
+  h += `</div>`;
+
+  const listeners = ld.listeners || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Listeners</div>
+    <div class="card-body">`;
+  if (!listeners.length) {
+    h += `<div style="color:var(--dim);font-size:12px">No listeners found.</div>`;
+  } else {
+    h += listeners.map(listener => `<div style="padding:7px 0;border-bottom:1px solid #f0f2f5">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div>
+          <div style="font-weight:600">${esc(listener.name || '(unnamed)')}</div>
+          <div style="font-family:monospace;font-size:10px;color:var(--dim)">${esc(listener.protocol || '')}${listener.protocol_port != null ? ` / ${esc(String(listener.protocol_port))}` : ''}</div>
+          <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all">${esc(listener.id || '')}</div>
+        </div>
+        <span class="tree-badge ${listener.default_pool_id ? 'good' : 'warn'}">${listener.default_pool_id ? 'pool attached' : 'no pool'}</span>
+      </div>
+    </div>`).join('');
+  }
+  h += `</div></div>`;
+
+  const pools = ld.pools || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Pools</div>
+    <div class="card-body">`;
+  if (!pools.length) {
+    h += `<div style="color:var(--dim);font-size:12px">No pools found.</div>`;
+  } else {
+    h += pools.map(pool => `
+      <div style="padding:7px 0;border-bottom:1px solid #f0f2f5">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px">
+          <div>
+            <div style="font-weight:600">${esc(pool.name || '(unnamed)')}</div>
+            <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all">${esc(pool.id || '')}</div>
+          </div>
+          <span class="tree-badge ${pool.operating_status === 'ACTIVE' ? 'good' : pool.operating_status === 'ERROR' ? 'err' : 'warn'}">${esc(pool.operating_status || 'UNKNOWN')}</span>
+        </div>
+        <div class="mrow"><span class="ml">Protocol</span><span class="mv">${esc(pool.protocol || '—')}</span></div>
+        <div class="mrow"><span class="ml">Algorithm</span><span class="mv">${esc(pool.lb_algorithm || '—')}</span></div>
+        <div class="mrow"><span class="ml">Members</span><span class="mv">${esc(String(pool.member_count ?? 0))}</span></div>
+        <div class="mrow"><span class="ml">Admin state</span><span class="mv">${pool.admin_state_up ? 'UP' : 'DOWN'}</span></div>
+        <div class="mrow"><span class="ml">Health monitor</span><span class="mv" style="display:grid;gap:2px;text-align:right;white-space:pre-line">${esc(pool.healthmonitor || '—')}</span></div>
+        <div class="mrow"><span class="ml">Session persistence</span><span class="mv">${esc(pool.session_persistence || 'None')}</span></div>
+        <div class="mrow"><span class="ml">TLS enabled</span><span class="mv">${pool.tls_enabled ? 'Yes' : 'No'}</span></div>
+      </div>`).join('');
+  }
+  h += `</div></div>`;
+
+  const amphorae = ld.amphorae || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Amphorae</div>
+    <div class="card-body">`;
+  if (!amphorae.length) {
+    h += `<div style="color:var(--dim);font-size:12px">No amphorae found.</div>`;
+  } else {
+    h += amphorae.map(amp => `
+      <div style="border:1px solid var(--border);border-radius:4px;background:#fbfcfd;padding:10px 11px;margin-bottom:10px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px">
+          <div>
+            <div style="font-weight:600">${esc(amp.id || '(unnamed)')}</div>
+            <div style="font-size:11px;color:var(--dim)">${esc(amp.role || 'UNKNOWN')}</div>
+          </div>
+          <span class="tree-badge ${amp.role === 'MASTER' ? 'good' : 'purple'}">${esc(amp.role || 'UNKNOWN')}</span>
+        </div>
+        <div style="display:grid;gap:5px;font-size:11px;color:var(--dim)">
+          <div>Compute host: <strong style="color:var(--text)">${esc(amp.compute_host || '—')}</strong></div>
+          <div>Compute ID: <span style="font-family:monospace">${esc(amp.compute_id || '—')}</span></div>
+          <div>LB network IP: ${esc(amp.lb_network_ip || '—')}</div>
+          <div>HA IP: ${esc(amp.ha_ip || '—')}</div>
+          <div>VRRP IP: ${esc(amp.vrrp_ip || '—')}</div>
+          <div>Status: ${esc(amp.status || '—')}</div>
+          <div>Image ID: <span style="font-family:monospace">${esc(amp.image_id || '—')}</span></div>
+        </div>
+      </div>`).join('');
+  }
+  h += `</div></div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Placement</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Distinct hosts</span><span class="mv">${esc(String(ld.distinct_host_count ?? 0))}</span></div>
+        <div class="mrow"><span class="ml">Failover posture</span><span class="mv">${esc(ld.ha_summary || 'Unknown')}</span></div>
+      </div>
+    </div>
+  </div>`;
+  wrap.innerHTML = h;
+  syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
+}
+
+async function selectNetwork(id) {
+  selectedNetwork = id;
+  netDetailState.selectedSubnet = null;
+  netDetailState.ovn = { loading: false, data: null, error: null };
+  netDetailState.ovnSelectedPort = null;
+  netDetailState.ovnPortCache = {};
+  netDetailState.metadataRepair = { subnetId: null, loading: false, message: '', error: null };
+  // Highlight row in list (immediately, before async fetch)
+  document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => {
+    r.classList.toggle('selected', r.dataset.netId === id);
+  });
+  // Open detail pane and show spinner
+  document.getElementById('net-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
+  netDetailState.loading = true;
+  netDetailState.data    = null;
+  renderNetworkDetail();
+  const watchdog = armDetailWatchdog('network', id, 12000, () => {
+    if (selectedNetwork !== id || !netDetailState.loading) return;
+    netDetailState.loading = false;
+    netDetailState.data = { error: 'Timed out after 12s while loading network details' };
+    renderNetworkDetail();
+  });
+  try {
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(id)}`, 10000);
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    const meta = netState.data?.find(n => n.id === id) || {};
+    netDetailState.data = { ...meta, ...json.network };
+  } catch (e) {
+    netDetailState.data = { error: String(e) };
+  } finally {
+    clearTimeout(watchdog);
+    netDetailState.loading = false;
+    renderNetworkDetail();
+  }
+  // Load OVN data in parallel (non-blocking — renders separately when done)
+  loadNetworkOvn(id);
+}
+
+async function refreshSelectedNetworkDetail(options = {}) {
+  const { keepSelectedSubnet = true, preserveLoading = false } = options;
+  if (!selectedNetwork) return;
+  const previousSubnet = keepSelectedSubnet ? netDetailState.selectedSubnet : null;
+  if (!preserveLoading) {
+    netDetailState.loading = true;
+    renderNetworkDetail();
+  }
+  try {
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(selectedNetwork)}`, 10000);
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    const meta = netState.data?.find(n => n.id === selectedNetwork) || {};
+    netDetailState.data = { ...meta, ...json.network };
+    netDetailState.selectedSubnet = previousSubnet;
+  } catch (e) {
+    netDetailState.data = { error: String(e) };
+  } finally {
+    if (!preserveLoading) {
+      netDetailState.loading = false;
+    }
+    renderNetworkDetail();
+  }
+}
+
+async function loadNetworkOvn(id) {
+  netDetailState.ovn = { loading: true, data: null, error: null };
+  renderNetworkDetail();
+  try {
+    const json = await fetchJsonWithTimeout(`/api/networks/${encodeURIComponent(id)}/ovn`, 8000);
+    if (json.error) throw new Error(json.error);
+    netDetailState.ovn = { loading: false, data: json.ovn, error: null };
+  } catch (e) {
+    netDetailState.ovn = { loading: false, data: null, error: String(e) };
+  }
+  renderNetworkDetail();
+}
+
+function closeNetworkDetail() {
+  selectedNetwork = null;
+  netDetailState.data = null;
+  netDetailState.selectedSubnet = null;
+  netDetailState.ovn = { loading: false, data: null, error: null };
+  netDetailState.ovnSelectedPort = null;
+  netDetailState.ovnPortCache = {};
+  netDetailState.metadataRepair = { subnetId: null, loading: false, message: '', error: null };
+  document.getElementById('net-detail-wrap').classList.remove('open');
+  document.querySelectorAll('#net-wrap tr[data-net-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
+}
+
+function renderNetworkDetail() {
+  const wrap = document.getElementById('net-detail-wrap');
+  if (netDetailState.loading) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div></div>`;
+    return;
+  }
+  const nd = netDetailState.data;
+  if (!nd) { wrap.innerHTML = ''; return; }
+  if (nd.error) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(nd.error)}</div></div>`;
+    return;
+  }
+  try {
+
+  const stCls = nd.status === 'ACTIVE' ? 'st-active' : nd.status === 'DOWN' ? 'st-down' : 'st-error';
+  let h = `<div class="net-detail-inner">
+    <div class="net-detail-head">
+      <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(nd.name)}</strong>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span class="${stCls}" style="font-size:11px">${esc(nd.status)}</span>
+        <button class="btn" style="padding:1px 7px;font-size:11px" onclick="closeNetworkDetail()">✕</button>
+      </div>
+    </div>
+    <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all;margin-bottom:10px">${esc(nd.id || '')}</div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Properties</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Admin state</span><span class="mv ${nd.admin_state === 'up' ? 'green' : 'red'}">${esc(nd.admin_state || '')}</span></div>
+        <div class="mrow"><span class="ml">Type</span><span class="mv">${esc(nd.network_type) || '<span style="color:var(--dim)">—</span>'}</span></div>
+        <div class="mrow"><span class="ml">Shared</span><span class="mv">${nd.shared ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">External</span><span class="mv">${nd.external ? 'Yes' : 'No'}</span></div>
+        ${nd.project_id ? `<div class="mrow"><span class="ml">Project</span><span class="mv uuid-short" title="${esc(nd.project_id)}">${nd.project_id.slice(0, 8)}</span></div>` : ''}
+      </div>
+    </div>`;
+  h += renderNetworkOverlayCard(nd);
+
+  // Subnets
+  const subnets = nd.subnets || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Subnets (${subnets.length})</div>
+    <div class="card-body" style="padding:0">`;
+  if (!subnets.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No subnets.</div>`;
+  } else {
+    h += `<table class="data-table" style="font-size:11px">
+      <thead><tr><th>Name / CIDR</th><th>DHCP</th><th>Gateway</th></tr></thead>
+      <tbody>`;
+    for (const s of subnets) {
+      const isSel = netDetailState.selectedSubnet === s.id;
+      h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectSubnet('${escAttr(s.id)}')">
+        <td>
+          <div style="font-weight:${isSel ? 600 : 400}">${esc(s.name || '(unnamed)')}</div>
+          <div style="color:var(--dim);font-size:10px;font-family:monospace">${esc(s.cidr)}</div>
+        </td>
+        <td>${s.enable_dhcp ? '<span class="sdot green"></span>' : '—'}</td>
+        <td style="font-family:monospace;font-size:10px;color:var(--dim)">${esc(s.gateway_ip) || '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+  }
+  h += `</div></div>`;
+
+  // Subnet detail (shown when a subnet row is clicked)
+  if (netDetailState.selectedSubnet) {
+    const sub = subnets.find(s => s.id === netDetailState.selectedSubnet);
+    if (sub) h += renderSubnetDetail(sub);
+  }
+
+  // Segments
+  const segments = nd.segments || [];
+  if (segments.length) {
+    h += `<div class="card" style="margin-bottom:10px">
+      <div class="card-title">Segments (${segments.length})</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Type</th><th>Physical net</th><th>Seg ID</th></tr></thead>
+          <tbody>`;
+    for (const seg of segments) {
+      h += `<tr>
+        <td>${esc(seg.network_type) || '<span style="color:var(--dim)">—</span>'}</td>
+        <td style="color:var(--dim);font-size:10px">${esc(seg.physical_network) || '—'}</td>
+        <td style="font-family:monospace">${seg.segmentation_id != null ? seg.segmentation_id : '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table></div></div>`;
+  }
+
+  // OVN Logical Switch
+  const ovn = netDetailState.ovn;
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">OVN Logical Switch</div>`;
+  if (ovn.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
+  } else if (ovn.error) {
+    h += `<div class="card-body"><div class="err-block">${esc(ovn.error)}</div></div>`;
+  } else if (ovn.data) {
+    const ls = ovn.data;
+    const lsUuid = String(ls.ls_uuid || '');
+    h += `<div class="card-body">
+      <div class="mrow"><span class="ml">Name</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ls.ls_name)}</span></div>
+      <div class="mrow"><span class="ml">UUID</span><span class="mv uuid-short" style="font-family:monospace;font-size:10px;cursor:pointer" title="${escAttr(lsUuid)}" onclick="navigator.clipboard?.writeText('${escAttr(lsUuid)}')">${lsUuid ? `${lsUuid.slice(0,8)}…` : '—'}</span></div>
+    </div>`;
+    if (ls.ports?.length) {
+      h += `<div style="padding:0">
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Neutron Port ID</th><th>Type</th><th>MAC / IP</th></tr></thead>
+          <tbody>`;
+      for (const p of ls.ports) {
+        const typeLabel = p.type === 'router' ? 'Router' : p.type === 'localnet' ? 'Localnet' : 'VM';
+        let mac = '', ipList = [];
+        for (const addr of (p.addresses || [])) {
+          if (addr === 'unknown') { mac = 'unknown'; break; }
+          const parts = addr.trim().split(/\s+/);
+          if (!mac && parts[0]) mac = parts[0];
+          if (parts.length > 1) ipList.push(...parts.slice(1));
+        }
+        if (!mac) mac = '—';
+        const ipStr = ipList.length ? ipList.join(', ') : '—';
+        const portId = String(p.id || '');
+        const isSpecial = portId.startsWith('provnet-') || p.type === 'localnet';
+        const isSel = netDetailState.ovnSelectedPort === portId;
+        const portIdCell = isSpecial
+          ? `<span style="color:var(--dim);font-size:10px;font-family:monospace">${esc(portId || '—')}</span>`
+          : `<span style="font-family:monospace;font-size:10px" title="${escAttr(portId)}">${portId ? `${portId.slice(0,8)}…` : '—'}</span>`;
+        h += `<tr class="${isSel ? 'selected' : ''}" style="cursor:pointer" onclick="selectOvnPort('${escAttr(portId)}')">
+          <td>${portIdCell}</td>
+          <td>${esc(typeLabel)}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(mac)}<br><span style="color:var(--dim)">${esc(ipStr)}</span></td>
+        </tr>`;
+      }
+      h += `</tbody></table></div>`;
+      // Port detail card (shown when a port row is clicked)
+      if (netDetailState.ovnSelectedPort) {
+        const cached = netDetailState.ovnPortCache[netDetailState.ovnSelectedPort];
+        if (cached) h += renderOvnPortDetail(netDetailState.ovnSelectedPort, cached);
+      }
+    } else {
+      h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No logical ports found.</div>`;
+    }
+  } else {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">Not loaded.</div>`;
+  }
+  h += `</div>`;
+
+  h += `</div>`;
+  wrap.innerHTML = h;
+  syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
+}
+
+function selectSubnet(id) {
+  // Toggle: clicking the same subnet again collapses the detail
+  netDetailState.selectedSubnet = (netDetailState.selectedSubnet === id) ? null : id;
+  renderNetworkDetail();
+}
+
+function renderSubnetDetail(sub) {
+  const metadataPort = sub.metadata_port || { status: 'missing', port_id: '', ip_address: '' };
+  const repairState = netDetailState.metadataRepair || {};
+  const repairActive = repairState.subnetId === sub.id && repairState.loading;
+  const metadataLabel = metadataPort.status === 'ok'
+    ? `<span class="mv green">OK</span>`
+    : `<span class="mv red">NotFound</span>`;
+  const metadataParts = [];
+  if (metadataPort.port_id) {
+    const networkId = String(selectedNetwork || '');
+    const hoverText = networkId
+      ? `${metadataPort.port_id}\novnmeta-${networkId}`
+      : metadataPort.port_id;
+    metadataParts.push(`<span class="uuid-short" title="${escAttr(hoverText)}">${esc(metadataPort.port_id.slice(0, 8))}</span>`);
+  }
+  if (metadataPort.ip_address) {
+    metadataParts.push(`<span style="font-family:monospace">${esc(metadataPort.ip_address)}</span>`);
+  }
+  metadataParts.push(metadataLabel);
+  if (metadataPort.status !== 'ok') {
+    metadataParts.push(
+      `<button class="btn" type="button" onclick="repairSubnetMetadataPort('${escAttr(sub.id)}')" ${repairActive ? 'disabled' : ''}>${repairActive ? 'Repairing…' : 'Repair'}</button>`,
+    );
+  }
+  let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
+    <div class="card-title" style="color:var(--blue)">Subnet: ${esc(sub.name || sub.cidr)}</div>
+    <div class="card-body">
+      <div class="mrow"><span class="ml">CIDR</span><span class="mv" style="font-family:monospace">${esc(sub.cidr)}</span></div>
+      <div class="mrow"><span class="ml">IP version</span><span class="mv">IPv${sub.ip_version}</span></div>
+      <div class="mrow"><span class="ml">Gateway</span><span class="mv" style="font-family:monospace">${esc(sub.gateway_ip) || '—'}</span></div>
+      <div class="mrow"><span class="ml">DHCP</span><span class="mv ${sub.enable_dhcp ? 'green' : ''}">${sub.enable_dhcp ? 'Enabled' : 'Disabled'}</span></div>`;
+  h += `<div class="mrow"><span class="ml">Metadata Port</span><span class="mv">${metadataParts.join(' · ')}</span></div>`;
+  if (repairState.subnetId === sub.id && repairState.message) {
+    h += `<div class="mrow"><span class="ml">Repair</span><span class="mv">${repairState.loading ? '<span class="spinner">⟳</span> ' : ''}${esc(repairState.message)}</span></div>`;
+  }
+  if (repairState.subnetId === sub.id && repairState.error) {
+    h += `<div class="mrow"><span class="ml">Repair</span><span class="mv red">${esc(repairState.error)}</span></div>`;
+  }
+  if (sub.allocation_pools?.length) {
+    const pools = sub.allocation_pools.map(p => `${p.start}–${p.end}`).join(', ');
+    h += `<div class="mrow"><span class="ml">Alloc pools</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(pools)}</span></div>`;
+  }
+  if (sub.dns_nameservers?.length) {
+    h += `<div class="mrow"><span class="ml">DNS</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(sub.dns_nameservers.join(', '))}</span></div>`;
+  }
+  if (sub.host_routes?.length) {
+    const routes = sub.host_routes.map(r => `${r.destination} via ${r.nexthop}`).join('; ');
+    h += `<div class="mrow"><span class="ml">Host routes</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(routes)}</span></div>`;
+  }
+  h += `</div></div>`;
+  return h;
+}
+
+async function repairSubnetMetadataPort(subnetId) {
+  if (!selectedNetwork || !subnetId || netDetailState.metadataRepair.loading) return;
+  netDetailState.metadataRepair = {
+    subnetId,
+    loading: true,
+    message: 'Creating metadata port…',
+    error: null,
+  };
+  renderNetworkDetail();
+  try {
+    const resp = await fetch(
+      `/api/networks/${encodeURIComponent(selectedNetwork)}/subnets/${encodeURIComponent(subnetId)}/repair-metadata-port`,
+      { method: 'POST' },
+    );
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    netDetailState.metadataRepair.message = 'Metadata port created. Refreshing subnet details…';
+    renderNetworkDetail();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await refreshSelectedNetworkDetail({ keepSelectedSubnet: true, preserveLoading: true });
+      const subnets = netDetailState.data?.subnets || [];
+      const refreshed = subnets.find(item => item.id === subnetId);
+      if (refreshed?.metadata_port?.status === 'ok') {
+        netDetailState.metadataRepair = {
+          subnetId,
+          loading: false,
+          message: 'Metadata port repaired.',
+          error: null,
+        };
+        renderNetworkDetail();
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      netDetailState.metadataRepair.message = 'Waiting for metadata port to appear…';
+      renderNetworkDetail();
+    }
+    netDetailState.metadataRepair = {
+      subnetId,
+      loading: false,
+      message: 'Repair requested. Metadata port is not visible yet.',
+      error: null,
+    };
+  } catch (e) {
+    netDetailState.metadataRepair = {
+      subnetId,
+      loading: false,
+      message: '',
+      error: String(e),
+    };
+  }
+  renderNetworkDetail();
+}
+
+async function selectOvnPort(portId) {
+  // Toggle: same port deselects
+  if (netDetailState.ovnSelectedPort === portId) {
+    netDetailState.ovnSelectedPort = null;
+    renderNetworkDetail();
+    return;
+  }
+  netDetailState.ovnSelectedPort = portId;
+  // If already cached, just re-render
+  if (netDetailState.ovnPortCache[portId]) {
+    renderNetworkDetail();
+    return;
+  }
+  // Show spinner in detail slot while fetching
+  netDetailState.ovnPortCache[portId] = { loading: true, data: null, error: null };
+  renderNetworkDetail();
+  try {
+    const json = await fetchJsonWithTimeout(`/api/ovn/lsp/${encodeURIComponent(portId)}`, 8000);
+    if (json.error) throw new Error(json.error);
+    netDetailState.ovnPortCache[portId] = { loading: false, data: json.port, error: null };
+  } catch (e) {
+    netDetailState.ovnPortCache[portId] = { loading: false, data: null, error: String(e) };
+  }
+  renderNetworkDetail();
+}
+
+function renderOvnPortDetail(portId, cached) {
+  let h = `<div class="card" style="margin-bottom:10px;border-left:3px solid var(--blue)">
+    <div class="card-title" style="color:var(--blue)">LSP: ${portId.slice(0,8)}…</div>`;
+  if (cached.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading…</div>`;
+  } else if (cached.error) {
+    h += `<div class="card-body"><div class="err-block">${esc(cached.error)}</div></div>`;
+  } else if (cached.data) {
+    const d = cached.data;
+    const ext = d.external_ids || {};
+    const opts = d.options || {};
+    h += `<div class="card-body">`;
+    // Full UUID (copyable)
+    h += `<div class="mrow"><span class="ml">UUID</span><span class="mv" style="font-family:monospace;font-size:10px;cursor:pointer;word-break:break-all" title="Click to copy" onclick="navigator.clipboard?.writeText('${escAttr(portId)}')">${esc(portId)}</span></div>`;
+    // Status
+    if (d.up !== null)      h += `<div class="mrow"><span class="ml">Up</span><span class="mv ${d.up ? 'green' : 'red'}">${d.up ? 'true' : 'false'}</span></div>`;
+    if (d.enabled !== null) h += `<div class="mrow"><span class="ml">Enabled</span><span class="mv ${d.enabled ? 'green' : 'red'}">${d.enabled ? 'true' : 'false'}</span></div>`;
+    if (d.tag !== null)     h += `<div class="mrow"><span class="ml">Tag (VLAN)</span><span class="mv" style="font-family:monospace">${d.tag}</span></div>`;
+    // Chassis binding
+    if (opts['requested-chassis']) h += `<div class="mrow"><span class="ml">Chassis</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(opts['requested-chassis'])}</span></div>`;
+    // Port security
+    if (d.port_security?.length) {
+      h += `<div class="mrow"><span class="ml">Port security</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(d.port_security.join(', '))}</span></div>`;
+    }
+    // Dynamic addresses
+    if (d.dynamic_addresses) h += `<div class="mrow"><span class="ml">Dynamic addr</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(d.dynamic_addresses)}</span></div>`;
+    // Neutron external_ids
+    const neutronKeys = ['neutron:port_name','neutron:device_owner','neutron:device_id',
+                         'neutron:project_id','neutron:network_id','neutron:subnet_id',
+                         'neutron:revision_number'];
+    const labelMap = {
+      'neutron:port_name':       'Port name',
+      'neutron:device_owner':    'Device owner',
+      'neutron:device_id':       'Device ID',
+      'neutron:project_id':      'Project ID',
+      'neutron:network_id':      'Network ID',
+      'neutron:subnet_id':       'Subnet ID',
+      'neutron:revision_number': 'Revision',
+    };
+    const isUuidKey = new Set(['neutron:device_id','neutron:project_id','neutron:network_id','neutron:subnet_id']);
+    for (const k of neutronKeys) {
+      if (!ext[k]) continue;
+      const val = ext[k];
+      const mono = isUuidKey.has(k) ? `style="font-family:monospace;font-size:10px;cursor:pointer;word-break:break-all" title="Click to copy" onclick="navigator.clipboard?.writeText('${escAttr(val)}')"` : `style="font-size:11px"`;
+      h += `<div class="mrow"><span class="ml">${labelMap[k]}</span><span class="mv" ${mono}>${esc(val)}</span></div>`;
+    }
+    // Any remaining external_ids not in the known list
+    for (const [k, v] of Object.entries(ext)) {
+      if (neutronKeys.includes(k)) continue;
+      h += `<div class="mrow"><span class="ml" style="font-size:10px">${esc(k)}</span><span class="mv" style="font-size:10px;font-family:monospace">${esc(v)}</span></div>`;
+    }
+    h += `</div>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// § ROUTERS VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+async function loadRouters(force = false) {
+  if (typeof hasOpenStackAuth === 'function' && !hasOpenStackAuth()) {
+    const wrap = document.getElementById('router-wrap');
+    if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
+    return;
+  }
+  if (routerState.loading) return;
+  if (routerState.data && !force) { renderRoutersView(); return; }
+  routerState.loading = true;
+  routerState.data = null;
+  renderRoutersView();
+  try {
+    const resp = await fetch('/api/routers');
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    routerState.data = json.routers || [];
+    routerState.page = 1;
+    if (json.error) appendRouterError(json.error);
+  } catch (e) {
+    routerState.data = [];
+    appendRouterError(String(e));
+  } finally {
+    routerState.loading = false;
+    renderRoutersView();
+  }
+}
+
+function renderRoutersView() {
+  const wrap = document.getElementById('router-wrap');
+  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
+  if (routerState.loading) {
+    wrap.innerHTML = `<div class="data-view-toolbar"><h2>Neutron Routers <span class="hint">Gateways</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading routers…</div>`;
+    return;
+  }
+  if (!routerState.data) { wrap.innerHTML = ''; return; }
+
+  const filtered = applyFilter(routerState.data, routerState.filter, ['name', 'status', 'external_network_name', 'project_id']);
+  const { page, pageSize } = routerState;
+  const paged = paginate(filtered, page, pageSize);
+
+  let rows = '';
+  for (const r of paged) {
+    const stCls = r.status === 'ACTIVE' ? 'st-active' : r.status === 'DOWN' ? 'st-down' : 'st-error';
+    const adm = r.admin_state === 'up'
+      ? `<span class="sdot green"></span>up` : `<span class="sdot red"></span>down`;
+    const ext = r.external_network_name || '<span style="color:var(--dim)">—</span>';
+    const ha = r.ha ? '✓' : '—';
+    const dist = r.distributed ? '✓' : '—';
+    const rowSel = selectedRouter === r.id ? ' selected' : '';
+    rows += `<tr class="${rowSel}" style="cursor:pointer" data-router-id="${escAttr(r.id)}" onclick="selectRouter('${escAttr(r.id)}')">
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(r.name)}</td>
+      <td><span class="${stCls}">${esc(r.status)}</span></td>
+      <td>${adm}</td>
+      <td>${ha}</td>
+      <td>${dist}</td>
+      <td>${ext}</td>
+      <td>${r.interface_count}</td>
+      <td>${r.route_count}</td>
+      <td class="uuid-short" title="${esc(r.project_id)}">${r.project_id.slice(0, 8) || '—'}</td>
+    </tr>`;
+  }
+
+  wrap.innerHTML = `
+    <div class="data-view-toolbar">
+      <h2>Neutron Routers <span class="hint">Gateways</span></h2>
+      <input class="dv-filter" type="text" placeholder="Filter routers…"
+        value="${esc(routerState.filter)}" oninput="routerState.filter=this.value;routerState.page=1;renderRoutersView()">
+      <span style="font-size:11px;color:var(--dim)">${filtered.length} of ${routerState.data.length} routers</span>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Admin State</th>
+        <th>HA</th>
+        <th>Distributed</th>
+        <th>External Network</th>
+        <th>Interfaces</th>
+        <th>Routes</th>
+        <th>Project</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:20px">No routers match the filter.</td></tr>'}</tbody>
+    </table>
+    ${buildPager(routerState, filtered.length, 'routerState', 'renderRoutersView')}`;
+  restoreFocusedInput(wrap, focusedInput);
+}
+
+function appendRouterError(msg) {
+  onLog({ node: '-', message: `Routers API error: ${msg}`, color: 'error' });
+}
+
+async function selectRouter(id) {
+  selectedRouter = id;
+  routerDetailState.ovn = { loading: false, data: null, error: null };
+  document.querySelectorAll('#router-wrap tr[data-router-id]').forEach(r => {
+    r.classList.toggle('selected', r.dataset.routerId === id);
+  });
+  document.getElementById('router-detail-wrap').classList.add('open');
+  syncNetworkingDetailShell();
+  routerDetailState.loading = true;
+  routerDetailState.data = null;
+  renderRouterDetail();
+  const watchdog = armDetailWatchdog('router', id, 12000, () => {
+    if (selectedRouter !== id || !routerDetailState.loading) return;
+    routerDetailState.loading = false;
+    routerDetailState.data = { error: 'Timed out after 12s while loading router details' };
+    renderRouterDetail();
+  });
+  try {
+    const json = await fetchJsonWithTimeout(`/api/routers/${encodeURIComponent(id)}`, 10000);
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('Neutron');
+    if (json.error) throw new Error(json.error);
+    const meta = routerState.data?.find(r => r.id === id) || {};
+    routerDetailState.data = { ...meta, ...json.router };
+  } catch (e) {
+    routerDetailState.data = { error: String(e) };
+  } finally {
+    clearTimeout(watchdog);
+    routerDetailState.loading = false;
+    renderRouterDetail();
+  }
+  loadRouterOvn(id);
+}
+
+async function loadRouterOvn(id) {
+  routerDetailState.ovn = { loading: true, data: null, error: null };
+  renderRouterDetail();
+  try {
+    const json = await fetchJsonWithTimeout(`/api/routers/${encodeURIComponent(id)}/ovn`, 8000);
+    if (json.error) throw new Error(json.error);
+    routerDetailState.ovn = { loading: false, data: json.ovn, error: null };
+  } catch (e) {
+    routerDetailState.ovn = { loading: false, data: null, error: String(e) };
+  }
+  renderRouterDetail();
+}
+
+function closeRouterDetail() {
+  selectedRouter = null;
+  routerDetailState.data = null;
+  routerDetailState.ovn = { loading: false, data: null, error: null };
+  document.getElementById('router-detail-wrap').classList.remove('open');
+  document.querySelectorAll('#router-wrap tr[data-router-id]').forEach(r => r.classList.remove('selected'));
+  syncNetworkingDetailShell();
+}
+
+function renderRouterDetail() {
+  const wrap = document.getElementById('router-detail-wrap');
+  if (routerDetailState.loading) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading…</div></div>`;
+    return;
+  }
+  const rd = routerDetailState.data;
+  if (!rd) { wrap.innerHTML = ''; return; }
+  if (rd.error) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">${esc(rd.error)}</div></div>`;
+    return;
+  }
+  try {
+
+  const stCls = rd.status === 'ACTIVE' ? 'st-active' : rd.status === 'DOWN' ? 'st-down' : 'st-error';
+  const gateway = rd.external_gateway || {};
+  let h = `<div class="net-detail-inner">
+    <div class="net-detail-head">
+      <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(rd.name)}</strong>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span class="${stCls}" style="font-size:11px">${esc(rd.status)}</span>
+        <button class="btn" style="padding:1px 7px;font-size:11px" onclick="closeRouterDetail()">✕</button>
+      </div>
+    </div>
+    <div style="font-family:monospace;font-size:10px;color:var(--dim);word-break:break-all;margin-bottom:10px">${esc(rd.id || '')}</div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Properties</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Admin state</span><span class="mv ${rd.admin_state === 'up' ? 'green' : 'red'}">${esc(rd.admin_state || '')}</span></div>
+        <div class="mrow"><span class="ml">HA</span><span class="mv">${rd.ha ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">Distributed</span><span class="mv">${rd.distributed ? 'Yes' : 'No'}</span></div>
+        <div class="mrow"><span class="ml">Interfaces</span><span class="mv">${rd.interface_count ?? 0}</span></div>
+        <div class="mrow"><span class="ml">Routes</span><span class="mv">${rd.route_count ?? 0}</span></div>
+        ${rd.project_id ? `<div class="mrow"><span class="ml">Project</span><span class="mv uuid-short" title="${esc(rd.project_id)}">${rd.project_id.slice(0, 8)}</span></div>` : ''}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">External Gateway</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(gateway.network_name || '') || '<span style="color:var(--dim)">—</span>'}</span></div>
+        <div class="mrow"><span class="ml">SNAT</span><span class="mv">${gateway.enable_snat ? 'Enabled' : 'Disabled'}</span></div>
+        <div class="mrow"><span class="ml">External IPs</span><span class="mv">${gateway.external_fixed_ips?.length ? gateway.external_fixed_ips.map(item => esc(item.ip_address)).join(', ') : '<span style="color:var(--dim)">—</span>'}</span></div>
+      </div>
+    </div>`;
+  h += renderRouterOverlayCard(rd);
+
+  const subnets = rd.connected_subnets || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Connected Subnets (${subnets.length})</div>
+    <div class="card-body" style="padding:0">`;
+  if (!subnets.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No connected subnets.</div>`;
+  } else {
+    h += `<table class="data-table" style="font-size:11px">
+      <thead><tr><th>Subnet</th><th>Network</th><th>Router IP</th><th>Gateway</th><th>DHCP</th></tr></thead>
+      <tbody>`;
+    for (const subnet of subnets) {
+      h += `<tr>
+        <td>
+          <div>${esc(subnet.subnet_name || '(unnamed)')}</div>
+          <div style="color:var(--dim);font-size:10px;font-family:monospace">${esc(subnet.cidr || '') || '—'}</div>
+        </td>
+        <td>${esc(subnet.network_name || '') || '<span style="color:var(--dim)">—</span>'}</td>
+        <td style="font-family:monospace;font-size:10px">${esc(subnet.ip_address || '') || '—'}</td>
+        <td style="font-family:monospace;font-size:10px">${esc(subnet.gateway_ip || '') || '—'}</td>
+        <td>${subnet.enable_dhcp ? '<span class="sdot green"></span>' : '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+  }
+  h += `</div></div>`;
+
+  const routes = rd.routes || [];
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Static Routes (${routes.length})</div>
+    <div class="card-body" style="padding:0">`;
+  if (!routes.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No static routes.</div>`;
+  } else {
+    h += `<table class="data-table" style="font-size:11px">
+      <thead><tr><th>Destination</th><th>Next hop</th></tr></thead>
+      <tbody>${routes.map(route => `<tr>
+        <td style="font-family:monospace;font-size:10px">${esc(route.destination || '')}</td>
+        <td style="font-family:monospace;font-size:10px">${esc(route.nexthop || '')}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  h += `</div></div>`;
+
+  const ovn = routerDetailState.ovn;
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">OVN Logical Router</div>`;
+  if (ovn.loading) {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px"><span class="spinner">⟳</span> Loading OVN data…</div>`;
+  } else if (ovn.error) {
+    h += `<div class="card-body"><div class="err-block">${esc(ovn.error)}</div></div>`;
+  } else if (ovn.data) {
+    const lr = ovn.data;
+    h += `<div class="card-body">
+      <div class="mrow"><span class="ml">Logical router</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(lr.lr_name || '')}</span></div>
+      <div class="mrow"><span class="ml">UUID</span><span class="mv uuid-short" title="${escAttr(lr.lr_uuid || '')}">${(lr.lr_uuid || '').slice(0, 8) || '—'}</span></div>
+    </div>`;
+    if (lr.ports?.length) {
+      h += `<div style="padding:0">
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Port</th><th>MAC</th><th>Networks</th><th>Chassis</th></tr></thead>
+          <tbody>${lr.ports.map(port => `<tr>
+            <td style="font-family:monospace;font-size:10px" title="${escAttr(port.id || '')}">${esc(abbreviateRouterPortId(port.id || ''))}</td>
+            <td style="font-family:monospace;font-size:10px" title="${escAttr(port.mac || '')}">${esc(compactRouterMac(port.mac || ''))}</td>
+            <td style="font-family:monospace;font-size:10px">${esc((port.networks || []).join(', ')) || '—'}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(port.peer || (port.gateway_hosts || []).join(', ') || '') || '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+    } else {
+      h += `<div class="card-body" style="color:var(--dim);font-size:12px">No logical router ports found.</div>`;
+    }
+  } else {
+    h += `<div class="card-body" style="color:var(--dim);font-size:12px">Not loaded.</div>`;
+  }
+  h += `</div></div>`;
+
+  wrap.innerHTML = h;
+  syncNetworkingDetailShell();
+  } catch (e) {
+    wrap.innerHTML = `<div class="net-detail-inner"><div class="err-block">Detail render failed: ${esc(String(e))}</div></div>`;
+  }
+}
+
