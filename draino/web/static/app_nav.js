@@ -272,8 +272,10 @@ function treeItemHtml(name, nd) {
     <span class="ti-ico">${ico}</span>
     <span class="tree-dot ${dot}"></span>
     <span class="ti-name">${esc(name)}</span>
-    <span class="hint">${hintTxt}</span>
-    ${etcBdg}${mariadbBdg}${agentBdg}${edgeBdg}${netBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${computeMismatchBdg}${vmBadge}${aggHtml}
+    <span class="tree-meta">
+      <span class="hint">${hintTxt}</span>
+      ${etcBdg}${mariadbBdg}${agentBdg}${edgeBdg}${netBdg}${noSchedBdg}${rebootBdg}${kernelBdg}${computeMismatchBdg}${vmBadge}${aggHtml}
+    </span>
   </div>`;
 }
 

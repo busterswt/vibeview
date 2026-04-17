@@ -382,7 +382,17 @@ body {
 .tree-item.warning.selected { background: #ffe08a; border-left-color: #f9a825; }
 .tree-item.warning .ti-name { color: #8d6e00; font-weight: 600; }
 .ti-ico    { font-size: 14px; flex-shrink: 0; }
-.ti-name   { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-name   { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 58%;
+}
 .tree-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .tree-dot.green   { background: var(--green-lt); }
 .tree-dot.yellow  { background: var(--yellow-lt); animation: pulse 1.2s ease-in-out infinite; }
