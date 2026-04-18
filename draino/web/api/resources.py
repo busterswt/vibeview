@@ -16,6 +16,7 @@ from ..resource_helpers import (
     get_networks,
     get_router_detail,
     get_routers,
+    get_swift_containers,
     get_volumes,
     repair_subnet_metadata_port,
 )
@@ -65,6 +66,17 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None, "api_issue": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc), "api_issue": None}
+
+
+@router.get("/api/swift-containers")
+async def api_swift_containers(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_swift_containers, session.server.openstack_auth)
+        return {"containers": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"containers": [], "error": str(exc), "api_issue": None}
 
 
 @router.get("/api/load-balancers")

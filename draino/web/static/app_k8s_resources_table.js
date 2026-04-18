@@ -237,14 +237,29 @@ function renderK8sTable(type, rows) {
           <td>${badge(r.resolved_refs || 'Unknown', r.resolved_refs === 'True' ? 'running' : r.resolved_refs === 'False' ? 'failed' : 'pending')}</td>
           <td style="color:var(--dim)">${k8sAge(r.created)}</td>
         </tr>`).join('') + `</tbody></table>`;
+    case 'storagecsis':
+      return `<table class="data-table"><thead><tr>
+        <th>Backend</th><th>CSI Driver</th><th>PVCs</th><th>PVs</th><th>Namespaces</th><th>StorageClasses</th><th>Requested</th><th>Consumer Nodes</th>
+        </tr></thead><tbody>` +
+        rows.map(r => `${rowOpen(r)}
+          <td>${esc(r.backend || 'Unknown')}</td>
+          <td style="font-family:monospace;font-size:10px">${esc(r.driver || 'unknown')}</td>
+          <td>${esc(String(r.pvc_count ?? 0))}</td>
+          <td>${esc(String(r.pv_count ?? 0))}</td>
+          <td>${esc(String(r.namespace_count ?? 0))}</td>
+          <td>${esc(String(r.storageclass_count ?? 0))}</td>
+          <td style="font-family:monospace">${esc(r.requested_capacity || '—')}</td>
+          <td>${esc(String(r.consumer_node_count ?? 0))}</td>
+        </tr>`).join('') + `</tbody></table>`;
     case 'pvs':
       return `<table class="data-table"><thead><tr>
-        <th>Name</th><th>Capacity</th><th>Access</th><th>Reclaim</th><th>Status</th><th>Claim</th><th>StorageClass</th><th>Age</th>
+        <th>Name</th><th>CSI Driver</th><th>Capacity</th><th>Access</th><th>Reclaim</th><th>Status</th><th>Claim</th><th>StorageClass</th><th>Age</th>
         </tr></thead><tbody>` +
         rows.map(r => {
           const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Released' ? 'released' : 'pending';
           return `${rowOpen(r)}
             <td>${esc(r.name)}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(r.csi_driver || '—')}</td>
             <td style="font-family:monospace">${esc(r.capacity)}</td>
             <td style="font-size:10px;color:var(--dim)">${esc(r.access_modes)}</td>
             <td style="font-size:10px">${esc(r.reclaim_policy)}</td>
@@ -256,7 +271,7 @@ function renderK8sTable(type, rows) {
         }).join('') + `</tbody></table>`;
     case 'pvcs':
       return `<table class="data-table"><thead><tr>
-        <th>Namespace</th><th>Name</th><th>Status</th><th>Volume</th><th>Capacity</th><th>Access</th><th>StorageClass</th><th>Age</th>
+        <th>Namespace</th><th>Name</th><th>Status</th><th>CSI Driver</th><th>Volume</th><th>Capacity</th><th>Access</th><th>StorageClass</th><th>Age</th>
         </tr></thead><tbody>` +
         rows.map(r => {
           const stCls = r.status === 'Bound' ? 'bound' : r.status === 'Pending' ? 'pending' : 'failed';
@@ -264,6 +279,7 @@ function renderK8sTable(type, rows) {
             <td style="color:var(--dim)">${esc(r.namespace)}</td>
             <td>${esc(r.name)}</td>
             <td>${badge(r.status, stCls)}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(r.csi_driver || '—')}</td>
             <td style="font-size:10px;color:var(--dim)">${esc(r.volume) || '—'}</td>
             <td style="font-family:monospace">${esc(r.capacity) || '—'}</td>
             <td style="font-size:10px;color:var(--dim)">${esc(r.access_modes)}</td>

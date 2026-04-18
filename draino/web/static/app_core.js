@@ -12,6 +12,7 @@ let lastPodsCache = null;       // { node, pods[] }
 let activeTab    = 'summary';
 let activeView   = 'infrastructure';
 let activeNetworkingView = 'networking';
+let activeStorageView = 'openstack-volumes';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
@@ -121,6 +122,21 @@ function renderOpenStackUnavailablePanel(title, detail) {
   `;
 }
 
+function renderK8sUnavailablePanel(title, detail) {
+  return `
+    <section class="report-launch-card">
+      <div class="report-launch-shell">
+        <div class="report-launch-icon">☸️</div>
+        <div class="report-launch-copy">
+          <div class="report-launch-kicker">Kubernetes auth required</div>
+          <div class="report-launch-title">${esc(title)}</div>
+          <div class="report-launch-text">${esc(detail)}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 // Working edit state for the currently-open Configure tab
 const netEdit = {
   node:          null,
@@ -157,25 +173,10 @@ const routerDetailState = { loading: false, data: null, ovn: { loading: false, d
 const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedLoadBalancer = null;
 const lbDetailState = { loading: false, data: null, vipOvn: { loading: false, data: null, error: null } };
-const networkingOverlayState = globalThis.networkingOverlayState || {
-  loading: false,
-  loaded: false,
-  error: null,
-  vpcs: [],
-  subnets: [],
-  vlans: [],
-  providernetworks: [],
-  services: [],
-  lbs: [],
-  gateways: [],
-  httproutes: [],
-  clusternetworks: [],
-  networkdomains: [],
-};
-globalThis.networkingOverlayState = networkingOverlayState;
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
+const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 
 // Reports view state
 const reportState = {
@@ -206,6 +207,18 @@ const stressState = {
   },
   detailsLoading: false,
 };
+
+// Compatibility no-ops for older cached networking detail renderers after the
+// Kubernetes overlay feature was removed.
+if (typeof globalThis.renderNetworkOverlayCard !== 'function') {
+  globalThis.renderNetworkOverlayCard = function renderNetworkOverlayCard() { return ''; };
+}
+if (typeof globalThis.renderRouterOverlayCard !== 'function') {
+  globalThis.renderRouterOverlayCard = function renderRouterOverlayCard() { return ''; };
+}
+if (typeof globalThis.renderLoadBalancerOverlayCard !== 'function') {
+  globalThis.renderLoadBalancerOverlayCard = function renderLoadBalancerOverlayCard() { return ''; };
+}
 
 const STEP_ICON = { pending:'○', running:'◉', success:'✓', failed:'✗', skipped:'—' };
 const OP_COLOR  = {
@@ -293,7 +306,7 @@ function retryApiIssuesNow() {
   if (activeView === 'reports') return refreshActiveReport();
   if (activeView === 'networking') return loadNetworks(true);
   if (activeView === 'routers') return loadRouters(true);
-  if (activeView === 'storage') return loadVolumes(true);
+  if (activeView === 'storage' && typeof refreshActiveStorageView === 'function') return refreshActiveStorageView();
   if (activeView === 'infrastructure' && selectedNode) {
     if (activeTab === 'summary') return loadNodeDetail(selectedNode, true);
     if (activeTab === 'instances') {

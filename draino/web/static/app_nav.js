@@ -16,6 +16,52 @@ function topLevelView(name) {
   return name;
 }
 
+function switchStorageSection(name) {
+  const valid = ['openstack-volumes', 'openstack-swift', 'k8s-csi', 'k8s-pvcs', 'k8s-pvs'];
+  if (!valid.includes(name)) return;
+  activeStorageView = name;
+  switchView('storage');
+}
+
+function isStorageK8sView(name = activeStorageView) {
+  return String(name || '').startsWith('k8s-');
+}
+
+function storageK8sType(name = activeStorageView) {
+  return ({
+    'k8s-csi': 'storagecsis',
+    'k8s-pvcs': 'pvcs',
+    'k8s-pvs': 'pvs',
+  })[name] || null;
+}
+
+function storageViewLabel(name = activeStorageView) {
+  if (name === 'openstack-volumes') return 'Cinder Volumes';
+  if (name === 'openstack-swift') return 'Swift Containers';
+  const k8sType = storageK8sType(name);
+  return k8sType ? (K8S_RES_META[k8sType]?.label || 'Kubernetes Storage') : 'Storage';
+}
+
+function openStackServiceFlags() {
+  return authInfo?.openstack_services || { block_storage: false, object_store: false };
+}
+
+function storageAvailableOpenStackViews() {
+  const services = openStackServiceFlags();
+  const views = [];
+  if (services.block_storage) views.push('openstack-volumes');
+  if (services.object_store) views.push('openstack-swift');
+  return views;
+}
+
+function preferredStorageView() {
+  const openstackViews = storageAvailableOpenStackViews();
+  if (!hasOpenStackAuth()) return 'k8s-csi';
+  if (openstackViews.includes(activeStorageView)) return activeStorageView;
+  if (activeStorageView === 'k8s-csi' || activeStorageView === 'k8s-pvcs' || activeStorageView === 'k8s-pvs') return activeStorageView;
+  return openstackViews[0] || 'k8s-csi';
+}
+
 function switchNetworkingSection(name) {
   const valid = ['networking', 'routers', 'loadbalancers', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
   if (!valid.includes(name)) return;
@@ -91,6 +137,43 @@ function renderNetworkingWorkspace() {
   resizer?.classList.toggle('open', open);
 }
 
+function syncStorageDetailShell() {
+  const detailWrap = document.getElementById('storage-detail-wrap');
+  const resizer = document.getElementById('storage-detail-resizer');
+  const open = Boolean(isStorageK8sView() && k8sDetailState.type && k8sDetailState.item);
+  detailWrap?.classList.toggle('open', open);
+  resizer?.classList.toggle('open', open);
+}
+
+function renderStorageWorkspace() {
+  activeStorageView = preferredStorageView();
+  const openstackViews = storageAvailableOpenStackViews();
+  document.querySelectorAll('.storage-nav-item').forEach(el => {
+    const hidden = el.dataset.requiresService === 'block-storage' && !openstackViews.includes('openstack-volumes')
+      || el.dataset.requiresService === 'object-store' && !openstackViews.includes('openstack-swift');
+    el.style.display = hidden ? 'none' : '';
+    const selected = el.dataset.storageView === activeStorageView
+      || (isStorageK8sView() && el.dataset.k8sRes === storageK8sType());
+    el.classList.toggle('selected', selected);
+  });
+
+  const panes = {
+    openstack: document.getElementById('storage-openstack-wrap') || document.getElementById('vol-wrap'),
+    swift: document.getElementById('storage-swift-wrap'),
+    k8s: document.getElementById('storage-k8s-content'),
+  };
+  Object.values(panes).forEach(pane => pane?.classList.remove('active'));
+  if (isStorageK8sView()) panes.k8s?.classList.add('active');
+  else if (activeStorageView === 'openstack-swift') panes.swift?.classList.add('active');
+  else panes.openstack?.classList.add('active');
+
+  document.getElementById('storage-k8s-detail-wrap')?.classList.toggle(
+    'open',
+    Boolean(isStorageK8sView() && k8sDetailState.type && k8sDetailState.item),
+  );
+  syncStorageDetailShell();
+}
+
 function switchView(name) {
   if (activeView === 'stress' && name !== 'stress' && typeof stopStressStatusPolling === 'function') {
     stopStressStatusPolling();
@@ -138,7 +221,7 @@ function switchView(name) {
           : name === 'reports'
             ? 'Reports'
             : name === 'storage'
-              ? 'Volumes'
+              ? storageViewLabel()
               : name === 'kubernetes'
                 ? 'Kubernetes'
                 : name;
@@ -151,10 +234,6 @@ function switchView(name) {
       bcNode.textContent = k8sActiveResource ? K8S_RES_META[k8sActiveResource]?.label || 'Kubernetes' : 'Kubernetes';
     }
     if (name === 'monitor') renderMonitorView();
-    if (name === 'storage' && !hasOpenStackAuth()) {
-      document.getElementById('vol-wrap').innerHTML = renderOpenStackUnavailablePanel('Volumes', 'This view currently relies on Cinder inventory. Provide OpenStack credentials to enable it.');
-      return;
-    }
     if (name === 'networking') {
       renderNetworkingWorkspace();
       if (!isNetworkingK8sView() && !hasOpenStackAuth()) {
@@ -178,7 +257,34 @@ function switchView(name) {
         if (k8sType) selectK8sResource(k8sType);
       }
     }
-    if (name === 'storage' && !volState.data && !volState.loading) loadVolumes();
+    if (name === 'storage') {
+      renderStorageWorkspace();
+      if (activeStorageView === 'openstack-volumes') {
+        if (!hasOpenStackAuth()) {
+          const wrap = document.getElementById('storage-openstack-wrap') || document.getElementById('vol-wrap');
+          if (wrap) wrap.innerHTML = renderOpenStackUnavailablePanel('Cinder Volumes', 'This view relies on Cinder inventory. Provide OpenStack credentials to enable it.');
+          return;
+        }
+        if (!volState.data && !volState.loading) loadVolumes();
+      }
+      if (activeStorageView === 'openstack-swift') {
+        if (!hasOpenStackAuth()) {
+          document.getElementById('storage-swift-wrap').innerHTML = renderOpenStackUnavailablePanel('Swift Containers', 'This view relies on Swift inventory. Provide OpenStack credentials to enable it.');
+          return;
+        }
+        if (!swiftState.data && !swiftState.loading) loadSwiftContainers();
+      }
+      if (isStorageK8sView()) {
+        if (!hasK8sAuth()) {
+          closeK8sDetail();
+          document.getElementById('storage-k8s-content-inner').innerHTML = renderK8sUnavailablePanel('Kubernetes Storage', 'Provide Kubernetes credentials to inspect CSI-backed storage inventory.');
+          syncStorageDetailShell();
+          return;
+        }
+        const k8sType = storageK8sType();
+        if (k8sType) selectK8sResource(k8sType);
+      }
+    }
     if (name === 'stress') {
       if (!hasOpenStackAuth()) {
         renderStressView();

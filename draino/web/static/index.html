@@ -77,7 +77,7 @@
     <button class="btn" onclick="loadLoadBalancers(true)">⟳ Refresh Load Balancers</button>
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
-    <button class="btn" onclick="loadVolumes(true)">⟳ Refresh Volumes</button>
+    <button class="btn" onclick="refreshActiveStorageView()">⟳ Refresh Storage</button>
   </div>
   <div class="bc-actions" id="bc-report-actions" style="display:none">
     <button class="btn" onclick="refreshActiveReport()">⟳ Refresh Report</button>
@@ -226,6 +226,10 @@
           <span>💾</span> Persistent Vols <span class="hint">Datastores</span>
           <span class="tree-badge" id="k8s-cnt-pvs"></span>
         </div>
+        <div class="k8s-res-item" data-res="storagecsis" onclick="selectK8sResource('storagecsis')">
+          <span>🗃️</span> CSI Backends <span class="hint">Storage Systems</span>
+          <span class="tree-badge" id="k8s-cnt-storagecsis"></span>
+        </div>
         <div class="k8s-res-item" data-res="crds"        onclick="selectK8sResource('crds')">
           <span>🔧</span> Custom Resources <span class="hint">Extensions</span>
           <span class="tree-badge" id="k8s-cnt-crds"></span>
@@ -349,8 +353,50 @@
 
   <!-- ── Storage view ── -->
   <div class="view" id="view-storage">
-    <div class="data-view-wrap" id="vol-wrap">
-      <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading volumes…</div>
+    <div id="storage-sidebar">
+      <div class="sidebar-head">Navigator — Storage</div>
+      <div id="storage-tree">
+        <div class="networking-section-label">OpenStack</div>
+        <div class="storage-nav-item selected" data-storage-view="openstack-volumes" data-requires-service="block-storage" onclick="switchStorageSection('openstack-volumes')">
+          <span>💿</span> Cinder Volumes
+        </div>
+        <div class="storage-nav-item" data-storage-view="openstack-swift" data-requires-service="object-store" onclick="switchStorageSection('openstack-swift')">
+          <span>🪣</span> Swift Containers
+        </div>
+
+        <div class="networking-section-label">Kubernetes</div>
+        <div class="storage-nav-item" data-storage-view="k8s-csi" data-k8s-res="storagecsis" onclick="switchStorageSection('k8s-csi')">
+          <span>🗃️</span> CSI Backends
+          <span class="tree-badge" id="storage-cnt-storagecsis"></span>
+        </div>
+        <div class="storage-nav-item" data-storage-view="k8s-pvcs" data-k8s-res="pvcs" onclick="switchStorageSection('k8s-pvcs')">
+          <span>📋</span> PV Claims
+          <span class="tree-badge" id="storage-cnt-pvcs"></span>
+        </div>
+        <div class="storage-nav-item" data-storage-view="k8s-pvs" data-k8s-res="pvs" onclick="switchStorageSection('k8s-pvs')">
+          <span>💾</span> Persistent Vols
+          <span class="tree-badge" id="storage-cnt-pvs"></span>
+        </div>
+      </div>
+    </div>
+    <div id="storage-content">
+      <div id="storage-content-inner">
+        <div class="storage-pane active" id="vol-wrap">
+          <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Cinder volumes…</div>
+        </div>
+        <div class="storage-pane" id="storage-swift-wrap">
+          <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Swift containers…</div>
+        </div>
+        <div class="storage-pane" id="storage-k8s-content">
+          <div id="storage-k8s-content-inner">
+            <div style="color:var(--dim);text-align:center;padding:40px 16px">Select a Kubernetes storage resource from the navigator.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="storage-detail-resizer"></div>
+    <div id="storage-detail-wrap">
+      <div class="storage-detail-pane" id="storage-k8s-detail-wrap"></div>
     </div>
   </div>
 
@@ -479,7 +525,6 @@
     <script src="/static/app_node_monitor.js"></script>
     <script src="/static/app_node_workloads.js"></script>
     <script src="/static/app_node_configure.js"></script>
-    <script src="/static/app_networking_overlay.js"></script>
     <script src="/static/app_networking_openstack.js"></script>
     <script src="/static/app_networking_openstack_loadbalancers.js"></script>
     <script src="/static/app_networking_openstack_routers.js"></script>

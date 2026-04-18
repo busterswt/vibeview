@@ -91,6 +91,17 @@ async def api_session(request: Request):
     record = sessions.get(request.cookies.get("draino_session"))
     if record is None:
         return {"authenticated": False}
+    openstack_services = {"block_storage": False, "object_store": False}
+    if record.server.openstack_auth is not None:
+        loop = asyncio.get_running_loop()
+        try:
+            openstack_services = await loop.run_in_executor(
+                None,
+                openstack_ops.get_service_endpoint_availability,
+                record.server.openstack_auth,
+            )
+        except Exception:
+            openstack_services = {"block_storage": False, "object_store": False}
     return {
         "authenticated": True,
         "username": record.username or None,
@@ -99,6 +110,7 @@ async def api_session(request: Request):
         "is_admin": record.is_admin,
         "has_k8s_auth": record.server.k8s_auth is not None,
         "has_openstack_auth": record.server.openstack_auth is not None,
+        "openstack_services": openstack_services,
         "session_mode": "full" if record.server.openstack_auth is not None else "kubernetes_only",
     }
 

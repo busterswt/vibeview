@@ -181,6 +181,7 @@ from .k8s_inventory_ops import (
     list_k8s_pvcs,
     list_k8s_pvs,
     list_k8s_services,
+    summarize_k8s_storage_by_csi,
 )
 from .ovn_ops import (
     get_ovs_interface_port_bindings,

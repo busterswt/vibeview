@@ -183,6 +183,11 @@ def list_k8s_pvcs(namespace: str | None = None, auth: K8sAuth | None = None) -> 
     return items
 
 
+def summarize_k8s_storage_by_csi(auth: K8sAuth | None = None) -> list[dict]:
+    _sync_inventory_modules()
+    return _storage.summarize_k8s_storage_by_csi(auth=auth)
+
+
 def list_k8s_crds(auth: K8sAuth | None = None) -> list[dict]:
     _sync_inventory_modules()
     return _resources.list_k8s_crds(auth=auth)

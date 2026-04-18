@@ -1,5 +1,37 @@
 'use strict';
 
+function k8sVpcSubnetNetworkId(value) {
+  const text = String(value || '').trim();
+  if (!text.startsWith('neutron-')) return '';
+  return text.slice('neutron-'.length);
+}
+
+function k8sPrimeNetworkLinkLookup() {
+  if (typeof hasOpenStackAuth !== 'function' || !hasOpenStackAuth()) return;
+  if (typeof loadNetworks !== 'function') return;
+  if (netState?.data || netState?.loading) return;
+  loadNetworks().then(() => {
+    if (k8sDetailState.type === 'vpcs') renderK8sDetail();
+  }).catch(() => {
+    if (k8sDetailState.type === 'vpcs') renderK8sDetail();
+  });
+}
+
+function k8sVpcSubnetNamesHtml(values) {
+  const items = values || [];
+  if (!items.length) return `<span class="mv">—</span>`;
+  k8sPrimeNetworkLinkLookup();
+  const networks = Array.isArray(netState?.data) ? netState.data : [];
+  const networkById = new Map(networks.map(item => [String(item.id || ''), item]));
+  return items.map(value => {
+    const text = String(value || '');
+    const networkId = k8sVpcSubnetNetworkId(text);
+    const network = networkId ? networkById.get(networkId) : null;
+    if (!network) return `<div class="mv">${esc(text)}</div>`;
+    return `<div class="mv"><a href="#" onclick="event.preventDefault();switchNetworkingSection('networking');selectNetwork('${escAttr(networkId)}')">${esc(text)}</a></div>`;
+  }).join('');
+}
+
 function renderK8sDetail() {
   const wrap = document.getElementById(activeK8sDetailWrapId());
   if (!wrap) return;
@@ -12,7 +44,7 @@ function renderK8sDetail() {
     return;
   }
 
-  const title = item.name || K8S_RES_META[type]?.label || 'Kubernetes Object';
+  const title = item.name || item.driver || K8S_RES_META[type]?.label || 'Kubernetes Object';
   const subtitle = item.namespace ? `${item.namespace} / ${K8S_RES_META[type]?.label || type}` : (K8S_RES_META[type]?.label || type);
   let body = '';
 
@@ -24,7 +56,7 @@ function renderK8sDetail() {
         ['Namespaces', esc(String(item.namespace_count ?? 0))],
         ['Namespace Names', k8sListHtml(item.namespaces || [])],
         ['Subnets', esc(String(item.subnet_count ?? 0))],
-        ['Subnet Names', k8sListHtml(item.subnets || [])],
+        ['Subnet Names', k8sVpcSubnetNamesHtml(item.subnets || [])],
         ['Static Routes', esc(String(item.static_route_count ?? 0))],
         ['Policy Routes', esc(String(item.policy_route_count ?? 0))],
         ['Standby', item.standby ? 'Yes' : 'No'],
@@ -207,6 +239,23 @@ function renderK8sDetail() {
         ['Age', esc(k8sAge(item.created))],
       ])}</div></div>`;
       break;
+    case 'storagecsis':
+      body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['Backend', esc(item.backend || 'Unknown')],
+        ['CSI Driver', `<span style="font-family:monospace">${esc(item.driver || 'unknown')}</span>`],
+        ['PVCs', esc(String(item.pvc_count ?? 0))],
+        ['PVs', esc(String(item.pv_count ?? 0))],
+        ['Bound PVs', esc(String(item.bound_pv_count ?? 0))],
+        ['Namespaces', esc(String(item.namespace_count ?? 0))],
+        ['Namespace Names', k8sListHtml(item.namespaces || [])],
+        ['StorageClasses', esc(String(item.storageclass_count ?? 0))],
+        ['StorageClass Names', k8sListHtml(item.storageclasses || [])],
+        ['Requested Capacity', `<span style="font-family:monospace">${esc(item.requested_capacity || '—')}</span>`],
+        ['Consumer Nodes', k8sListHtml(item.consumer_nodes || [])],
+        ['Replica Nodes', k8sListHtml(item.replica_nodes || [])],
+        ['Claims', k8sListHtml(item.claims || [])],
+      ])}</div></div>`;
+      break;
     case 'gateways':
       body += `<div class="card"><div class="card-body">${k8sDetailRows([
         ['Namespace', esc(item.namespace || '—')],
@@ -234,6 +283,8 @@ function renderK8sDetail() {
       break;
     case 'pvs':
       body += `<div class="card"><div class="card-body">${k8sDetailRows([
+        ['CSI Driver', `<span style="font-family:monospace">${esc(item.csi_driver || '—')}</span>`],
+        ['Volume Handle', `<span style="font-family:monospace">${esc(item.volume_handle || '—')}</span>`],
         ['Capacity', `<span style="font-family:monospace">${esc(item.capacity || '—')}</span>`],
         ['Access Modes', esc(item.access_modes || '—')],
         ['Reclaim Policy', esc(item.reclaim_policy || '—')],
@@ -247,7 +298,9 @@ function renderK8sDetail() {
       body += `<div class="card"><div class="card-body">${k8sDetailRows([
         ['Namespace', esc(item.namespace || '—')],
         ['Status', `<span class="k8s-badge ${item.status === 'Bound' ? 'bound' : item.status === 'Pending' ? 'pending' : 'failed'}">${esc(item.status || '—')}</span>`],
+        ['CSI Driver', `<span style="font-family:monospace">${esc(item.csi_driver || '—')}</span>`],
         ['Volume', esc(item.volume || '—')],
+        ['Volume Handle', `<span style="font-family:monospace">${esc(item.volume_handle || '—')}</span>`],
         ['Capacity', `<span style="font-family:monospace">${esc(item.capacity || '—')}</span>`],
         ['Access Modes', esc(item.access_modes || '—')],
         ['StorageClass', esc(item.storageclass || '—')],

@@ -124,6 +124,14 @@ function applyNetworkingDetailWidth(width) {
   localStorage.setItem('vibeviewNetworkingDetailWidth', String(px));
 }
 
+function applyStorageDetailWidth(width) {
+  const panel = document.getElementById('storage-detail-wrap');
+  if (!panel) return;
+  const px = Math.max(560, Math.min(1120, Math.round(width)));
+  panel.style.width = `${px}px`;
+  localStorage.setItem('vibeviewStorageDetailWidth', String(px));
+}
+
 function initSidebarResizer() {
   const sidebar = document.getElementById('sidebar');
   const resizer = document.getElementById('sidebar-resizer');
@@ -263,6 +271,43 @@ function initNetworkingDetailResizer() {
   });
 }
 
+function initStorageDetailResizer() {
+  const panel = document.getElementById('storage-detail-wrap');
+  const resizer = document.getElementById('storage-detail-resizer');
+  if (!panel || !resizer) return;
+
+  const saved = Number(localStorage.getItem('vibeviewStorageDetailWidth'));
+  if (Number.isFinite(saved) && saved >= 560) applyStorageDetailWidth(saved);
+
+  resizer.addEventListener('mousedown', (event) => {
+    tasksDragging = false;
+    sidebarDragging = false;
+    resizer.classList.add('dragging');
+    document.body.dataset.storageDetailDragging = 'true';
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (document.body.dataset.storageDetailDragging !== 'true') return;
+    const view = document.getElementById('view-storage');
+    const rect = view?.getBoundingClientRect();
+    if (!rect) return;
+    const width = rect.right - event.clientX;
+    const maxWidth = Math.max(560, rect.width - 260);
+    applyStorageDetailWidth(Math.max(560, Math.min(maxWidth, width)));
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (document.body.dataset.storageDetailDragging !== 'true') return;
+    delete document.body.dataset.storageDetailDragging;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INIT
 // ════════════════════════════════════════════════════════════════════════════
@@ -271,5 +316,6 @@ initSidebarResizer();
 initTasksResizer();
 initK8sDetailResizer();
 initNetworkingDetailResizer();
+initStorageDetailResizer();
 initPollingInterval();
 bootstrapSession();

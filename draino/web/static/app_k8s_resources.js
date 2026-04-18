@@ -21,6 +21,7 @@ const K8S_RES_META = {
   lbs: { label: 'LoadBalancers', icon: '⚡', url: '/api/k8s/services' },
   pvcs: { label: 'PV Claims', icon: '📋', url: '/api/k8s/pvcs' },
   pvs: { label: 'Persistent Vols', icon: '💾', url: '/api/k8s/pvs' },
+  storagecsis: { label: 'CSI Backends', icon: '🗃️', url: '/api/k8s/storage' },
   crds: { label: 'Custom Resources', icon: '🔧', url: '/api/k8s/crds' },
   operators: { label: 'Operators', icon: '🧰', url: '/api/k8s/operators' },
 };
@@ -36,21 +37,32 @@ function isNetworkingK8sContext() {
   return activeView === 'networking' && typeof isNetworkingK8sView === 'function' && isNetworkingK8sView();
 }
 
+function isStorageK8sContext() {
+  return activeView === 'storage' && typeof isStorageK8sView === 'function' && isStorageK8sView();
+}
+
 function activeK8sContentInnerId() {
+  if (isStorageK8sContext()) return 'storage-k8s-content-inner';
   return isNetworkingK8sContext() ? 'networking-k8s-content-inner' : 'k8s-content-inner';
 }
 
 function activeK8sDetailWrapId() {
+  if (isStorageK8sContext()) return 'storage-k8s-detail-wrap';
   return isNetworkingK8sContext() ? 'networking-k8s-detail-wrap' : 'k8s-detail-wrap';
 }
 
 function activeK8sDetailResizerId() {
+  if (isStorageK8sContext()) return 'storage-detail-resizer';
   return isNetworkingK8sContext() ? 'networking-detail-resizer' : 'k8s-detail-resizer';
 }
 
 function syncActiveK8sShell() {
   if (isNetworkingK8sContext() && typeof syncNetworkingDetailShell === 'function') {
     syncNetworkingDetailShell();
+    return;
+  }
+  if (isStorageK8sContext() && typeof syncStorageDetailShell === 'function') {
+    syncStorageDetailShell();
   }
 }
 
@@ -97,6 +109,8 @@ function k8sItemKey(type, row) {
     case 'pvs':
     case 'crds':
       return row.name || '';
+    case 'storagecsis':
+      return row.driver || '';
     case 'pods':
     case 'services':
     case 'lbs':
@@ -152,6 +166,8 @@ async function selectK8sResource(type) {
     el.classList.toggle('selected', el.dataset.res === type));
   document.querySelectorAll('.networking-nav-item[data-k8s-res]').forEach(el =>
     el.classList.toggle('selected', el.dataset.k8sRes === type));
+  document.querySelectorAll('.storage-nav-item[data-k8s-res]').forEach(el =>
+    el.classList.toggle('selected', el.dataset.k8sRes === type));
   const bcNode = document.getElementById('bc-node');
   if (bcNode) bcNode.textContent = K8S_RES_META[type]?.label || type;
   renderK8sContent();
@@ -190,7 +206,7 @@ async function refreshK8sResource() {
 
 function updateK8sCountBadges() {
   for (const [type, cached] of Object.entries(k8sResCache)) {
-    const ids = [`k8s-cnt-${type}`, `networking-cnt-${type}`];
+    const ids = [`k8s-cnt-${type}`, `networking-cnt-${type}`, `storage-cnt-${type}`];
     for (const id of ids) {
       const el = document.getElementById(id);
       if (el && cached.data) el.textContent = cached.data.length;
@@ -249,4 +265,3 @@ function renderK8sContent() {
   if (type !== k8sDetailState.type || !stillExists) closeK8sDetail();
   renderK8sDetail();
 }
-

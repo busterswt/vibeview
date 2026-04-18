@@ -112,6 +112,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         return [{"name": "default", "status": "Active", "created": None, "labels": {}}]
 
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", fake_get_nodes)
+    monkeypatch.setattr(web_server.openstack_ops, "get_service_endpoint_availability", lambda auth=None: {"block_storage": True, "object_store": True})
     monkeypatch.setattr(web_server.openstack_ops, "_conn", fake_conn)
     monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["member", "admin"])
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", fake_refresh)
@@ -157,6 +158,7 @@ def test_login_creates_session_and_gates_api(monkeypatch):
         assert session.json()["role_names"] == ["member", "admin"]
         assert session.json()["has_k8s_auth"] is True
         assert session.json()["has_openstack_auth"] is True
+        assert session.json()["openstack_services"] == {"block_storage": True, "object_store": True}
         assert session.json()["session_mode"] == "full"
 
         namespaces = client.get("/api/k8s/namespaces")
@@ -200,6 +202,7 @@ def test_login_allows_k8s_only_session(monkeypatch):
         assert body["authenticated"] is True
         assert body["has_k8s_auth"] is True
         assert body["has_openstack_auth"] is False
+        assert body["openstack_services"] == {"block_storage": False, "object_store": False}
         assert body["session_mode"] == "kubernetes_only"
         assert body["username"] is None
         assert body["project_name"] is None

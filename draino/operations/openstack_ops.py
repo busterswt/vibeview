@@ -64,6 +64,22 @@ def _conn(auth: OpenStackAuth | None = None) -> openstack.connection.Connection:
     return openstack.connection.Connection(**kwargs)
 
 
+def has_service_endpoint(service_type: str, auth: OpenStackAuth | None = None) -> bool:
+    conn = _conn(auth=auth)
+    try:
+        endpoint = conn.endpoint_for(service_type)
+    except Exception:
+        return False
+    return bool(endpoint)
+
+
+def get_service_endpoint_availability(auth: OpenStackAuth | None = None) -> dict[str, bool]:
+    return {
+        "block_storage": has_service_endpoint("block-storage", auth=auth),
+        "object_store": has_service_endpoint("object-store", auth=auth),
+    }
+
+
 # ── Internal helpers ─────────────────────────────────────────────────────────
 
 def _server_host(server) -> str | None:

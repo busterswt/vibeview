@@ -1,10 +1,78 @@
 """Kubernetes storage inventory helpers."""
 from __future__ import annotations
 
+import re
+
 from kubernetes import client
 
 from .k8s_ops import K8sAuth, _api_client
 from .k8s_inventory_utils import _ts
+
+
+def _quantity_bytes(value) -> int | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    match = re.fullmatch(r"([0-9]+)([KMGTP]i?|Ei?)?", text)
+    if not match:
+        return None
+    number = int(match.group(1))
+    suffix = match.group(2) or ""
+    multipliers = {
+        "": 1,
+        "Ki": 1024,
+        "Mi": 1024 ** 2,
+        "Gi": 1024 ** 3,
+        "Ti": 1024 ** 4,
+        "Pi": 1024 ** 5,
+        "Ei": 1024 ** 6,
+        "K": 1000,
+        "M": 1000 ** 2,
+        "G": 1000 ** 3,
+        "T": 1000 ** 4,
+        "P": 1000 ** 5,
+        "E": 1000 ** 6,
+    }
+    factor = multipliers.get(suffix)
+    if factor is None:
+        return None
+    return number * factor
+
+
+def _format_bytes_iec(value: int | None) -> str:
+    if value in (None, 0):
+        return "—"
+    units = ("B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB")
+    amount = float(value)
+    unit = units[0]
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            break
+        amount /= 1024
+    if unit == "B":
+        return f"{int(amount)} {unit}"
+    return f"{amount:.1f} {unit}"
+
+
+def _backend_from_driver(driver: str | None) -> str:
+    text = str(driver or "").strip().lower()
+    if not text:
+        return "Unknown"
+    if "longhorn" in text:
+        return "Longhorn"
+    if "ceph" in text or "rbd." in text or "cephfs" in text:
+        return "Ceph"
+    if "ebs" in text:
+        return "EBS"
+    if "pd.csi.storage.gke.io" in text:
+        return "GCE PD"
+    if "disk.csi.azure.com" in text or "file.csi.azure.com" in text:
+        return "Azure Disk/File"
+    if "cinder" in text:
+        return "Cinder"
+    if "nfs" in text:
+        return "NFS"
+    return driver or "Unknown"
 def _parse_replica_count(value) -> int | None:
     if value in (None, ""):
         return None
@@ -214,9 +282,12 @@ def get_k8s_pvc_workload_summary(auth: K8sAuth | None = None) -> dict:
             "name": name,
             "status": pvc.status.phase or "",
             "volume": volume_name,
+            "created": _ts(pvc),
             "capacity": (pvc.status.capacity or {}).get("storage", ""),
             "access_modes": ",".join(pvc.spec.access_modes or []),
             "storageclass": storageclass,
+            "csi_driver": csi_driver,
+            "volume_handle": volume_handle,
             "replica_count": replica_count,
             "replica_nodes": replica_nodes,
             "consumer_pods": consumer_pods,
@@ -287,6 +358,8 @@ def list_k8s_pvs(auth: K8sAuth | None = None) -> list[dict]:
             claim = f"{pv.spec.claim_ref.namespace}/{pv.spec.claim_ref.name}"
         result.append({
             "name": pv.metadata.name,
+            "csi_driver": getattr(getattr(pv.spec, "csi", None), "driver", None) or "",
+            "volume_handle": getattr(getattr(pv.spec, "csi", None), "volume_handle", None) or "",
             "capacity": (pv.spec.capacity or {}).get("storage", ""),
             "access_modes": ",".join(pv.spec.access_modes or []),
             "reclaim_policy": pv.spec.persistent_volume_reclaim_policy or "",
@@ -306,3 +379,113 @@ def list_k8s_pvcs(namespace: str | None = None, auth: K8sAuth | None = None) -> 
     return items
 
 
+def summarize_k8s_storage_by_csi(auth: K8sAuth | None = None) -> list[dict]:
+    pvcs = list_k8s_pvcs(auth=auth)
+    pvs = list_k8s_pvs(auth=auth)
+    drivers: dict[str, dict] = {}
+
+    for pv in pvs:
+        driver = str(pv.get("csi_driver") or "").strip() or "unknown"
+        entry = drivers.setdefault(driver, {
+            "driver": driver,
+            "backend": _backend_from_driver(driver),
+            "_pv_names": set(),
+            "_pvc_keys": set(),
+            "_namespaces": set(),
+            "_storageclasses": set(),
+            "_claims": set(),
+            "_volume_handles": set(),
+            "_consumer_pods": set(),
+            "_consumer_nodes": set(),
+            "_replica_nodes": set(),
+            "_requested_bytes": 0,
+            "bound_pv_count": 0,
+        })
+        entry["_pv_names"].add(pv.get("name") or "")
+        if pv.get("status") == "Bound":
+            entry["bound_pv_count"] += 1
+        if pv.get("claim"):
+            entry["_claims"].add(pv["claim"])
+            namespace = str(pv["claim"]).split("/", 1)[0]
+            if namespace:
+                entry["_namespaces"].add(namespace)
+        if pv.get("storageclass"):
+            entry["_storageclasses"].add(pv["storageclass"])
+        if pv.get("volume_handle"):
+            entry["_volume_handles"].add(pv["volume_handle"])
+
+    for pvc in pvcs:
+        driver = str(pvc.get("csi_driver") or "").strip() or "unknown"
+        entry = drivers.setdefault(driver, {
+            "driver": driver,
+            "backend": _backend_from_driver(driver),
+            "_pv_names": set(),
+            "_pvc_keys": set(),
+            "_namespaces": set(),
+            "_storageclasses": set(),
+            "_claims": set(),
+            "_volume_handles": set(),
+            "_consumer_pods": set(),
+            "_consumer_nodes": set(),
+            "_replica_nodes": set(),
+            "_requested_bytes": 0,
+            "bound_pv_count": 0,
+        })
+        pvc_key = f"{pvc.get('namespace') or ''}/{pvc.get('name') or ''}".strip("/")
+        if pvc_key:
+            entry["_pvc_keys"].add(pvc_key)
+            entry["_claims"].add(pvc_key)
+        if pvc.get("namespace"):
+            entry["_namespaces"].add(pvc["namespace"])
+        if pvc.get("storageclass"):
+            entry["_storageclasses"].add(pvc["storageclass"])
+        if pvc.get("volume"):
+            entry["_pv_names"].add(pvc["volume"])
+        if pvc.get("volume_handle"):
+            entry["_volume_handles"].add(pvc["volume_handle"])
+        for pod_name in pvc.get("consumer_pods") or []:
+            if pod_name:
+                entry["_consumer_pods"].add(str(pod_name))
+        for node_name in pvc.get("consumer_nodes") or []:
+            if node_name:
+                entry["_consumer_nodes"].add(str(node_name))
+        for node_name in pvc.get("replica_nodes") or []:
+            if node_name:
+                entry["_replica_nodes"].add(str(node_name))
+        requested = _quantity_bytes(pvc.get("capacity"))
+        if requested is not None:
+            entry["_requested_bytes"] += requested
+
+    result: list[dict] = []
+    for driver, item in drivers.items():
+        pv_names = sorted(name for name in item["_pv_names"] if name)
+        pvc_keys = sorted(name for name in item["_pvc_keys"] if name)
+        namespaces = sorted(name for name in item["_namespaces"] if name)
+        storageclasses = sorted(name for name in item["_storageclasses"] if name)
+        claims = sorted(name for name in item["_claims"] if name)
+        volume_handles = sorted(name for name in item["_volume_handles"] if name)
+        consumer_pods = sorted(name for name in item["_consumer_pods"] if name)
+        consumer_nodes = sorted(name for name in item["_consumer_nodes"] if name)
+        replica_nodes = sorted(name for name in item["_replica_nodes"] if name)
+        result.append({
+            "driver": driver,
+            "backend": item["backend"],
+            "pv_count": len(pv_names),
+            "pvc_count": len(pvc_keys),
+            "bound_pv_count": item["bound_pv_count"],
+            "namespace_count": len(namespaces),
+            "storageclass_count": len(storageclasses),
+            "consumer_pod_count": len(consumer_pods),
+            "consumer_node_count": len(consumer_nodes),
+            "replica_node_count": len(replica_nodes),
+            "requested_capacity": _format_bytes_iec(item["_requested_bytes"]),
+            "namespaces": namespaces,
+            "storageclasses": storageclasses,
+            "claims": claims,
+            "pv_names": pv_names,
+            "volume_handles": volume_handles[:20],
+            "consumer_nodes": consumer_nodes,
+            "replica_nodes": replica_nodes,
+        })
+    result.sort(key=lambda item: (-item["pvc_count"], -item["pv_count"], item["driver"]))
+    return result

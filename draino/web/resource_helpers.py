@@ -633,3 +633,33 @@ def get_volumes(auth: openstack_ops.OpenStackAuth | None) -> tuple[list[dict], b
             "encrypted": bool(getattr(volume, "encrypted", False)),
         })
     return result, all_projects
+
+
+def get_swift_containers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    """Return Swift containers visible to the configured credential."""
+    conn = openstack_ops._conn(auth=auth)
+    result = []
+    for container in conn.object_store.containers():
+        data = container.to_dict() if hasattr(container, "to_dict") else {}
+        result.append({
+            "name": getattr(container, "name", None) or data.get("name") or "",
+            "object_count": (
+                getattr(container, "object_count", None)
+                or data.get("object_count")
+                or data.get("x_container_object_count")
+                or 0
+            ),
+            "bytes_used": (
+                getattr(container, "bytes_used", None)
+                or data.get("bytes_used")
+                or data.get("x_container_bytes_used")
+                or 0
+            ),
+            "is_public": bool(
+                data.get("read_ACL")
+                or data.get("x_container_read")
+                or data.get("public")
+            ),
+        })
+    result.sort(key=lambda item: item["name"])
+    return result

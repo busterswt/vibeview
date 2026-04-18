@@ -214,6 +214,16 @@ async def api_k8s_pvcs(request: Request, namespace: str | None = None):
         return {"items": [], "error": str(exc)}
 
 
+@router.get("/api/k8s/storage")
+async def api_k8s_storage(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        return {"items": await loop.run_in_executor(None, k8s_ops.summarize_k8s_storage_by_csi, session.server.k8s_auth), "error": None}
+    except Exception as exc:
+        return {"items": [], "error": str(exc)}
+
+
 @router.get("/api/k8s/operators")
 async def api_k8s_operators(request: Request):
     session = _require_session_record()(request)
