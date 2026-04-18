@@ -76,6 +76,9 @@
   <div class="bc-actions" id="bc-lb-actions" style="display:none">
     <button class="btn" onclick="loadLoadBalancers(true)">⟳ Refresh Load Balancers</button>
   </div>
+  <div class="bc-actions" id="bc-sg-actions" style="display:none">
+    <button class="btn" onclick="loadSecurityGroups(true)">⟳ Refresh Security Groups</button>
+  </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="refreshActiveStorageView()">⟳ Refresh Storage</button>
   </div>
@@ -129,6 +132,7 @@
 
       <div id="tabs-bar">
         <div class="tab active" id="tab-btn-summary"   onclick="showTab('summary')">Summary</div>
+        <div class="tab"        id="tab-btn-placement" onclick="showTab('placement')">Placement <span class="hint">OpenStack</span></div>
         <div class="tab"        id="tab-btn-instances" onclick="showTab('instances')">Instances <span class="hint">VMs</span></div>
         <div class="tab"        id="tab-btn-pods"      onclick="showTab('pods')">Pods <span class="hint">K8s</span></div>
         <div class="tab"        id="tab-btn-monitor"   onclick="showTab('monitor')">Metrics</div>
@@ -139,6 +143,11 @@
         <div id="tab-summary">
           <div id="summary-content">
             <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a node from the inventory to view its status.</div>
+          </div>
+        </div>
+        <div id="tab-placement" style="display:none">
+          <div id="placement-content">
+            <div style="text-align:center;padding:40px 0;color:var(--dim)">Select a compute node to view Placement and scheduling detail.</div>
           </div>
         </div>
         <div id="tab-instances" style="display:none">
@@ -264,6 +273,10 @@
         <div class="networking-nav-item" data-networking-view="loadbalancers" onclick="switchNetworkingSection('loadbalancers')">
           <span>⚖️</span> Load Balancers
         </div>
+        <div class="networking-nav-item" data-networking-view="securitygroups" onclick="switchNetworkingSection('securitygroups')">
+          <span>🛡️</span> Security Groups
+          <span class="tree-badge" id="networking-cnt-securitygroups"></span>
+        </div>
 
         <div class="networking-section-label">Kubernetes</div>
         <div class="networking-nav-item" data-networking-view="k8s-vpcs" data-k8s-res="vpcs" onclick="switchNetworkingSection('k8s-vpcs')">
@@ -327,6 +340,7 @@
         </div>
         <div class="networking-pane" id="router-wrap"></div>
         <div class="networking-pane" id="lb-wrap"></div>
+        <div class="networking-pane" id="sg-wrap"></div>
         <div class="networking-pane" id="networking-k8s-content">
           <div id="networking-k8s-content-inner">
             <div style="color:var(--dim);text-align:center;padding:40px 16px">Select a Kubernetes networking resource from the navigator.</div>
@@ -339,6 +353,7 @@
       <div class="networking-detail-pane" id="net-detail-wrap"></div>
       <div class="networking-detail-pane" id="router-detail-wrap"></div>
       <div class="networking-detail-pane" id="lb-detail-wrap"></div>
+      <div class="networking-detail-pane" id="sg-detail-wrap"></div>
       <div class="networking-detail-pane" id="networking-k8s-detail-wrap"></div>
     </div>
   </div>
@@ -519,16 +534,18 @@
   </div>
 </div>
 
-    <script src="/static/app_core.js"></script>
-    <script src="/static/app_nav.js"></script>
+    <script src="/static/app_core.js?v=20260418-sg1"></script>
+    <script src="/static/app_nav.js?v=20260418-sg1"></script>
     <script src="/static/app_infra.js"></script>
     <script src="/static/app_node_summary.js"></script>
+    <script src="/static/app_node_placement.js"></script>
     <script src="/static/app_node_monitor.js"></script>
     <script src="/static/app_node_workloads.js"></script>
     <script src="/static/app_node_configure.js"></script>
     <script src="/static/app_networking_openstack.js"></script>
     <script src="/static/app_networking_openstack_loadbalancers.js"></script>
     <script src="/static/app_networking_openstack_routers.js"></script>
+    <script src="/static/app_networking_openstack_securitygroups.js?v=20260418-sg2"></script>
     <script src="/static/app_k8s_resources.js"></script>
     <script src="/static/app_k8s_resources_detail.js"></script>
     <script src="/static/app_k8s_resources_table.js"></script>

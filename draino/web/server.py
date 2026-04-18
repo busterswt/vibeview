@@ -73,6 +73,8 @@ from .resource_helpers import (
     get_load_balancers as _get_load_balancers,
     get_network_detail as _get_network_detail,
     get_networks as _get_networks,
+    get_security_group_detail as _get_security_group_detail,
+    get_security_groups as _get_security_groups,
     repair_subnet_metadata_port as _repair_subnet_metadata_port,
     get_router_detail as _get_router_detail,
     get_routers as _get_routers,

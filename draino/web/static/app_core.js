@@ -174,6 +174,19 @@ const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' 
 let   selectedLoadBalancer = null;
 const lbDetailState = { loading: false, data: null, vipOvn: { loading: false, data: null, error: null } };
 
+// Security group view state
+const sgState = {
+  data: null,
+  loading: false,
+  page: 1,
+  pageSize: 25,
+  filter: '',
+  auditOnly: true,
+  project: '',
+};
+let selectedSecurityGroup = null;
+const sgDetailState = { loading: false, data: null };
+
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
 let selectedVolume = null;
@@ -306,11 +319,16 @@ function retryApiIssuesNow() {
   apiIssueState.open = false;
   renderApiIssuesOverlay();
   if (activeView === 'reports') return refreshActiveReport();
-  if (activeView === 'networking') return loadNetworks(true);
+  if (activeView === 'networking') {
+    if (activeNetworkingView === 'routers') return loadRouters(true);
+    if (activeNetworkingView === 'loadbalancers') return loadLoadBalancers(true);
+    if (activeNetworkingView === 'securitygroups') return loadSecurityGroups(true);
+    return loadNetworks(true);
+  }
   if (activeView === 'routers') return loadRouters(true);
   if (activeView === 'storage' && typeof refreshActiveStorageView === 'function') return refreshActiveStorageView();
   if (activeView === 'infrastructure' && selectedNode) {
-    if (activeTab === 'summary') return loadNodeDetail(selectedNode, true);
+    if (activeTab === 'summary' || activeTab === 'placement') return loadNodeDetail(selectedNode, true);
     if (activeTab === 'instances') {
       const instanceId = expandedInstanceIdByNode[selectedNode];
       if (instanceId) return loadInstanceDetail(selectedNode, instanceId, true);

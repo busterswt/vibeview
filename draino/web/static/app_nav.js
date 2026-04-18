@@ -63,7 +63,7 @@ function preferredStorageView() {
 }
 
 function switchNetworkingSection(name) {
-  const valid = ['networking', 'routers', 'loadbalancers', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
+  const valid = ['networking', 'routers', 'loadbalancers', 'securitygroups', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
   if (!valid.includes(name)) return;
   activeNetworkingView = name;
   switchView('networking');
@@ -95,6 +95,7 @@ function networkingViewLabel(name = activeNetworkingView) {
   if (name === 'networking') return 'Networks';
   if (name === 'routers') return 'Routers';
   if (name === 'loadbalancers') return 'Load Balancers';
+  if (name === 'securitygroups') return 'Security Groups';
   const k8sType = networkingK8sType(name);
   return k8sType ? (K8S_RES_META[k8sType]?.label || 'Kubernetes Networking') : 'Networking';
 }
@@ -108,13 +109,14 @@ function renderNetworkingWorkspace() {
     networking: document.getElementById('net-wrap'),
     routers: document.getElementById('router-wrap'),
     loadbalancers: document.getElementById('lb-wrap'),
+    securitygroups: document.getElementById('sg-wrap'),
     k8s: document.getElementById('networking-k8s-content'),
   };
   Object.values(panes).forEach(pane => pane?.classList.remove('active'));
   if (isNetworkingK8sView()) panes.k8s?.classList.add('active');
   else panes[activeNetworkingView]?.classList.add('active');
 
-  const detailPanes = ['net-detail-wrap', 'router-detail-wrap', 'lb-detail-wrap', 'networking-k8s-detail-wrap'];
+  const detailPanes = ['net-detail-wrap', 'router-detail-wrap', 'lb-detail-wrap', 'sg-detail-wrap', 'networking-k8s-detail-wrap'];
   detailPanes.forEach(id => document.getElementById(id)?.classList.remove('open'));
 
   if (activeNetworkingView === 'networking' && selectedNetwork && netDetailState.data) {
@@ -125,6 +127,9 @@ function renderNetworkingWorkspace() {
   }
   if (activeNetworkingView === 'loadbalancers' && selectedLoadBalancer && lbDetailState.data) {
     document.getElementById('lb-detail-wrap')?.classList.add('open');
+  }
+  if (activeNetworkingView === 'securitygroups' && selectedSecurityGroup && sgDetailState.data) {
+    document.getElementById('sg-detail-wrap')?.classList.add('open');
   }
   if (isNetworkingK8sView() && k8sDetailState.type && k8sDetailState.item) {
     document.getElementById('networking-k8s-detail-wrap')?.classList.add('open');
@@ -203,6 +208,7 @@ function switchView(name) {
   document.getElementById('bc-net-actions').style.display = (name === 'networking' && activeNetworkingView === 'networking') ? '' : 'none';
   document.getElementById('bc-router-actions').style.display = (name === 'networking' && activeNetworkingView === 'routers') ? '' : 'none';
   document.getElementById('bc-lb-actions').style.display = (name === 'networking' && activeNetworkingView === 'loadbalancers') ? '' : 'none';
+  document.getElementById('bc-sg-actions').style.display = (name === 'networking' && activeNetworkingView === 'securitygroups') ? '' : 'none';
   document.getElementById('bc-report-actions').style.display = name === 'reports' ? '' : 'none';
   document.getElementById('bc-stress-actions').style.display = name === 'stress' ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display = name === 'storage' ? '' : 'none';
@@ -253,12 +259,16 @@ function switchView(name) {
         if (activeNetworkingView === 'loadbalancers') {
           document.getElementById('lb-wrap').innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
         }
+        if (activeNetworkingView === 'securitygroups') {
+          document.getElementById('sg-wrap').innerHTML = renderOpenStackUnavailablePanel('Security Groups', 'This view currently relies on OpenStack security group inventory. Provide OpenStack credentials to enable it.');
+        }
         renderNetworkingWorkspace();
         return;
       }
       if (activeNetworkingView === 'networking' && !netState.data && !netState.loading) loadNetworks();
       if (activeNetworkingView === 'routers' && !routerState.data && !routerState.loading) loadRouters();
       if (activeNetworkingView === 'loadbalancers') loadLoadBalancers();
+      if (activeNetworkingView === 'securitygroups' && !sgState.data && !sgState.loading) loadSecurityGroups();
       if (isNetworkingK8sView()) {
         const k8sType = networkingK8sType();
         if (k8sType) selectK8sResource(k8sType);

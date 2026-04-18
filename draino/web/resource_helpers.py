@@ -471,6 +471,171 @@ def _summarize_security_group(group, project_names: dict[str, str], attachment_m
     }
 
 
+def _security_group_direct_references(item: dict) -> set[str]:
+    refs = set()
+    for rule in item.get("rules", []) or []:
+        remote_group_id = str(rule.get("remote_group_id") or "").strip()
+        if remote_group_id:
+            refs.add(remote_group_id)
+    return refs
+
+
+def _security_group_reference_graph(items: list[dict]) -> tuple[dict[str, dict], dict[str, set[str]], dict[str, set[str]]]:
+    by_id = {str(item.get("id") or ""): item for item in items if item.get("id")}
+    adjacency = {group_id: _security_group_direct_references(item) for group_id, item in by_id.items()}
+    reverse: dict[str, set[str]] = defaultdict(set)
+    for source_id, refs in adjacency.items():
+        for ref_id in refs:
+            reverse[ref_id].add(source_id)
+    return by_id, adjacency, dict(reverse)
+
+
+def _security_group_reference_depth(adjacency: dict[str, set[str]], target_group_id: str) -> tuple[int, bool]:
+    cycle_detected = False
+
+    def walk_depth(group_id: str, path: tuple[str, ...]) -> int:
+        nonlocal cycle_detected
+        refs = adjacency.get(group_id, set())
+        if not refs:
+            return 0
+        best = 0
+        for ref_id in refs:
+            if ref_id in path:
+                cycle_detected = True
+                continue
+            best = max(best, 1 + walk_depth(ref_id, path + (ref_id,)))
+        return best
+    return walk_depth(target_group_id, (target_group_id,)), cycle_detected
+
+
+def _security_group_reachable_refs(adjacency: dict[str, set[str]], target_group_id: str) -> set[str]:
+    def walk_reachable(group_id: str, seen: set[str]) -> set[str]:
+        for ref_id in adjacency.get(group_id, set()):
+            if ref_id in seen:
+                continue
+            seen.add(ref_id)
+            walk_reachable(ref_id, seen)
+        return seen
+    return walk_reachable(target_group_id, set())
+
+
+def _security_group_reference_items(ref_ids: set[str], by_id: dict[str, dict]) -> list[dict]:
+    return sorted(
+        [
+            {
+            "id": ref_id,
+            "name": by_id.get(ref_id, {}).get("name") or ref_id,
+            "project_name": by_id.get(ref_id, {}).get("project_name") or by_id.get(ref_id, {}).get("project_id") or "",
+            }
+            for ref_id in ref_ids
+        ],
+        key=lambda item: (item["project_name"], item["name"], item["id"]),
+    )
+
+
+def _security_group_referenced_by_items(source_ids: set[str], by_id: dict[str, dict]) -> list[dict]:
+    return sorted(
+        [
+            {
+            "id": source_id,
+            "name": by_id.get(source_id, {}).get("name") or source_id,
+            "project_name": by_id.get(source_id, {}).get("project_name") or by_id.get(source_id, {}).get("project_id") or "",
+            "flagged_rule_count": by_id.get(source_id, {}).get("flagged_rule_count", 0),
+            "attachment_instance_count": by_id.get(source_id, {}).get("attachment_instance_count", 0),
+            }
+            for source_id in source_ids
+        ],
+        key=lambda item: (item["project_name"], item["name"], item["id"]),
+    )
+
+
+def _security_group_control_plane_complexity(
+    direct_refs: set[str],
+    reachable_refs: set[str],
+    inbound_refs: set[str],
+    depth: int,
+    cycle_detected: bool,
+) -> dict:
+    score = (
+        len(direct_refs) * 3
+        + len(inbound_refs) * 2
+        + len(reachable_refs)
+        + depth * 2
+        + (8 if cycle_detected else 0)
+    )
+    if cycle_detected or depth >= 3 or len(direct_refs) >= 5 or len(inbound_refs) >= 10:
+        level = "high"
+    elif depth >= 2 or len(direct_refs) >= 3 or len(inbound_refs) >= 5 or len(reachable_refs) >= 6:
+        level = "elevated"
+    else:
+        level = "low"
+
+    reasons: list[str] = []
+    if len(direct_refs) >= 3:
+        reasons.append(f"{len(direct_refs)} direct remote-group references")
+    if depth >= 2:
+        reasons.append(f"reference graph depth {depth}")
+    if len(inbound_refs) >= 5:
+        reasons.append(f"referenced by {len(inbound_refs)} groups")
+    if cycle_detected:
+        reasons.append("cycle detected in reference graph")
+
+    return {
+        "level": level,
+        "score": score,
+        "cycle_detected": cycle_detected,
+        "reasons": reasons,
+    }
+
+
+def _security_group_reference_details(
+    items: list[dict],
+    target_group_id: str,
+) -> dict:
+    by_id, adjacency, reverse = _security_group_reference_graph(items)
+    direct_refs = adjacency.get(target_group_id, set())
+    reachable_refs = _security_group_reachable_refs(adjacency, target_group_id)
+    depth, cycle_detected = _security_group_reference_depth(adjacency, target_group_id)
+    inbound_refs = reverse.get(target_group_id, set())
+
+    return {
+        "remote_group_fanout": {
+            "direct_group_count": len(direct_refs),
+            "transitive_group_count": len(reachable_refs),
+            "groups": _security_group_reference_items(direct_refs, by_id),
+        },
+        "reference_graph_depth": depth,
+        "referenced_by": _security_group_referenced_by_items(inbound_refs, by_id),
+        "control_plane_complexity": _security_group_control_plane_complexity(
+            direct_refs,
+            reachable_refs,
+            inbound_refs,
+            depth,
+            cycle_detected,
+        ),
+    }
+
+
+def _load_security_group_graph_groups(conn, target_group_id: str) -> list:
+    groups_by_id: dict[str, object] = {}
+    try:
+        for item in conn.network.security_groups():
+            group_id = getattr(item, "id", None) or ""
+            if not group_id:
+                continue
+            try:
+                groups_by_id[group_id] = conn.network.get_security_group(group_id)
+            except Exception:
+                groups_by_id[group_id] = item
+    except Exception:
+        pass
+
+    if target_group_id and target_group_id not in groups_by_id:
+        groups_by_id[target_group_id] = conn.network.get_security_group(target_group_id)
+
+    return list(groups_by_id.values())
+
+
 def get_security_groups(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return Neutron security groups with audit annotations."""
     conn = openstack_ops._conn(auth=auth)
@@ -499,9 +664,12 @@ def get_security_group_detail(group_id: str, auth: openstack_ops.OpenStackAuth |
     """Return one Neutron security group with rules and attachment detail."""
     conn = openstack_ops._conn(auth=auth)
     group = conn.network.get_security_group(group_id)
+    groups = _load_security_group_graph_groups(conn, group_id)
     project_names = _project_names(conn)
     attachment_map = _security_group_attachment_map(conn)
     item = _summarize_security_group(group, project_names, attachment_map)
+    graph_items = [_summarize_security_group(entry, project_names, attachment_map) for entry in groups]
+    item.update(_security_group_reference_details(graph_items, group_id))
     item["attachments"].sort(
         key=lambda row: (
             row.get("device_owner", ""),

@@ -14,6 +14,8 @@ from ..resource_helpers import (
     get_load_balancers,
     get_network_detail,
     get_networks,
+    get_security_group_detail,
+    get_security_groups,
     get_router_detail,
     get_routers,
     get_swift_containers,
@@ -121,6 +123,33 @@ async def api_load_balancer_detail(lb_id: str, request: Request):
         }
     except Exception as exc:
         return {"load_balancer": None, "error": str(exc), "api_issue": build_api_issue("Octavia", f"GET /v2/lbaas/loadbalancers/{lb_id}", exc)}
+
+
+@router.get("/api/security-groups")
+async def api_security_groups(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_security_groups, session.server.openstack_auth)
+        return {"security_groups": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"security_groups": [], "error": str(exc), "api_issue": build_api_issue("Neutron", "GET /v2.0/security-groups", exc)}
+
+
+@router.get("/api/security-groups/{group_id}")
+async def api_security_group_detail(group_id: str, request: Request):
+    session = _require_session_record()(request)
+    try:
+        data = await _run_with_timeout(get_security_group_detail, group_id, session.server.openstack_auth)
+        return {"security_group": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "security_group": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading security group details",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"security_group": None, "error": str(exc), "api_issue": build_api_issue("Neutron", f"GET /v2.0/security-groups/{group_id}", exc)}
 
 
 @router.post("/api/networks/{network_id}/subnets/{subnet_id}/repair-metadata-port")

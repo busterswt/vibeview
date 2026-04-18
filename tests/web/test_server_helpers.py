@@ -854,10 +854,72 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
         project_id="proj-1",
         security_group_rules=[
             FakeRule("rule-1", "ingress", "tcp", 22, 22, "0.0.0.0/0"),
+            SimpleNamespace(
+                id="rule-remote-1",
+                direction="ingress",
+                protocol="tcp",
+                port_range_min=443,
+                port_range_max=443,
+                remote_ip_prefix="",
+                remote_group_id="sg-2",
+                ethertype="IPv4",
+                to_dict=lambda: {},
+            ),
             FakeRule("rule-2", "egress", "tcp", 443, 443, "0.0.0.0/0"),
         ],
         stateful=True,
         to_dict=lambda: {"revision_number": 7, "stateful": True},
+    )
+    group_two = SimpleNamespace(
+        id="sg-2",
+        name="shared-backend",
+        description="backend tier",
+        project_id="proj-1",
+        security_group_rules=[
+            SimpleNamespace(
+                id="rule-remote-2",
+                direction="ingress",
+                protocol="tcp",
+                port_range_min=8443,
+                port_range_max=8443,
+                remote_ip_prefix="",
+                remote_group_id="sg-3",
+                ethertype="IPv4",
+                to_dict=lambda: {},
+            ),
+        ],
+        stateful=True,
+        to_dict=lambda: {"revision_number": 8, "stateful": True},
+    )
+    group_three = SimpleNamespace(
+        id="sg-3",
+        name="database",
+        description="db tier",
+        project_id="proj-1",
+        security_group_rules=[],
+        stateful=True,
+        to_dict=lambda: {"revision_number": 9, "stateful": True},
+    )
+    referrer = SimpleNamespace(
+        id="sg-4",
+        name="ingress-proxy",
+        description="proxy tier",
+        project_id="proj-1",
+        security_group_rules=[
+            SimpleNamespace(
+                id="rule-remote-4",
+                direction="ingress",
+                protocol="tcp",
+                port_range_min=443,
+                port_range_max=443,
+                remote_ip_prefix="",
+                remote_group_id="sg-1",
+                ethertype="IPv4",
+                to_dict=lambda: {},
+            ),
+        ],
+        stateful=True,
+        to_dict=lambda: {"revision_number": 10, "stateful": True},
     )
 
     class FakeProject:
@@ -888,6 +950,10 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
             return group
 
         @staticmethod
+        def security_groups():
+            return [group, group_two, group_three, referrer]
+
+        @staticmethod
         def ports():
             return [FakePort()]
 
@@ -906,3 +972,7 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
     assert item["rules"][0]["audit"]["flagged"] is True
     assert item["rules"][0]["audit"]["summary"] == "tcp:22 0.0.0.0/0"
     assert item["rules"][1]["audit"]["flagged"] is False
+    assert item["remote_group_fanout"]["direct_group_count"] == 1
+    assert item["reference_graph_depth"] == 2
+    assert item["referenced_by"][0]["id"] == "sg-4"
+    assert item["control_plane_complexity"]["level"] == "elevated"

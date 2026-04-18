@@ -288,3 +288,131 @@ def test_load_balancer_detail_endpoint_times_out(monkeypatch):
 
     assert resp.status_code == 200
     assert "Timed out after 0s while loading load balancer details" in resp.json()["error"]
+
+
+def test_security_groups_endpoint_returns_items(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "get_security_groups",
+        lambda auth=None: [{
+            "id": "sg-1",
+            "name": "allow-all",
+            "project_id": "proj-1",
+            "project_name": "production",
+            "rule_count": 2,
+            "flagged_rule_count": 1,
+            "attachment_port_count": 3,
+            "attachment_instance_count": 2,
+            "audit": {
+                "severity": "critical",
+                "score": 100,
+                "findings": [{"severity": "critical", "summary": "any:any 0.0.0.0/0", "count": 1}],
+                "has_open_world_ingress": True,
+                "has_any_any_open_world": True,
+                "has_unused": False,
+            },
+        }],
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/security-groups")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["error"] is None
+    assert body["security_groups"][0]["audit"]["severity"] == "critical"
+    assert body["security_groups"][0]["project_name"] == "production"
+
+
+def test_security_group_detail_endpoint_returns_detail(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "get_security_group_detail",
+        lambda group_id, auth=None: {
+            "id": group_id,
+            "name": "web-frontend",
+            "project_id": "proj-1",
+            "project_name": "production",
+            "rule_count": 2,
+            "flagged_rule_count": 1,
+            "attachment_port_count": 1,
+            "attachment_instance_count": 1,
+            "audit": {
+                "severity": "high",
+                "score": 50,
+                "findings": [{"severity": "high", "summary": "tcp:22 0.0.0.0/0", "count": 1}],
+                "has_open_world_ingress": True,
+                "has_any_any_open_world": False,
+                "has_unused": False,
+            },
+            "rules": [{
+                "id": "rule-1",
+                "direction": "ingress",
+                "protocol": "tcp",
+                "port_range": "22",
+                "remote_ip_prefix": "0.0.0.0/0",
+                "audit": {"flagged": True, "severity": "high", "summary": "tcp:22 0.0.0.0/0"},
+            }],
+            "attachments": [{
+                "port_id": "port-1",
+                "device_owner": "compute:nova",
+                "device_id": "server-1",
+            }],
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/security-groups/sg-1")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["error"] is None
+    assert body["security_group"]["id"] == "sg-1"
+    assert body["security_group"]["rules"][0]["audit"]["summary"] == "tcp:22 0.0.0.0/0"
+    assert body["security_group"]["attachments"][0]["device_id"] == "server-1"
