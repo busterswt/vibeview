@@ -49,19 +49,19 @@ function ensureSelectedEtcdHealthCheck() {
 }
 
 async function loadNodeDetail(name, force = false) {
-  nodeDetailCache[name] = { loading: true, k8s: null, nova: null, hw: null, error: null };
-  if (activeTab === 'summary') renderSummaryTab(nodes[name]);
+  nodeDetailCache[name] = { loading: true, k8s: null, nova: null, placement: null, hw: null, error: null };
+  if (selectedNode === name && nodes[name]) renderInfraDetail();
   try {
     const qs = force ? '?refresh=1' : '';
     const resp = await fetch(`/api/nodes/${encodeURIComponent(name)}/detail${qs}`);
     const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
     else if (nodes[name]?.is_compute) recordApiSuccess('Nova');
-    nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, hw: json.hw || {}, error: json.error || null };
+    nodeDetailCache[name] = { loading: false, k8s: json.k8s || {}, nova: json.nova || {}, placement: json.placement || {}, hw: json.hw || {}, error: json.error || null };
   } catch (e) {
-    nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, error: String(e) };
+    nodeDetailCache[name] = { loading: false, k8s: {}, nova: {}, placement: {}, hw: {}, error: String(e) };
   }
-  if (selectedNode === name && activeTab === 'summary') renderSummaryTab(nodes[name]);
+  if (selectedNode === name && nodes[name]) renderInfraDetail();
 }
 
 function shouldLoadNodeDetail(name) {
@@ -175,7 +175,7 @@ function restoreFocusedInput(container, state) {
 
 function showTab(name) {
   activeTab = name;
-  ['summary','instances','pods','monitor','configure'].forEach(t => {
+  ['summary','placement','instances','pods','monitor','configure'].forEach(t => {
     document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
     document.getElementById(`tab-btn-${t}`).className = 'tab' + (t === name ? ' active' : '');
   });
@@ -190,6 +190,7 @@ function showTab(name) {
 
 function renderActiveTab(nd) {
   if (activeTab === 'summary')   renderSummaryTab(nd);
+  if (activeTab === 'placement') renderPlacementTab(nd);
   if (activeTab === 'instances') renderInstancesTab(nd);
   if (activeTab === 'pods')      renderPodsTab(nd);
   if (activeTab === 'monitor')   renderNodeMonitorTab(nd);

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Draino Logo Concepts</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-deep: #03548b;
+  --blue-soft: #dceefb;
+  --header: #1a2332;
+  --border: #d1d9e0;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --yellow: #f4c432;
+  --yellow-deep: #d79c12;
+  --red: #c62828;
+  --red-deep: #921b1b;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(0,114,198,0.08), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(26,35,50,0.06), transparent 30%),
+    var(--gray-bg);
+}
+
+.shell {
+  width: min(1160px, calc(100vw - 40px));
+  margin: 28px auto;
+}
+
+.hero {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 6px;
+  padding: 22px 24px 20px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.12);
+}
+
+.kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+
+.title {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--header);
+}
+
+.sub {
+  margin-top: 8px;
+  max-width: 820px;
+  font-size: 13px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+
+.grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.card-head {
+  padding: 10px 14px;
+  background: var(--gray-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.card-body {
+  padding: 18px 16px 16px;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wordmark h2 {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.wordmark p {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.mark {
+  width: 88px;
+  height: 108px;
+  border-radius: 14px;
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0) 18%),
+    linear-gradient(180deg, #f7d64f 0%, var(--yellow) 54%, var(--yellow-deep) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), 0 12px 24px rgba(0,0,0,0.16);
+}
+
+.mark::before,
+.mark::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.mark::before {
+  top: 8px;
+  background: linear-gradient(180deg, #dfe6ec, #aab7c4);
+}
+
+.mark::after {
+  bottom: 8px;
+  background: linear-gradient(180deg, #8f9eac, #d9e1e8);
+}
+
+.mark svg {
+  width: 76px;
+  height: 92px;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.notes {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+
+.notes strong { color: var(--text); }
+
+.pref {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid #b3e5c4;
+  background: #eefaf1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1f5f2b;
+}
+
+@media (max-width: 980px) {
+  .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="kicker">Draino Brand Reset</div>
+      <div class="title">Flushing Cloud Infrastructure Since 2026</div>
+      <div class="sub">
+        Three stricter directions: one minimal can, one badge-style label, and one wordmark-first option.
+        Each concept is intentionally reduced so it can survive in a top bar instead of reading like tiny poster art.
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="card-head"><div class="card-title">Concept A · Minimal Can</div></div>
+          <div class="card-body">
+            <div class="brand-lockup">
+              <div class="mark" aria-hidden="true">
+                <svg viewBox="0 0 76 92">
+                  <rect x="9" y="17" width="58" height="58" rx="6" fill="#f5c935"/>
+                  <rect x="13" y="21" width="50" height="11" rx="2" fill="#c62828"/>
+                  <rect x="13" y="35" width="50" height="28" rx="2" fill="#f9fbfd"/>
+                  <path d="M20 49h22c7 0 12 5 12 10s-5 10-12 10H20z" fill="#0072c6"/>
+                  <text x="38" y="29" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">DRAINO</text>
+                </svg>
+              </div>
+              <div class="wordmark">
+                <h2>Draino</h2>
+                <p>Flushing Cloud Infrastructure Since 2026</p>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>Best if you want the can joke to stay obvious.</strong> One can silhouette, one red band, one blue drain shape.
+              No workload dots, no tiny packaging details.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">Concept B · Badge Label</div></div>
+          <div class="card-body">
+            <div class="brand-lockup">
+              <div class="mark" aria-hidden="true">
+                <svg viewBox="0 0 76 92">
+                  <rect x="9" y="17" width="58" height="58" rx="6" fill="#f3c52f"/>
+                  <rect x="13" y="21" width="50" height="9" rx="2" fill="#b92323"/>
+                  <rect x="17" y="35" width="42" height="24" rx="12" fill="#ffffff"/>
+                  <path d="M24 47h17c6 0 10 4 10 8s-4 8-10 8H24z" fill="#0072c6"/>
+                  <text x="38" y="28" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">DRAINO</text>
+                </svg>
+              </div>
+              <div class="wordmark">
+                <h2>Draino</h2>
+                <p>Flushing Cloud Infrastructure Since 2026</p>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>Cleanest icon of the three.</strong> The white label badge gives the mark a stronger focal point and keeps
+              the parody feel without turning into a fake store product render.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">Concept C · Wordmark First</div></div>
+          <div class="card-body">
+            <div class="brand-lockup">
+              <div class="mark" aria-hidden="true">
+                <svg viewBox="0 0 76 92">
+                  <rect x="12" y="19" width="52" height="54" rx="7" fill="#f4c432"/>
+                  <rect x="16" y="23" width="44" height="8" rx="2" fill="#c62828"/>
+                  <rect x="16" y="35" width="44" height="20" rx="2" fill="#f9fbfd"/>
+                  <text x="38" y="48" text-anchor="middle" font-size="16" font-weight="800" fill="#0072c6">D</text>
+                  <path d="M20 61h36" stroke="#1a2332" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="wordmark">
+                <h2>Draino</h2>
+                <p>Flushing Cloud Infrastructure Since 2026</p>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>Safest for the product UI.</strong> The icon is mostly a branded can silhouette, while the wordmark carries
+              the identity. This is the most likely to age well in the app chrome.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pref">
+        Recommended direction: <strong>Concept B · Badge Label</strong>. It has the strongest silhouette and the least visual noise,
+        while still clearly reading as a Draino-style container instead of a generic square app icon.
+      </div>
+    </div>
+  </div>
+</body>
+</html>

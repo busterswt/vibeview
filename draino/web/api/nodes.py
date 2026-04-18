@@ -108,6 +108,7 @@ async def api_node_detail(node_name: str, request: Request):
         )
 
         nova: dict = {}
+        placement: dict = {}
         api_issue = None
         if state and state.is_compute and server.openstack_auth is not None:
             try:
@@ -115,10 +116,14 @@ async def api_node_detail(node_name: str, request: Request):
             except Exception as exc:
                 api_issue = build_api_issue("Nova", f"GET /os-hypervisors/{state.hypervisor}", exc)
                 nova = {}
+            try:
+                placement = await loop.run_in_executor(None, openstack_ops.get_hypervisor_placement_detail, state.hypervisor, server.openstack_auth)
+            except Exception:
+                placement = {}
 
         k8s = await k8s_future
         hw = await hw_future
-        payload = {"k8s": k8s, "nova": nova, "hw": hw, "error": None, "api_issue": api_issue}
+        payload = {"k8s": k8s, "nova": nova, "placement": placement, "hw": hw, "error": None, "api_issue": api_issue}
         server.set_cached_node_detail(node_name, payload)
         return payload
 

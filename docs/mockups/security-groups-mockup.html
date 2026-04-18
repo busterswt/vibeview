@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — OpenStack Security Groups</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue: #0072c6;
+  --blue-lt: #1e88e5;
+  --blue-bg: #e3f2fd;
+  --header: #1a2332;
+  --sidebar: #f4f6f8;
+  --border: #d1d9e0;
+  --sel: #bbdefb;
+  --hover: #e8f4fd;
+  --text: #1a2332;
+  --dim: #607d8b;
+  --white: #ffffff;
+  --gray-bg: #f0f2f5;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --yellow: #f57f17;
+  --yellow-bg: #fff8e1;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --orange: #e65100;
+  --orange-bg: #fff3e0;
+  --cyan: #00838f;
+  --cyan-bg: #e0f7fa;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--gray-bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#top-bar {
+  background: var(--header);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--blue);
+  flex-shrink: 0;
+}
+
+.logo { display: flex; align-items: baseline; gap: 10px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 2px; margin-left: 28px; }
+.top-nav a {
+  color: #b0bec5;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.top-nav a.active { color: white; }
+.top-nav a:hover { color: white; background: rgba(255,255,255,0.08); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.top-search {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  width: 210px;
+}
+.top-search::placeholder { color: #78909c; }
+.mock-pill {
+  background: #ff6f00;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+#breadcrumb-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.bc-link { color: var(--blue); }
+.bc-sep { color: #b0bec5; }
+.bc-cur { color: var(--text); font-weight: 500; }
+.bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+.btn {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+.btn.warning { background: #e65100; color: white; border-color: #ef6c00; }
+
+#body { display: flex; flex: 1; overflow: hidden; }
+
+#networking-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-head {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.networking-section-label {
+  padding: 12px 14px 6px;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.networking-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: default;
+  border-radius: 3px;
+  margin: 1px 6px;
+}
+.networking-nav-item:hover { background: var(--hover); }
+.networking-nav-item.selected { background: var(--blue); color: #fff; }
+.networking-nav-item.selected .tree-badge { background: rgba(255,255,255,0.2); color: #fff; }
+.tree-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #dde7ef;
+  color: var(--dim);
+}
+.tree-badge.warn { background: var(--orange-bg); color: var(--orange); }
+.tree-badge.err { background: var(--red-bg); color: var(--red); }
+
+#networking-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.workspace-card {
+  background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px;
+  padding: 18px 18px 16px;
+  margin-bottom: 14px;
+}
+
+.workspace-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--blue);
+}
+
+.workspace-title {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.workspace-subtitle {
+  margin-top: 8px;
+  color: var(--dim);
+  max-width: 980px;
+  line-height: 1.5;
+}
+
+.workspace-meta {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pill.blue { background: var(--blue-bg); color: var(--blue); }
+.pill.red { background: var(--red-bg); color: var(--red); }
+.pill.orange { background: var(--orange-bg); color: var(--orange); }
+.pill.green { background: var(--green-bg); color: var(--green); }
+
+.audit-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.audit-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.audit-text {
+  flex: 1;
+  font-size: 12px;
+  color: #6d4c41;
+  line-height: 1.4;
+}
+
+.audit-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+.metric-value.red { color: var(--red); }
+.metric-value.orange { color: var(--orange); }
+.metric-value.green { color: var(--green); }
+.metric-value.cyan { color: var(--cyan); }
+.metric-label {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.panel-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(620px, 1fr) 420px;
+  gap: 14px;
+  min-height: 780px;
+}
+
+.panel {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.panel-title {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.project-toolbar,
+.table-toolbar {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--gray-bg);
+  border-radius: 4px;
+  padding: 7px 9px;
+  font: inherit;
+}
+
+.scope-list {
+  max-height: 730px;
+  overflow: auto;
+}
+
+.scope-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f6;
+}
+.scope-item.active { background: var(--sel); }
+.scope-item:hover { background: var(--hover); }
+
+.risk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.risk-dot.red { background: var(--red); }
+.risk-dot.orange { background: var(--orange); }
+.risk-dot.green { background: var(--green); }
+
+.scope-body { min-width: 0; flex: 1; }
+.scope-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scope-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.mini-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.mini-badge.red { background: var(--red-bg); color: var(--red); }
+.mini-badge.orange { background: var(--orange-bg); color: var(--orange); }
+.mini-badge.cyan { background: var(--cyan-bg); color: var(--cyan); }
+
+.chip {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--white);
+  color: var(--dim);
+}
+.chip.on {
+  background: var(--red-bg);
+  border-color: #ef9a9a;
+  color: var(--red);
+  font-weight: 700;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: 740px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+tbody tr { border-bottom: 1px solid #eef2f6; }
+tbody tr:hover { background: var(--hover); }
+tbody tr.selected { background: var(--sel); }
+tbody tr.audit-hidden { display: none; }
+td { padding: 9px 10px; vertical-align: top; }
+
+.sg-name {
+  font-weight: 700;
+  color: var(--text);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sg-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.project-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.status-tag.red { background: var(--red-bg); color: var(--red); }
+.status-tag.orange { background: var(--orange-bg); color: var(--orange); }
+.status-tag.green { background: var(--green-bg); color: var(--green); }
+.status-tag.cyan { background: var(--cyan-bg); color: var(--cyan); }
+
+.flag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.flag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.flag-pill.red { background: var(--red-bg); color: var(--red); }
+.flag-pill.orange { background: var(--orange-bg); color: var(--orange); }
+.flag-pill.cyan { background: var(--cyan-bg); color: var(--cyan); }
+
+.small-note { color: var(--dim); font-size: 11px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--dim); }
+
+.drawer-head {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-subtitle {
+  margin-top: 8px;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+.drawer-meta {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-tab {
+  padding: 9px 14px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 2px solid transparent;
+}
+.drawer-tab.active {
+  color: var(--blue);
+  font-weight: 700;
+  border-bottom-color: var(--blue);
+}
+
+.drawer-body {
+  padding: 14px;
+  overflow: auto;
+  max-height: 760px;
+}
+
+.section-head {
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+.section-head + .section-head { margin-top: 14px; }
+
+.rule-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.rule-card.flagged { border-color: #ef9a9a; background: #fffafb; }
+.rule-card.warning { border-color: #ffcc80; background: #fffdf9; }
+
+.rule-head {
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.02);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.rule-card.flagged .rule-head { background: #ffebee; border-bottom-color: #ef9a9a; }
+.rule-card.warning .rule-head { background: #fff3e0; border-bottom-color: #ffcc80; }
+
+.dir {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+.dir.ingress { background: #e3f2fd; color: #0d47a1; }
+.dir.egress { background: #ede7f6; color: #4527a0; }
+
+.rule-proto {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rule-flag {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.rule-flag.red { background: var(--red-bg); color: var(--red); }
+.rule-flag.orange { background: var(--orange-bg); color: var(--orange); }
+.rule-flag.cyan { background: var(--cyan-bg); color: var(--cyan); }
+
+.rule-body {
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+.label { color: var(--dim); font-size: 11px; }
+.value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+.value.red { color: var(--red); }
+.value.orange { color: var(--orange); }
+
+.rule-note {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+.audit-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.audit-card.warn {
+  border-color: #ffcc80;
+  background: #fffdf8;
+}
+
+.audit-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.audit-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.audit-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+  background: var(--orange);
+}
+
+@media (max-width: 1500px) {
+  .panel-shell { grid-template-columns: 220px minmax(520px, 1fr) 360px; }
+}
+</style>
+</head>
+<body>
+<div id="top-bar">
+  <div class="logo">
+    <div>VibeView</div>
+    <div class="logo-sub">Vibing Cloud Infrastructure Since Last Week</div>
+  </div>
+  <nav class="top-nav">
+    <a href="#">Infrastructure</a>
+    <a href="#">Monitor</a>
+    <a href="#">Kubernetes</a>
+    <a href="#" class="active">Networking</a>
+    <a href="#">Storage</a>
+    <a href="#">Stress</a>
+    <a href="#">Reports</a>
+  </nav>
+  <div class="top-right">
+    <input class="top-search" placeholder="Search nodes, instances…">
+    <span class="mock-pill">MOCKUP</span>
+  </div>
+</div>
+
+<div id="breadcrumb-bar">
+  <span class="bc-link">Networking</span>
+  <span class="bc-sep">›</span>
+  <span class="bc-link">OpenStack</span>
+  <span class="bc-sep">›</span>
+  <span class="bc-cur">Security Groups</span>
+  <div class="bc-actions">
+    <button class="btn">⟳ Refresh</button>
+    <button class="btn warning" id="auditButton" onclick="toggleAudit()">⚑ Audit Mode</button>
+    <button class="btn">CSV</button>
+  </div>
+</div>
+
+<div id="body">
+  <div id="networking-sidebar">
+    <div class="sidebar-head">Navigator — Networking</div>
+    <div class="networking-section-label">OpenStack</div>
+    <div class="networking-nav-item">
+      <span>🌐</span> Networks
+      <span class="tree-badge">142</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>🛣️</span> Routers
+      <span class="tree-badge">28</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>⚖️</span> Load Balancers
+      <span class="tree-badge">19</span>
+    </div>
+    <div class="networking-nav-item selected">
+      <span>🛡️</span> Security Groups
+      <span class="tree-badge err">9 flagged</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>🌍</span> Floating IPs
+      <span class="tree-badge warn">17 free</span>
+    </div>
+
+    <div class="networking-section-label">Kubernetes</div>
+    <div class="networking-nav-item">
+      <span>🧩</span> VPCs
+      <span class="tree-badge">12</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>📐</span> Subnets
+      <span class="tree-badge">41</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>🔗</span> Services &amp; VIPs
+      <span class="tree-badge">78</span>
+    </div>
+    <div class="networking-nav-item">
+      <span>⚡</span> LoadBalancers
+      <span class="tree-badge">14</span>
+    </div>
+  </div>
+
+  <div id="networking-content">
+    <div class="workspace-card">
+      <div class="workspace-kicker">OpenStack Networking</div>
+      <div class="workspace-title">Security Groups</div>
+      <div class="workspace-subtitle">
+        Security groups are project-scoped, so the operator flow starts with project risk and then drops into a sortable group table.
+        Audit Mode collapses the view to the groups most likely to be wrong: open-world ingress, any:any exposure, stale groups with no attachments, and rules that drift from expected patterns.
+      </div>
+      <div class="workspace-meta">
+        <span class="pill blue">31 groups across 8 visible projects</span>
+        <span class="pill red">3 critical open-world groups</span>
+        <span class="pill orange">6 high-risk groups</span>
+        <span class="pill green">22 groups with no current findings</span>
+      </div>
+    </div>
+
+    <div class="audit-banner">
+      <div class="audit-icon">!</div>
+      <div class="audit-text" id="auditText">
+        <strong>Audit summary:</strong> 9 groups have risky ingress from <span class="mono">0.0.0.0/0</span> or <span class="mono">::/0</span>. Three are critical because they expose any protocol and any port. Two additional groups appear unused and can likely be reviewed for cleanup.
+      </div>
+      <button class="btn warning" onclick="toggleAudit()">Show Flagged Only</button>
+    </div>
+
+    <div class="audit-grid">
+      <div class="metric-card">
+        <div class="metric-value">31</div>
+        <div class="metric-label">Total Groups</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value red">3</div>
+        <div class="metric-label">Critical Open World</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value orange">6</div>
+        <div class="metric-label">High Risk</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value cyan">2</div>
+        <div class="metric-label">Unused Groups</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">187</div>
+        <div class="metric-label">Rules</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value green">84</div>
+        <div class="metric-label">Attached Instances</div>
+      </div>
+    </div>
+
+    <div class="panel-shell">
+      <div class="panel">
+        <div class="panel-title">Project Scope</div>
+        <div class="project-toolbar">
+          <input class="search" placeholder="Filter projects…">
+        </div>
+        <div class="scope-list">
+          <div class="scope-item active">
+            <div class="risk-dot red"></div>
+            <div class="scope-body">
+              <div class="scope-name">All Projects</div>
+              <div class="scope-sub">31 groups · 9 flagged · 84 attached instances</div>
+            </div>
+            <div class="mini-badge red">3 critical</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot red"></div>
+            <div class="scope-body">
+              <div class="scope-name">production</div>
+              <div class="scope-sub">8 groups · 3 flagged · 29 attached instances</div>
+            </div>
+            <div class="mini-badge red">2 critical</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot orange"></div>
+            <div class="scope-body">
+              <div class="scope-name">staging</div>
+              <div class="scope-sub">6 groups · 2 flagged · 33 attached instances</div>
+            </div>
+            <div class="mini-badge orange">1 critical</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot orange"></div>
+            <div class="scope-body">
+              <div class="scope-name">dev-team-alpha</div>
+              <div class="scope-sub">5 groups · 2 flagged · 6 attached instances</div>
+            </div>
+            <div class="mini-badge orange">legacy exposure</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot green"></div>
+            <div class="scope-body">
+              <div class="scope-name">infra-services</div>
+              <div class="scope-sub">4 groups · 1 flagged · 7 attached instances</div>
+            </div>
+            <div class="mini-badge cyan">1 unused</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot orange"></div>
+            <div class="scope-body">
+              <div class="scope-name">monitoring</div>
+              <div class="scope-sub">3 groups · 1 flagged · 4 attached instances</div>
+            </div>
+            <div class="mini-badge orange">public scrape</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot orange"></div>
+            <div class="scope-body">
+              <div class="scope-name">ml-workloads</div>
+              <div class="scope-sub">3 groups · 1 flagged · 9 attached instances</div>
+            </div>
+            <div class="mini-badge orange">notebook ports</div>
+          </div>
+          <div class="scope-item">
+            <div class="risk-dot green"></div>
+            <div class="scope-body">
+              <div class="scope-name">data-pipeline</div>
+              <div class="scope-sub">2 groups · 0 flagged · 0 attached instances</div>
+            </div>
+            <div class="mini-badge cyan">2 unused</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Groups In Scope</div>
+        <div class="table-toolbar">
+          <input class="search" style="width:240px" placeholder="Filter by group, rule, CIDR, project…">
+          <span class="chip on">Flagged Only</span>
+          <span class="chip">Open World</span>
+          <span class="chip">Any:Any</span>
+          <span class="chip">Unused</span>
+          <span class="chip">Default Groups</span>
+          <span class="small-note">Sort by severity, project, attachments, last change, or flagged rules.</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Security Group</th>
+                <th>Project</th>
+                <th>Risk</th>
+                <th>Flagged Rules</th>
+                <th>Attachments</th>
+                <th>Signal</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="groupRows">
+              <tr class="selected" data-flagged="true">
+                <td>
+                  <div class="sg-name">allow-all-ingress</div>
+                  <div class="sg-meta mono">a1b2c3d4-e5f6-7890-abcd-ef1234567890</div>
+                </td>
+                <td><span class="project-tag">production</span></td>
+                <td><span class="status-tag red">Critical</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill red">any:any 0.0.0.0/0</span>
+                    <span class="flag-pill red">any:any ::/0</span>
+                  </div>
+                </td>
+                <td>12 instances</td>
+                <td><span class="status-tag red">internet exposed</span></td>
+                <td>18m ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">legacy-open-sg</div>
+                  <div class="sg-meta mono">b2c3d4e5-f6a7-8901-bcde-f23456789012</div>
+                </td>
+                <td><span class="project-tag">dev-team-alpha</span></td>
+                <td><span class="status-tag red">Critical</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill red">any:any 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>3 instances</td>
+                <td><span class="status-tag red">legacy rule</span></td>
+                <td>3d ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">default</div>
+                  <div class="sg-meta mono">c3d4e5f6-a7b8-9012-cdef-345678901234</div>
+                </td>
+                <td><span class="project-tag">staging</span></td>
+                <td><span class="status-tag red">Critical</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill red">any:any 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>28 instances</td>
+                <td><span class="status-tag red">default SG blast radius</span></td>
+                <td>7h ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">web-frontend</div>
+                  <div class="sg-meta mono">d4e5f6a7-b8c9-0123-def4-456789012345</div>
+                </td>
+                <td><span class="project-tag">production</span></td>
+                <td><span class="status-tag orange">High</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill orange">tcp:22 0.0.0.0/0</span>
+                    <span class="flag-pill orange">tcp:3389 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>6 instances</td>
+                <td><span class="status-tag orange">admin ports public</span></td>
+                <td>46m ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">jump-host-sg</div>
+                  <div class="sg-meta mono">e5f6a7b8-c9d0-1234-ef56-567890123456</div>
+                </td>
+                <td><span class="project-tag">infra-services</span></td>
+                <td><span class="status-tag orange">High</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill orange">tcp:22 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>2 instances</td>
+                <td><span class="status-tag orange">review source CIDR</span></td>
+                <td>1d ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">ml-training-nodes</div>
+                  <div class="sg-meta mono">f6a7b8c9-d0e1-2345-f678-678901234567</div>
+                </td>
+                <td><span class="project-tag">ml-workloads</span></td>
+                <td><span class="status-tag orange">High</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill orange">tcp:8888 0.0.0.0/0</span>
+                    <span class="flag-pill orange">tcp:6006 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>9 instances</td>
+                <td><span class="status-tag orange">notebook exposure</span></td>
+                <td>2h ago</td>
+              </tr>
+              <tr data-flagged="true">
+                <td>
+                  <div class="sg-name">prometheus-scrape</div>
+                  <div class="sg-meta mono">a7b8c9d0-e1f2-3456-7890-789012345678</div>
+                </td>
+                <td><span class="project-tag">monitoring</span></td>
+                <td><span class="status-tag orange">High</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill orange">tcp:9090 0.0.0.0/0</span>
+                  </div>
+                </td>
+                <td>4 instances</td>
+                <td><span class="status-tag orange">scrape endpoint public</span></td>
+                <td>4h ago</td>
+              </tr>
+              <tr data-flagged="false">
+                <td>
+                  <div class="sg-name">db-internal</div>
+                  <div class="sg-meta mono">b8c9d0e1-f2a3-4567-8901-890123456789</div>
+                </td>
+                <td><span class="project-tag">production</span></td>
+                <td><span class="status-tag green">Clean</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill cyan">remote group only</span>
+                  </div>
+                </td>
+                <td>5 instances</td>
+                <td><span class="status-tag green">expected baseline</span></td>
+                <td>5d ago</td>
+              </tr>
+              <tr data-flagged="false">
+                <td>
+                  <div class="sg-name">data-pipeline-unused</div>
+                  <div class="sg-meta mono">c9d0e1f2-a3b4-5678-9012-901234567890</div>
+                </td>
+                <td><span class="project-tag">data-pipeline</span></td>
+                <td><span class="status-tag cyan">Review</span></td>
+                <td>
+                  <div class="flag-list">
+                    <span class="flag-pill cyan">0 attachments</span>
+                  </div>
+                </td>
+                <td>0 instances</td>
+                <td><span class="status-tag cyan">cleanup candidate</span></td>
+                <td>21d ago</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="drawer-head">
+          <div class="drawer-title-row">
+            <div class="drawer-title">allow-all-ingress</div>
+            <span class="status-tag red">Critical</span>
+          </div>
+          <div class="drawer-subtitle">
+            This group is attached to 12 instances in <strong>production</strong>. Audit scoring is high because it exposes unrestricted ingress for both IPv4 and IPv6.
+          </div>
+          <div class="drawer-meta">
+            <span class="project-tag">production</span>
+            <span class="mini-badge red">2 flagged rules</span>
+            <span class="mono">a1b2c3d4-e5f6-7890-abcd-ef1234567890</span>
+          </div>
+        </div>
+
+        <div class="drawer-tabs">
+          <div class="drawer-tab active">Rules (4)</div>
+          <div class="drawer-tab">Members (12)</div>
+          <div class="drawer-tab">Audit Notes</div>
+        </div>
+
+        <div class="drawer-body">
+          <div class="section-head">Flagged Rules</div>
+
+          <div class="rule-card flagged">
+            <div class="rule-head">
+              <span class="dir ingress">Ingress</span>
+              <span class="rule-proto">any / any</span>
+              <span class="rule-flag red">Critical: open world</span>
+            </div>
+            <div class="rule-body">
+              <span class="label">Remote CIDR</span>
+              <span class="value red">0.0.0.0/0</span>
+              <span class="label">Protocol</span>
+              <span class="value red">any</span>
+              <span class="label">Port Range</span>
+              <span class="value red">any</span>
+              <span class="label">Ethertype</span>
+              <span class="value">IPv4</span>
+              <div class="rule-note">
+                Any source can reach any port on every instance that carries this group. In audit mode this is the top severity because it defeats almost all intended perimeter filtering.
+              </div>
+            </div>
+          </div>
+
+          <div class="rule-card flagged">
+            <div class="rule-head">
+              <span class="dir ingress">Ingress</span>
+              <span class="rule-proto">any / any</span>
+              <span class="rule-flag red">Critical: open world</span>
+            </div>
+            <div class="rule-body">
+              <span class="label">Remote CIDR</span>
+              <span class="value red">::/0</span>
+              <span class="label">Protocol</span>
+              <span class="value red">any</span>
+              <span class="label">Port Range</span>
+              <span class="value red">any</span>
+              <span class="label">Ethertype</span>
+              <span class="value">IPv6</span>
+              <div class="rule-note">
+                Same exposure pattern on IPv6. The mockup keeps IPv4 and IPv6 visible as separate findings so the operator can see incomplete remediations.
+              </div>
+            </div>
+          </div>
+
+          <div class="section-head">Other Rules</div>
+
+          <div class="rule-card">
+            <div class="rule-head">
+              <span class="dir egress">Egress</span>
+              <span class="rule-proto">tcp / 443</span>
+            </div>
+            <div class="rule-body">
+              <span class="label">Remote CIDR</span>
+              <span class="value">0.0.0.0/0</span>
+              <span class="label">Protocol</span>
+              <span class="value">tcp</span>
+              <span class="label">Port Range</span>
+              <span class="value">443</span>
+              <span class="label">Ethertype</span>
+              <span class="value">IPv4</span>
+            </div>
+          </div>
+
+          <div class="rule-card">
+            <div class="rule-head">
+              <span class="dir egress">Egress</span>
+              <span class="rule-proto">udp / 53</span>
+            </div>
+            <div class="rule-body">
+              <span class="label">Remote CIDR</span>
+              <span class="value">10.30.0.0/16</span>
+              <span class="label">Protocol</span>
+              <span class="value">udp</span>
+              <span class="label">Port Range</span>
+              <span class="value">53</span>
+              <span class="label">Ethertype</span>
+              <span class="value">IPv4</span>
+            </div>
+          </div>
+
+          <div class="section-head">Audit Notes</div>
+
+          <div class="audit-card warn">
+            <strong>Why this surfaces first</strong>
+            <div class="audit-list">
+              <div class="audit-item">
+                <span class="audit-item-dot"></span>
+                <span>Project-level scope is visible immediately, so the operator can tell whether this is isolated or part of a broader project hygiene issue.</span>
+              </div>
+              <div class="audit-item">
+                <span class="audit-item-dot"></span>
+                <span>Flagged rules are summarized directly in the table. The operator does not need to open every group to find <span class="mono">any:any 0.0.0.0/0</span>.</span>
+              </div>
+              <div class="audit-item">
+                <span class="audit-item-dot"></span>
+                <span>The detail drawer preserves the raw rule fields so remediation decisions can be made without switching to Horizon or the CLI.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let auditEnabled = true;
+
+function toggleAudit() {
+  auditEnabled = !auditEnabled;
+  const rows = document.querySelectorAll('#groupRows tr');
+  const button = document.getElementById('auditButton');
+  const text = document.getElementById('auditText');
+
+  rows.forEach((row) => {
+    const flagged = row.dataset.flagged === 'true';
+    row.classList.toggle('audit-hidden', auditEnabled && !flagged);
+  });
+
+  if (auditEnabled) {
+    button.textContent = '⚑ Audit Mode';
+    text.innerHTML = '<strong>Audit summary:</strong> 9 groups have risky ingress from <span class="mono">0.0.0.0/0</span> or <span class="mono">::/0</span>. Three are critical because they expose any protocol and any port. Two additional groups appear unused and can likely be reviewed for cleanup.';
+  } else {
+    button.textContent = '⚑ All Groups';
+    text.innerHTML = '<strong>Inventory view:</strong> Audit filtering is disabled, so clean and review-only groups are back in scope. This is useful when the operator wants to compare risky groups to the baseline patterns used elsewhere in the same projects.';
+  }
+}
+</script>
+</body>
+</html>

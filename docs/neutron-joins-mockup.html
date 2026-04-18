@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeView Neutron Joins Mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #0072c6;
+      --blue-lt: #1e88e5;
+      --blue-bg: #e3f2fd;
+      --header: #1a2332;
+      --sidebar: #f4f6f8;
+      --border: #d1d9e0;
+      --sel: #bbdefb;
+      --hover: #e8f4fd;
+      --text: #1a2332;
+      --dim: #607d8b;
+      --white: #ffffff;
+      --gray-bg: #f0f2f5;
+      --green: #2e7d32;
+      --green-lt: #4caf50;
+      --yellow: #f57f17;
+      --yellow-lt: #ffc107;
+      --red: #c62828;
+      --red-lt: #ef5350;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--gray-bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #top-bar {
+      background: var(--header);
+      height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 2px solid var(--blue);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .logo-sub {
+      font-size: 11px;
+      font-weight: 400;
+      color: #90a4ae;
+    }
+
+    .top-nav {
+      display: flex;
+      gap: 2px;
+      margin-left: 28px;
+    }
+
+    .top-nav a {
+      color: #b0bec5;
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: default;
+    }
+
+    .top-nav a.active {
+      color: white;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .top-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: #90a4ae;
+      font-size: 12px;
+    }
+
+    .top-search {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      width: 220px;
+      outline: none;
+    }
+
+    .top-search::placeholder { color: #78909c; }
+
+    #breadcrumb-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .bc-link { color: var(--blue); }
+    .bc-sep { color: #b0bec5; }
+    .bc-cur { color: var(--text); font-weight: 500; }
+    .bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+    .btn {
+      padding: 4px 11px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      border-radius: 3px;
+      font-size: 12px;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn.primary {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    #body { display: flex; flex: 1; overflow: hidden; }
+    .view { display: flex; flex: 1; overflow: hidden; }
+
+    #sidebar {
+      width: 340px;
+      min-width: 340px;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-head {
+      padding: 12px 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--dim);
+      position: sticky;
+      top: 0;
+    }
+
+    .networking-section-label {
+      padding: 12px 14px 6px;
+      color: var(--dim);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .networking-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      cursor: default;
+      border-radius: 3px;
+      margin: 1px 6px;
+    }
+
+    .networking-nav-item.selected {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .networking-nav-item .tree-badge { margin-left: auto; }
+
+    #content {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #obj-header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px 14px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+
+    .obj-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      background: var(--blue-bg);
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .obj-meta h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .obj-sub {
+      color: var(--dim);
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .obj-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .badge,
+    .tree-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      line-height: 1.6;
+    }
+
+    .badge.blue, .tree-badge { background: var(--blue-bg); color: var(--blue); }
+    .badge.green { background: #e8f5e9; color: var(--green); }
+    .badge.yellow { background: #fff8e1; color: #8d6e00; }
+    .badge.red { background: #ffebee; color: var(--red); }
+    .tree-badge.agg { background: #ede7f6; color: #6a1b9a; }
+
+    #tabs-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .tab {
+      padding: 10px 12px;
+      font-size: 12px;
+      cursor: default;
+      color: var(--dim);
+      border-bottom: 2px solid transparent;
+    }
+
+    .tab.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+      font-weight: 700;
+    }
+
+    #tab-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .main-pane {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    #detail-wrap {
+      width: 520px;
+      border-left: 1px solid var(--border);
+      background: var(--white);
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      color: var(--dim);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin: 0 0 10px;
+    }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .card-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: #fafbfd;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-body {
+      padding: 12px;
+    }
+
+    .mrow {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 6px 0;
+      border-bottom: 1px solid #eef2f5;
+    }
+
+    .mrow:last-child { border-bottom: 0; }
+    .ml { color: var(--dim); }
+    .mv { text-align: right; font-weight: 500; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e6edf2;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .data-table th {
+      background: #fafbfd;
+      color: var(--dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .data-table tr.selected td { background: #f4f9fe; }
+
+    .path-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .path-item {
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue);
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: #fbfdff;
+    }
+
+    .path-item.warn { border-left-color: var(--yellow); }
+    .path-item.fail { border-left-color: var(--red); }
+
+    .path-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+
+    .path-head strong { font-size: 13px; }
+
+    .path-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 16px;
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    .finding {
+      display: flex;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      background: #fafbfd;
+    }
+
+    .finding:last-child { margin-bottom: 0; }
+    .finding.good { background: #f1f8f2; border-color: #d6e9d8; }
+    .finding.warn { background: #fff9ec; border-color: #f0e0b7; }
+    .finding.bad { background: #fff1f1; border-color: #efcccc; }
+
+    .finding-mark {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .finding.good .finding-mark { background: #dcedc8; color: var(--green); }
+    .finding.warn .finding-mark { background: #fff3cd; color: #8d6e00; }
+    .finding.bad .finding-mark { background: #ffcdd2; color: var(--red); }
+
+    .finding strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .hint {
+      color: var(--dim);
+      font-size: 11px;
+    }
+
+    .code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .detail-pane {
+      padding: 16px;
+    }
+
+    @media (max-width: 1200px) {
+      #sidebar { display: none; }
+      .summary-grid { grid-template-columns: 1fr; }
+      #detail-wrap { width: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Vibing Cloud Infrastructure Since Last Week</div>
+      </div>
+    </div>
+    <nav class="top-nav">
+      <a>Infrastructure</a>
+      <a>Monitor</a>
+      <a>Kubernetes</a>
+      <a class="active">Networking</a>
+      <a>Storage</a>
+      <a>Reports</a>
+    </nav>
+    <div class="top-right">
+      <input class="top-search" type="text" placeholder="🔍  Search networks, routers, ports…">
+      <span>14:37:09</span>
+      <span>mockup session</span>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Networking</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-link">Instances</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">api-01</span>
+    <div class="bc-actions">
+      <button class="btn">⟳ Refresh Detail</button>
+      <button class="btn primary">Open in Nova</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <div class="view">
+      <div id="sidebar">
+        <div class="sidebar-head">Navigator — Networking</div>
+
+        <div class="networking-section-label">Neutron Joins</div>
+        <div class="networking-nav-item selected">
+          <span>🖥️</span> Instance: api-01
+          <span class="tree-badge">ACTIVE</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>🧩</span> Port: 7d3c…
+          <span class="tree-badge">bound</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>🌐</span> Network: prod-api
+          <span class="tree-badge">18 ports</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>🛣️</span> Router: tenant-edge-2
+          <span class="tree-badge">11 fips</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>⚖️</span> LB: public-api
+          <span class="tree-badge">degraded</span>
+        </div>
+
+        <div class="networking-section-label">Operator Questions</div>
+        <div class="networking-nav-item">
+          <span>?</span> What is this attached to?
+        </div>
+        <div class="networking-nav-item">
+          <span>?</span> Where does traffic go?
+        </div>
+        <div class="networking-nav-item">
+          <span>?</span> What is broken?
+        </div>
+      </div>
+
+      <div id="content">
+        <div id="obj-header">
+          <div class="obj-icon">🖥️</div>
+          <div class="obj-meta">
+            <h2>api-01</h2>
+            <div class="obj-sub">Joined Neutron path for a Nova instance: port binding, tenant network, router, floating IP, and likely breakpoints.</div>
+            <div class="obj-badges">
+              <span class="badge green">● ACTIVE</span>
+              <span class="badge blue">Host cmp-12</span>
+              <span class="badge blue">Project prod-admin</span>
+              <span class="badge blue">AZ nova</span>
+              <span class="badge yellow">Security policy requires review</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="tabs-bar">
+          <div class="tab active">Network Path</div>
+          <div class="tab">Troubleshooting</div>
+          <div class="tab">OVN / Binding</div>
+          <div class="tab">Consumers</div>
+          <div class="tab">Reachability</div>
+        </div>
+
+        <div id="tab-body">
+          <div class="main-pane">
+            <div class="summary-grid">
+              <div class="card">
+                <div class="card-title">Instance Overview</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Flavor</span><span class="mv">m1.large</span></div>
+                  <div class="mrow"><span class="ml">Image</span><span class="mv">ubuntu-24.04</span></div>
+                  <div class="mrow"><span class="ml">Power</span><span class="mv">Running</span></div>
+                  <div class="mrow"><span class="ml">Compute host</span><span class="mv">cmp-12</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Operator Summary</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">North-south path</span><span class="mv">Present</span></div>
+                  <div class="mrow"><span class="ml">Port binding</span><span class="mv">Matches host</span></div>
+                  <div class="mrow"><span class="ml">Floating IP</span><span class="mv">203.0.113.42</span></div>
+                  <div class="mrow"><span class="ml">Likely next check</span><span class="mv">Security group / guest firewall</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Network Path</span>
+                <span class="hint">Start from the selected consumer and walk outward</span>
+              </div>
+              <div class="card-body">
+                <div class="path-list">
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>1. Nova Instance</strong>
+                      <span class="badge blue">consumer</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Name: <strong>api-01</strong></div>
+                      <div>Status: <strong>ACTIVE</strong></div>
+                      <div>Host: <strong>cmp-12</strong></div>
+                      <div>Project: <strong>prod-admin</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>2. Neutron Port 7d3c…</strong>
+                      <span class="badge green">ACTIVE</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>MAC: <strong class="code">fa:16:3e:12:34:56</strong></div>
+                      <div>Fixed IP: <strong>10.14.8.23</strong></div>
+                      <div>Binding host: <strong>cmp-12</strong></div>
+                      <div>VIF type: <strong>ovs</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>3. Tenant Network prod-api</strong>
+                      <span class="badge blue">routed</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Subnet: <strong>10.14.8.0/24</strong></div>
+                      <div>Gateway: <strong>10.14.8.1</strong></div>
+                      <div>MTU: <strong>1500</strong></div>
+                      <div>DHCP: <strong>enabled</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>4. Router tenant-edge-2</strong>
+                      <span class="badge green">external gateway set</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>External network: <strong>public</strong></div>
+                      <div>SNAT: <strong>enabled</strong></div>
+                      <div>Attached networks: <strong>3</strong></div>
+                      <div>Floating IPs: <strong>11</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>5. Floating IP 203.0.113.42</strong>
+                      <span class="badge green">associated</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Mapped to port: <strong>7d3c…</strong></div>
+                      <div>Exposure: <strong>external</strong></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Troubleshooting Findings</span>
+                <span class="hint">Plain-English conclusions</span>
+              </div>
+              <div class="card-body">
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>Port binding looks correct</strong>
+                    The Neutron binding host matches the Nova compute host, which usually rules out a stale bind after migration or reboot.
+                  </div>
+                </div>
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>External routing path exists</strong>
+                    The port lives on a subnet attached to a router with an external gateway, and the floating IP is associated.
+                  </div>
+                </div>
+                <div class="finding warn">
+                  <div class="finding-mark">!</div>
+                  <div>
+                    <strong>Likely remaining fault domain is above raw Neutron plumbing</strong>
+                    If the instance is still unreachable, the next checks should be security groups, guest firewall, service listener, or upstream load balancer health.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Related Consumers on This Path</span>
+                <span class="hint">Same pattern reused for router and LB detail</span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <table class="data-table" style="border:none;border-radius:0">
+                  <thead>
+                    <tr>
+                      <th>Object</th>
+                      <th>Relationship</th>
+                      <th>Status</th>
+                      <th>Operator Use</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="selected">
+                      <td>Port 7d3c…</td>
+                      <td>Primary VIF for api-01</td>
+                      <td><span class="badge green">ACTIVE</span></td>
+                      <td>Check binding, SGs, OVN LSP</td>
+                    </tr>
+                    <tr>
+                      <td>Router tenant-edge-2</td>
+                      <td>Routed north-south path</td>
+                      <td><span class="badge green">ACTIVE</span></td>
+                      <td>Check external gateway and blast radius</td>
+                    </tr>
+                    <tr>
+                      <td>LB public-api</td>
+                      <td>Uses same tenant network</td>
+                      <td><span class="badge yellow">DEGRADED</span></td>
+                      <td>Check VIP/member health correlation</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="detail-wrap">
+            <div class="detail-pane">
+              <div class="section-title">Right-side Join Detail</div>
+
+              <div class="card">
+                <div class="card-title">OVN / Binding</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Device owner</span><span class="mv">compute:nova</span></div>
+                  <div class="mrow"><span class="ml">Logical switch port</span><span class="mv">present</span></div>
+                  <div class="mrow"><span class="ml">Logical switch</span><span class="mv code">neutron-1c23c7d4…</span></div>
+                  <div class="mrow"><span class="ml">Binding host matches Nova host</span><span class="mv">yes</span></div>
+                  <div class="mrow"><span class="ml">Chassis / gateway path</span><span class="mv">available</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Security / Policy</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Security groups</span><span class="mv">web, ssh, monitoring</span></div>
+                  <div class="mrow"><span class="ml">Ingress intent</span><span class="mv">tcp/22, tcp/80, tcp/443</span></div>
+                  <div class="mrow"><span class="ml">Port security</span><span class="mv">enabled</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Router Blast Radius Preview</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Attached subnets</span><span class="mv">prod-api, prod-workers, prod-db</span></div>
+                  <div class="mrow"><span class="ml">Instances behind router</span><span class="mv">24</span></div>
+                  <div class="mrow"><span class="ml">Load balancers behind router</span><span class="mv">3</span></div>
+                  <div class="mrow"><span class="ml">Floating IPs routed</span><span class="mv">11</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Load Balancer Correlation</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">VIP network</span><span class="mv">prod-api</span></div>
+                  <div class="mrow"><span class="ml">VIP address</span><span class="mv">10.14.8.50</span></div>
+                  <div class="mrow"><span class="ml">Floating IP</span><span class="mv">203.0.113.60</span></div>
+                  <div class="mrow"><span class="ml">Backend member state</span><span class="mv"><span class="badge red">1 member ERROR</span></span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Failure-State Variant</div>
+                <div class="card-body">
+                  <div class="finding bad">
+                    <div class="finding-mark">×</div>
+                    <div>
+                      <strong>Port is DOWN and binding host is empty</strong>
+                      In the failure view, this drawer becomes the place to state that the problem is before routing, likely at port binding or OVN realization.
+                    </div>
+                  </div>
+                  <div class="finding bad">
+                    <div class="finding-mark">×</div>
+                    <div>
+                      <strong>Floating IP may still exist, but the target path is broken</strong>
+                      That distinction matters because it tells the operator not to chase router or external-network issues first.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar" style="border-top:1px solid var(--border)">
+    <span class="bc-link">Networking</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-link">Routers</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">tenant-edge-2</span>
+    <div class="bc-actions">
+      <button class="btn">⟳ Refresh Detail</button>
+      <button class="btn primary">Open in Neutron</button>
+    </div>
+  </div>
+
+  <div id="body" style="border-top:1px solid var(--border)">
+    <div class="view">
+      <div id="sidebar">
+        <div class="sidebar-head">Navigator — Networking</div>
+
+        <div class="networking-section-label">Neutron Joins</div>
+        <div class="networking-nav-item">
+          <span>🖥️</span> Instance: api-01
+          <span class="tree-badge">active</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>🧩</span> Port: qr-8a7b…
+          <span class="tree-badge">router-if</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>🌐</span> Network: prod-api
+          <span class="tree-badge">18 ports</span>
+        </div>
+        <div class="networking-nav-item selected">
+          <span>🛣️</span> Router: tenant-edge-2
+          <span class="tree-badge">11 fips</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>⚖️</span> LB: public-api
+          <span class="tree-badge">degraded</span>
+        </div>
+
+        <div class="networking-section-label">Blast Radius</div>
+        <div class="networking-nav-item">
+          <span>•</span> prod-api subnet
+          <span class="tree-badge">6 VMs</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>•</span> prod-workers subnet
+          <span class="tree-badge">14 VMs</span>
+        </div>
+        <div class="networking-nav-item">
+          <span>•</span> prod-db subnet
+          <span class="tree-badge">4 VMs</span>
+        </div>
+      </div>
+
+      <div id="content">
+        <div id="obj-header">
+          <div class="obj-icon">🛣️</div>
+          <div class="obj-meta">
+            <h2>tenant-edge-2</h2>
+            <div class="obj-sub">Router-centric Neutron joins view: attached tenant networks, floating IP reachability, routed consumers, and immediate blast radius.</div>
+            <div class="obj-badges">
+              <span class="badge green">● ACTIVE</span>
+              <span class="badge blue">External net public</span>
+              <span class="badge blue">SNAT enabled</span>
+              <span class="badge blue">3 attached subnets</span>
+              <span class="badge yellow">1 downstream LB degraded</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="tabs-bar">
+          <div class="tab active">Attached Networks</div>
+          <div class="tab">Reachability</div>
+          <div class="tab">Consumers</div>
+          <div class="tab">OVN / Gateway</div>
+          <div class="tab">Troubleshooting</div>
+        </div>
+
+        <div id="tab-body">
+          <div class="main-pane">
+            <div class="summary-grid">
+              <div class="card">
+                <div class="card-title">Router Overview</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Admin state</span><span class="mv">up</span></div>
+                  <div class="mrow"><span class="ml">External gateway</span><span class="mv">public</span></div>
+                  <div class="mrow"><span class="ml">SNAT</span><span class="mv">enabled</span></div>
+                  <div class="mrow"><span class="ml">Static routes</span><span class="mv">2</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Blast Radius Summary</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">Attached subnets</span><span class="mv">3</span></div>
+                  <div class="mrow"><span class="ml">Instances behind router</span><span class="mv">24</span></div>
+                  <div class="mrow"><span class="ml">Load balancers behind router</span><span class="mv">3</span></div>
+                  <div class="mrow"><span class="ml">Floating IPs routed</span><span class="mv">11</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Attached Networks</span>
+                <span class="hint">Tenant network consumers joined to one router</span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <table class="data-table" style="border:none;border-radius:0">
+                  <thead>
+                    <tr>
+                      <th>Network / Subnet</th>
+                      <th>Consumers</th>
+                      <th>North-South Use</th>
+                      <th>Current Signal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="selected">
+                      <td>
+                        <strong>prod-api</strong><br>
+                        <span class="hint">10.14.8.0/24</span>
+                      </td>
+                      <td>18 ports · 6 instances · 1 VIP</td>
+                      <td>4 floating IPs</td>
+                      <td><span class="badge green">healthy</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <strong>prod-workers</strong><br>
+                        <span class="hint">10.14.9.0/24</span>
+                      </td>
+                      <td>42 ports · 14 instances</td>
+                      <td>6 floating IPs</td>
+                      <td><span class="badge green">healthy</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <strong>prod-db</strong><br>
+                        <span class="hint">10.14.10.0/24</span>
+                      </td>
+                      <td>8 ports · 4 instances</td>
+                      <td>1 floating IP</td>
+                      <td><span class="badge yellow">light usage</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Reachability Path</span>
+                <span class="hint">How operators reason about routed failure domains</span>
+              </div>
+              <div class="card-body">
+                <div class="path-list">
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>1. Router tenant-edge-2</strong>
+                      <span class="badge blue">L3 anchor</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Admin state: <strong>up</strong></div>
+                      <div>External network: <strong>public</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>2. External Gateway Port</strong>
+                      <span class="badge green">ACTIVE</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Gateway IP: <strong>172.24.4.1</strong></div>
+                      <div>SNAT: <strong>enabled</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item">
+                    <div class="path-head">
+                      <strong>3. Routed Floating IP Set</strong>
+                      <span class="badge green">11 associated</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Instance-backed FIPs: <strong>10</strong></div>
+                      <div>LB-backed FIPs: <strong>1</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="path-item warn">
+                    <div class="path-head">
+                      <strong>4. Downstream Consumer Health</strong>
+                      <span class="badge yellow">1 degraded service</span>
+                    </div>
+                    <div class="path-meta">
+                      <div>Affected object: <strong>LB public-api</strong></div>
+                      <div>Signal: <strong>backend member error</strong></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Router Troubleshooting Findings</span>
+                <span class="hint">Operator-facing conclusions</span>
+              </div>
+              <div class="card-body">
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>External gateway is configured and active</strong>
+                    This makes a router-level external connectivity failure less likely than a downstream consumer or service issue.
+                  </div>
+                </div>
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>Attached subnets are populated</strong>
+                    The router is actively serving real tenant networks and is not an orphaned or partially configured object.
+                  </div>
+                </div>
+                <div class="finding warn">
+                  <div class="finding-mark">!</div>
+                  <div>
+                    <strong>One downstream service is degraded, but the router path is intact</strong>
+                    The operator should pivot to the affected load balancer or member instance rather than chasing the external gateway first.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="detail-wrap">
+            <div class="detail-pane">
+              <div class="section-title">Right-side Join Detail</div>
+
+              <div class="card">
+                <div class="card-title">OVN / Gateway</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">OVN logical router</span><span class="mv">present</span></div>
+                  <div class="mrow"><span class="ml">Gateway chassis</span><span class="mv">edge-gw-02</span></div>
+                  <div class="mrow"><span class="ml">Gateway port state</span><span class="mv">ACTIVE</span></div>
+                  <div class="mrow"><span class="ml">External network mapping</span><span class="mv">provider/public</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Top Routed Consumers</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">api-01</span><span class="mv">10.14.8.23 → 203.0.113.42</span></div>
+                  <div class="mrow"><span class="ml">api-02</span><span class="mv">10.14.8.24 → 203.0.113.43</span></div>
+                  <div class="mrow"><span class="ml">public-api LB</span><span class="mv">10.14.8.50 → 203.0.113.60</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Impact Preview</div>
+                <div class="card-body">
+                  <div class="mrow"><span class="ml">If router fails</span><span class="mv">24 instances lose routed access</span></div>
+                  <div class="mrow"><span class="ml">If external gateway fails</span><span class="mv">11 FIPs lose external reachability</span></div>
+                  <div class="mrow"><span class="ml">If one subnet detaches</span><span class="mv">Blast radius limited to that subnet</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-title">Failure-State Variant</div>
+                <div class="card-body">
+                  <div class="finding bad">
+                    <div class="finding-mark">×</div>
+                    <div>
+                      <strong>Gateway port DOWN</strong>
+                      In the router failure view, this pane should make it immediately obvious that the break is at the L3 edge and not inside one attached network.
+                    </div>
+                  </div>
+                  <div class="finding bad">
+                    <div class="finding-mark">×</div>
+                    <div>
+                      <strong>Floating IP failures would cluster here</strong>
+                      That helps distinguish router-edge failures from isolated port-binding or load-balancer-member issues.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
