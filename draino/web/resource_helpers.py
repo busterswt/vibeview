@@ -635,6 +635,160 @@ def get_volumes(auth: openstack_ops.OpenStackAuth | None) -> tuple[list[dict], b
     return result, all_projects
 
 
+def _safe_call(obj, name: str, *args, **kwargs):
+    fn = getattr(obj, name, None)
+    if not callable(fn):
+        return None
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        return None
+
+
+def _volume_project_id(volume) -> str:
+    return (
+        getattr(volume, "os-vol-tenant-attr:tenant_id", None)
+        or getattr(volume, "project_id", None)
+        or ""
+    )
+
+
+def _volume_type_detail(conn, volume_type_ref: object) -> dict:
+    if not volume_type_ref:
+        return {}
+    volume_proxy = conn.volume
+    type_obj = None
+    candidates: list[str] = []
+    if isinstance(volume_type_ref, dict):
+        candidates.extend([
+            str(volume_type_ref.get("id") or "").strip(),
+            str(volume_type_ref.get("name") or "").strip(),
+        ])
+    else:
+        candidates.append(str(volume_type_ref).strip())
+    for candidate in [value for value in candidates if value]:
+        type_obj = _safe_call(volume_proxy, "get_type", candidate)
+        if type_obj is not None:
+            break
+    if type_obj is None:
+        return {}
+
+    type_data = type_obj.to_dict() if hasattr(type_obj, "to_dict") else {}
+    qos_id = (
+        type_data.get("qos_specs_id")
+        or type_data.get("qos_specs")
+        or getattr(type_obj, "qos_specs_id", None)
+        or getattr(type_obj, "qos_specs", None)
+        or ""
+    )
+    qos_policy = {}
+    qos_candidates = [qos_id] if isinstance(qos_id, str) else []
+    if isinstance(qos_id, dict):
+        qos_policy = {str(key): value for key, value in qos_id.items()}
+    for candidate in [value for value in qos_candidates if value]:
+        qos_obj = _safe_call(volume_proxy, "get_qos_specs", candidate)
+        if qos_obj is None:
+            continue
+        qos_data = qos_obj.to_dict() if hasattr(qos_obj, "to_dict") else {}
+        specs = qos_data.get("specs") or qos_data.get("qos_specs") or {}
+        if isinstance(specs, dict):
+            qos_policy = {str(key): value for key, value in specs.items()}
+        if qos_data.get("name") and "name" not in qos_policy:
+            qos_policy["name"] = qos_data.get("name")
+        break
+
+    extra_specs = type_data.get("extra_specs") or getattr(type_obj, "extra_specs", None) or {}
+    if not isinstance(extra_specs, dict):
+        extra_specs = {}
+    return {
+        "id": getattr(type_obj, "id", None) or type_data.get("id") or "",
+        "name": getattr(type_obj, "name", None) or type_data.get("name") or "",
+        "description": getattr(type_obj, "description", None) or type_data.get("description") or "",
+        "is_public": bool(getattr(type_obj, "is_public", type_data.get("is_public", False))),
+        "extra_specs": {str(key): value for key, value in extra_specs.items()},
+        "qos_policy": qos_policy,
+    }
+
+
+def _attachment_detail(conn, attachment: dict) -> dict:
+    server_id = attachment.get("server_id", "") or ""
+    instance_name = ""
+    if server_id:
+        try:
+            server = conn.compute.get_server(server_id)
+            if server is not None:
+                instance_name = getattr(server, "name", None) or ""
+        except Exception:
+            instance_name = ""
+    return {
+        "server_id": server_id,
+        "server_name": instance_name,
+        "attachment_id": attachment.get("attachment_id", "") or attachment.get("id", "") or "",
+        "host_name": attachment.get("host_name", "") or "",
+        "device": attachment.get("device", "") or "",
+        "attached_at": attachment.get("attached_at", "") or "",
+    }
+
+
+def get_volume_detail(volume_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    """Return detailed Cinder volume information for the drawer view."""
+    conn = openstack_ops._conn(auth=auth)
+    volume = conn.volume.get_volume(volume_id)
+    volume_data = volume.to_dict() if hasattr(volume, "to_dict") else {}
+    attachments = [
+        _attachment_detail(conn, dict(item))
+        for item in (getattr(volume, "attachments", None) or volume_data.get("attachments") or [])
+        if isinstance(item, dict)
+    ]
+    metadata = volume_data.get("metadata") or getattr(volume, "metadata", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    type_detail = _volume_type_detail(conn, getattr(volume, "volume_type", None) or volume_data.get("volume_type") or "")
+
+    snapshot_count = 0
+    backup_count = 0
+    try:
+        snapshot_count = sum(
+            1 for item in conn.volume.snapshots(details=False)
+            if getattr(item, "volume_id", None) == volume_id
+        )
+    except Exception:
+        snapshot_count = 0
+    try:
+        backup_count = sum(
+            1 for item in conn.volume.backups(details=False)
+            if getattr(item, "volume_id", None) == volume_id
+        )
+    except Exception:
+        backup_count = 0
+
+    return {
+        "id": getattr(volume, "id", None) or volume_data.get("id") or volume_id,
+        "name": getattr(volume, "name", None) or volume_data.get("name") or "(no name)",
+        "status": getattr(volume, "status", None) or volume_data.get("status") or "UNKNOWN",
+        "size_gb": getattr(volume, "size", None) or volume_data.get("size") or 0,
+        "description": getattr(volume, "description", None) or volume_data.get("description") or "",
+        "volume_type": getattr(volume, "volume_type", None) or volume_data.get("volume_type") or "",
+        "project_id": _volume_project_id(volume),
+        "bootable": coerce_bool(getattr(volume, "is_bootable", volume_data.get("bootable", False))),
+        "encrypted": coerce_bool(getattr(volume, "encrypted", volume_data.get("encrypted", False))),
+        "multiattach": coerce_bool(getattr(volume, "is_multiattach", volume_data.get("multiattach", False))),
+        "availability_zone": getattr(volume, "availability_zone", None) or volume_data.get("availability_zone") or "",
+        "created_at": getattr(volume, "created_at", None) or volume_data.get("created_at") or "",
+        "updated_at": getattr(volume, "updated_at", None) or volume_data.get("updated_at") or "",
+        "source_volid": volume_data.get("source_volid") or getattr(volume, "source_volid", None) or "",
+        "snapshot_id": volume_data.get("snapshot_id") or getattr(volume, "snapshot_id", None) or "",
+        "replication_status": volume_data.get("replication_status") or getattr(volume, "replication_status", None) or "",
+        "consistencygroup_id": volume_data.get("consistencygroup_id") or getattr(volume, "consistencygroup_id", None) or "",
+        "os-vol-host-attr:host": volume_data.get("os-vol-host-attr:host") or "",
+        "attachments": attachments,
+        "metadata": {str(key): value for key, value in metadata.items()},
+        "volume_type_detail": type_detail,
+        "snapshot_count": snapshot_count,
+        "backup_count": backup_count,
+    }
+
+
 def get_swift_containers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return Swift containers visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)

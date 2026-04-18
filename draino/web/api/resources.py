@@ -17,6 +17,7 @@ from ..resource_helpers import (
     get_router_detail,
     get_routers,
     get_swift_containers,
+    get_volume_detail,
     get_volumes,
     repair_subnet_metadata_port,
 )
@@ -66,6 +67,22 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None, "api_issue": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc), "api_issue": None}
+
+
+@router.get("/api/volumes/{volume_id}")
+async def api_volume_detail(volume_id: str, request: Request):
+    session = _require_session_record()(request)
+    try:
+        data = await _run_with_timeout(get_volume_detail, volume_id, session.server.openstack_auth)
+        return {"volume": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "volume": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading volume details",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"volume": None, "error": str(exc), "api_issue": build_api_issue("Cinder", f"GET /v3/volumes/{volume_id}", exc)}
 
 
 @router.get("/api/swift-containers")

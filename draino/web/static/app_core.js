@@ -176,6 +176,8 @@ const lbDetailState = { loading: false, data: null, vipOvn: { loading: false, da
 
 // Storage view state
 const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
+let selectedVolume = null;
+const volumeDetailState = { loading: false, data: null };
 const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 
 // Reports view state

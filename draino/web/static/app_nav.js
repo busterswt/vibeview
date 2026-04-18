@@ -140,7 +140,10 @@ function renderNetworkingWorkspace() {
 function syncStorageDetailShell() {
   const detailWrap = document.getElementById('storage-detail-wrap');
   const resizer = document.getElementById('storage-detail-resizer');
-  const open = Boolean(isStorageK8sView() && k8sDetailState.type && k8sDetailState.item);
+  const open = Boolean(
+    (activeStorageView === 'openstack-volumes' && selectedVolume && volumeDetailState.data)
+    || (isStorageK8sView() && k8sDetailState.type && k8sDetailState.item),
+  );
   detailWrap?.classList.toggle('open', open);
   resizer?.classList.toggle('open', open);
 }
@@ -167,6 +170,10 @@ function renderStorageWorkspace() {
   else if (activeStorageView === 'openstack-swift') panes.swift?.classList.add('active');
   else panes.openstack?.classList.add('active');
 
+  document.getElementById('storage-volume-detail-wrap')?.classList.toggle(
+    'open',
+    Boolean(activeStorageView === 'openstack-volumes' && selectedVolume && volumeDetailState.data),
+  );
   document.getElementById('storage-k8s-detail-wrap')?.classList.toggle(
     'open',
     Boolean(isStorageK8sView() && k8sDetailState.type && k8sDetailState.item),
