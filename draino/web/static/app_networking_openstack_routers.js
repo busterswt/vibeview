@@ -92,6 +92,12 @@ function appendRouterError(msg) {
   onLog({ node: '-', message: `Routers API error: ${msg}`, color: 'error' });
 }
 
+function routerDetailLink(label, onclickJs) {
+  const text = String(label || '').trim();
+  if (!text) return '<span style="color:var(--dim)">—</span>';
+  return `<a href="#" class="obj-link" onclick="${onclickJs};return false">${esc(text)}</a>`;
+}
+
 async function selectRouter(id) {
   selectedRouter = id;
   routerDetailState.ovn = { loading: false, data: null, error: null };
@@ -247,7 +253,7 @@ function renderRouterDetail() {
     h += `<table class="data-table" style="font-size:11px">
       <thead><tr><th>Network</th><th>Subnet</th><th>Instances</th><th>Load Balancers</th><th>Ports</th></tr></thead>
       <tbody>${subnetConsumers.map(item => `<tr>
-        <td>${esc(item.network_name || '—')}</td>
+        <td>${item.network_id ? routerDetailLink(item.network_name || item.network_id, `navigateToNetworkDetail('${escAttr(item.network_id)}')`) : esc(item.network_name || '—')}</td>
         <td><div>${esc(item.subnet_name || '—')}</div><div style="font-family:monospace;font-size:10px;color:var(--dim)">${esc(item.cidr || '') || '—'}</div></td>
         <td>${esc(String(item.instance_count ?? 0))}</td>
         <td>${esc(String(item.load_balancer_count ?? 0))}</td>

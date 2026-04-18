@@ -1103,6 +1103,7 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
                     "address": address,
                     "protocol_port": protocol_port,
                     "operating_status": operating_status,
+                    "instance_id": device_id if instance_name or compute_host else "",
                     "instance_name": instance_name,
                     "compute_host": compute_host,
                     "port_id": matched_port_id,

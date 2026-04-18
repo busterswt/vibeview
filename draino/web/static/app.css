@@ -513,6 +513,12 @@ body.no-hints .vmware-ref-card { display: none !important; }
   border-radius: 4px; padding: 6px 10px; margin: 4px 0;
   border: 1px solid #ef9a9a; word-break: break-all;
 }
+.obj-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 500;
+}
+.obj-link:hover { text-decoration: underline; }
 .finding {
   display: flex;
   align-items: flex-start;

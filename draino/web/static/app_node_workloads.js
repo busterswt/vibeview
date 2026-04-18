@@ -126,6 +126,12 @@ function renderInstancesTab(nd) {
   document.getElementById('instances-content').innerHTML = h;
 }
 
+function renderObjectLink(label, onclickJs) {
+  const text = String(label || '').trim();
+  if (!text) return '<span style="color:var(--dim)">—</span>';
+  return `<a href="#" class="obj-link" onclick="${onclickJs};return false">${esc(text)}</a>`;
+}
+
 function renderPodsTab(nd) {
   const drained = nd.k8s_cordoned || nd.compute_status === 'disabled';
   let h = `<div class="inst-toolbar">
@@ -209,9 +215,9 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
           <div class="card-title">Network Path</div>
           <div class="card-body">
             <div class="mrow"><span class="ml">Primary port</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(firstPort?.id || '—')}</span></div>
-            <div class="mrow"><span class="ml">Tenant network</span><span class="mv">${esc(firstPort?.network_name || firstPort?.network_id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Tenant network</span><span class="mv">${firstPort?.network_id ? renderObjectLink(firstPort?.network_name || firstPort?.network_id, `navigateToNetworkDetail('${escAttr(firstPort.network_id)}')`) : esc(firstPort?.network_name || firstPort?.network_id || '—')}</span></div>
             <div class="mrow"><span class="ml">Subnet</span><span class="mv">${esc(firstSubnet?.name || firstSubnet?.cidr || '—')}</span></div>
-            <div class="mrow"><span class="ml">Router</span><span class="mv">${esc(firstRouter?.name || '—')}</span></div>
+            <div class="mrow"><span class="ml">Router</span><span class="mv">${firstRouter?.id ? renderObjectLink(firstRouter?.name || firstRouter?.id, `navigateToRouterDetail('${escAttr(firstRouter.id)}')`) : esc(firstRouter?.name || '—')}</span></div>
             <div class="mrow"><span class="ml">Floating IP</span><span class="mv">${esc(firstFloatingIp || '—')}</span></div>
             <div class="mrow"><span class="ml">Security groups</span><span class="mv">${esc(sgNames.join(', ') || '—')}</span></div>
           </div>
@@ -226,6 +232,23 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
           </div>
         </div>
       </div>`;
+  const relatedLbs = inst.related_load_balancers || [];
+  if (relatedLbs.length) {
+    h += `<div class="card" style="margin-top:10px">
+      <div class="card-title">Related Load Balancers</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;border-radius:0;margin-bottom:0">
+          <thead><tr><th>Load Balancer</th><th>Pool</th><th>Member</th><th>Status</th></tr></thead>
+          <tbody>${relatedLbs.map((item) => `<tr>
+            <td>${item.id ? renderObjectLink(item.name || item.id, `navigateToLoadBalancerDetail('${escAttr(item.id)}')`) : esc(item.name || '—')}</td>
+            <td>${esc(item.pool_name || item.pool_id || '—')}</td>
+            <td>${esc(item.address || '—')}${item.protocol_port ? `:${esc(String(item.protocol_port))}` : ''}</td>
+            <td>${esc(item.operating_status || 'UNKNOWN')}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
   if (inst.node_mismatch) {
     h += `<div class="err-block" style="margin-top:10px">Instance no longer appears to be on ${esc(nodeName)}. Current hypervisor: ${esc(inst.node_mismatch.actual_hypervisor || 'unknown')}.</div>`;
   }
@@ -325,9 +348,12 @@ function renderPortDetailPanel(port) {
         <div class="card">
           <div class="card-title">Joined Path</div>
           <div class="card-body">
-            <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Network</span><span class="mv">${port.network_id ? renderObjectLink(port.network_name || port.network_id, `navigateToNetworkDetail('${escAttr(port.network_id)}')`) : esc(port.network_name || port.network_id || '—')}</span></div>
             <div class="mrow"><span class="ml">Subnets</span><span class="mv">${esc((port.subnets || []).map(item => item.name || item.cidr || item.id).join(', ') || '—')}</span></div>
-            <div class="mrow"><span class="ml">Router</span><span class="mv">${esc((port.subnets || []).map(item => item.router?.name).filter(Boolean)[0] || port.gateway_target || '—')}</span></div>
+            <div class="mrow"><span class="ml">Router</span><span class="mv">${(() => {
+              const router = (port.subnets || []).map(item => item.router).find(item => item?.id);
+              return router?.id ? renderObjectLink(router.name || router.id, `navigateToRouterDetail('${escAttr(router.id)}')`) : esc((port.subnets || []).map(item => item.router?.name).filter(Boolean)[0] || port.gateway_target || '—');
+            })()}</span></div>
             <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
           </div>
         </div>

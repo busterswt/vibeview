@@ -1222,6 +1222,7 @@ def get_instance_network_detail(
         return None
 
     ports: list[dict] = []
+    instance_fixed_ips: set[str] = set()
     for port in conn.network.ports(device_id=instance_id):
         port_data = port.to_dict() if hasattr(port, "to_dict") else {}
         network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
@@ -1243,6 +1244,7 @@ def get_instance_network_detail(
 
         fixed_ip_items = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
         fixed_ips = [item.get("ip_address", "") for item in fixed_ip_items if item.get("ip_address")]
+        instance_fixed_ips.update(ip for ip in fixed_ips if ip)
         dhcp_values: list[bool] = []
         gateway_targets: list[str] = []
         subnet_entries: list[dict] = []
@@ -1320,6 +1322,53 @@ def get_instance_network_detail(
             "floating_ips": floating_ips,
         })
 
+    related_load_balancers: list[dict] = []
+    if instance_fixed_ips:
+        try:
+            listener_index: dict[str, dict] = {}
+            for listener in conn.load_balancer.listeners():
+                listener_data = listener.to_dict() if hasattr(listener, "to_dict") else {}
+                listener_index[getattr(listener, "id", None) or ""] = {
+                    "name": getattr(listener, "name", None) or listener_data.get("name") or "",
+                    "protocol": getattr(listener, "protocol", None) or listener_data.get("protocol") or "",
+                    "protocol_port": getattr(listener, "protocol_port", None) or listener_data.get("protocol_port"),
+                }
+            pool_to_lb: dict[str, dict] = {}
+            for lb in conn.load_balancer.load_balancers():
+                lb_data = lb.to_dict() if hasattr(lb, "to_dict") else {}
+                for pool_ref in lb_data.get("pools") or getattr(lb, "pools", None) or []:
+                    pool_id = pool_ref.get("id") if isinstance(pool_ref, dict) else getattr(pool_ref, "id", None)
+                    if pool_id:
+                        pool_to_lb[pool_id] = {
+                            "id": getattr(lb, "id", None) or lb_data.get("id") or "",
+                            "name": getattr(lb, "name", None) or lb_data.get("name") or "(unnamed)",
+                        }
+            for pool in conn.load_balancer.pools():
+                pool_data = pool.to_dict() if hasattr(pool, "to_dict") else {}
+                pool_id = getattr(pool, "id", None) or pool_data.get("id") or ""
+                lb_meta = pool_to_lb.get(pool_id, {})
+                listener_id = getattr(pool, "listener_id", None) or pool_data.get("listener_id") or ""
+                listener_meta = listener_index.get(listener_id, {})
+                for member in conn.load_balancer.members(pool_id):
+                    member_data = member.to_dict() if hasattr(member, "to_dict") else {}
+                    address = getattr(member, "address", None) or member_data.get("address") or ""
+                    if address not in instance_fixed_ips:
+                        continue
+                    related_load_balancers.append({
+                        "id": lb_meta.get("id", ""),
+                        "name": lb_meta.get("name", ""),
+                        "pool_id": pool_id,
+                        "pool_name": getattr(pool, "name", None) or pool_data.get("name") or "",
+                        "listener_id": listener_id,
+                        "listener_name": listener_meta.get("name", ""),
+                        "protocol": listener_meta.get("protocol", ""),
+                        "protocol_port": getattr(member, "protocol_port", None) or member_data.get("protocol_port") or listener_meta.get("protocol_port"),
+                        "address": address,
+                        "operating_status": getattr(member, "operating_status", None) or member_data.get("operating_status") or "UNKNOWN",
+                    })
+        except Exception:
+            related_load_balancers = []
+
     return {
         "id": getattr(server, "id", None) or instance_id,
         "name": getattr(server, "name", None) or instance_id,
@@ -1332,6 +1381,7 @@ def get_instance_network_detail(
         "is_volume_backed": not getattr(server, "image", None),
         "flavor": flavor_data,
         "ports": ports,
+        "related_load_balancers": related_load_balancers,
     }
 
 

@@ -314,6 +314,48 @@ function switchView(name) {
   }
 }
 
+async function navigateToNetworkDetail(networkId) {
+  if (!networkId) return;
+  switchNetworkingSection('networking');
+  await loadNetworks();
+  await selectNetwork(networkId);
+}
+
+async function navigateToRouterDetail(routerId) {
+  if (!routerId) return;
+  switchNetworkingSection('routers');
+  await loadRouters();
+  await selectRouter(routerId);
+}
+
+async function navigateToLoadBalancerDetail(lbId) {
+  if (!lbId) return;
+  switchNetworkingSection('loadbalancers');
+  await loadLoadBalancers();
+  await selectLoadBalancer(lbId);
+}
+
+function findNodeNameForHypervisor(hypervisor) {
+  const target = String(hypervisor || '');
+  if (!target) return '';
+  for (const [nodeName, node] of Object.entries(nodes || {})) {
+    if (node?.hypervisor === target || nodeName === target) return nodeName;
+  }
+  return '';
+}
+
+async function navigateToInstanceDetail(instanceId, computeHost) {
+  if (!instanceId || !computeHost) return;
+  const nodeName = findNodeNameForHypervisor(computeHost);
+  if (!nodeName || !nodes[nodeName]) return;
+  switchView('infrastructure');
+  selectNode(nodeName);
+  showTab('instances');
+  expandedInstanceIdByNode[nodeName] = instanceId;
+  if (nodes[nodeName]) renderInstancesTab(nodes[nodeName]);
+  await loadInstanceDetail(nodeName, instanceId, true);
+}
+
 function handleBcRoot() {
   if (activeView !== 'infrastructure') switchView('infrastructure');
   else { selectedNode = null; renderInfraDetail(); }

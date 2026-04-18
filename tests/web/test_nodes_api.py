@@ -1250,6 +1250,131 @@ def test_instance_network_detail_resolves_gateway_device_id(monkeypatch):
     assert detail["ports"][0]["gateway_target"] == "vm-gateway"
 
 
+def test_instance_network_detail_includes_related_load_balancers(monkeypatch):
+    class FakeServer:
+        id = "vm-1"
+        name = "vm-1"
+        status = "ACTIVE"
+        image = {"id": "img-1"}
+        flavor = {"id": "flavor-1"}
+
+        def to_dict(self):
+            return {"OS-EXT-AZ:availability_zone": "nova"}
+
+    class FakePort:
+        id = "port-1"
+        name = "vm-port"
+        status = "ACTIVE"
+        is_admin_state_up = True
+        mac_address = "fa:16:3e:00:00:01"
+        network_id = "net-1"
+        fixed_ips = [{"subnet_id": "subnet-1", "ip_address": "10.0.0.12"}]
+        allowed_address_pairs = []
+        security_group_ids = []
+        device_owner = "compute:nova"
+        device_id = "vm-1"
+
+        def to_dict(self):
+          return {"binding:vnic_type": "normal", "binding:host_id": "hv-a"}
+
+    class FakePool:
+        id = "pool-1"
+        name = "web-pool"
+
+        def to_dict(self):
+            return {"listener_id": "listener-1"}
+
+    class FakeListener:
+        id = "listener-1"
+        name = "https"
+        protocol = "HTTPS"
+        protocol_port = 443
+
+        def to_dict(self):
+            return {}
+
+    class FakeLoadBalancer:
+        id = "lb-1"
+        name = "public-api"
+        pools = [{"id": "pool-1"}]
+
+        def to_dict(self):
+            return {"pools": [{"id": "pool-1"}]}
+
+    class FakeMember:
+        address = "10.0.0.12"
+        protocol_port = 443
+        operating_status = "ONLINE"
+
+        def to_dict(self):
+            return {}
+
+    class FakeCompute:
+        @staticmethod
+        def get_server(instance_id):
+            assert instance_id == "vm-1"
+            return FakeServer()
+
+        @staticmethod
+        def get_flavor(flavor_id):
+            assert flavor_id == "flavor-1"
+            return SimpleNamespace(id="flavor-1", name="m1.small", vcpus=2, ram=2048, disk=20, ephemeral=0, swap=0)
+
+    class FakeNetwork:
+        @staticmethod
+        def ports(device_id=None, network_id=None):
+            if device_id == "vm-1":
+                return [FakePort()]
+            if network_id == "net-1":
+                return []
+            return []
+
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return SimpleNamespace(name="tenant-net")
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return SimpleNamespace(name="tenant-subnet", cidr="10.0.0.0/24", gateway_ip="10.0.0.1", is_dhcp_enabled=True)
+
+        @staticmethod
+        def ips(port_id=None):
+            return []
+
+    class FakeLoadBalancerAPI:
+        @staticmethod
+        def listeners():
+            return [FakeListener()]
+
+        @staticmethod
+        def load_balancers():
+            return [FakeLoadBalancer()]
+
+        @staticmethod
+        def pools():
+            return [FakePool()]
+
+        @staticmethod
+        def members(pool_id):
+            assert pool_id == "pool-1"
+            return [FakeMember()]
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        load_balancer = FakeLoadBalancerAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_instance_network_detail("vm-1")
+
+    assert detail["related_load_balancers"][0]["id"] == "lb-1"
+    assert detail["related_load_balancers"][0]["name"] == "public-api"
+    assert detail["related_load_balancers"][0]["listener_name"] == "https"
+
+
 def test_patch_managed_noschedule_taint_endpoint(monkeypatch):
     captured: dict[str, object] = {}
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)

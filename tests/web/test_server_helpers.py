@@ -650,6 +650,8 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
                 })()]
             if network_id == "net-1":
                 return [type("RouterPort", (), {"device_owner": "network:router_interface", "device_id": "router-1", "network_id": "net-1", "to_dict": lambda self: {}})()]
+            if device_id is None and network_id is None and fixed_ips is None:
+                return [type("RouterPort", (), {"device_owner": "network:router_interface", "device_id": "router-1", "network_id": "net-1", "to_dict": lambda self: {}})()]
             return []
 
         @staticmethod
@@ -733,6 +735,7 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
     assert item["listeners"][0]["id"] == "listener-1"
     assert item["listeners"][0]["protocol_port"] == 443
     assert item["pools"][0]["member_count"] == 2
+    assert item["pools"][0]["members"][0]["instance_id"] == "server-1"
     assert item["pools"][0]["members"][0]["instance_name"] == "api-01"
     assert item["pools"][0]["members"][1]["compute_host"] == "compute-b.example"
     assert item["pools"][0]["healthmonitor"] == "TCP\ndelay 5\ntimeout 3\nmax retries 3"

@@ -82,6 +82,12 @@ function appendLoadBalancerError(msg) {
   onLog({ node: '-', message: `Load balancers API error: ${msg}`, color: 'error' });
 }
 
+function loadBalancerDetailLink(label, onclickJs) {
+  const text = String(label || '').trim();
+  if (!text) return '<span style="color:var(--dim)">—</span>';
+  return `<a href="#" class="obj-link" onclick="${onclickJs};return false">${esc(text)}</a>`;
+}
+
 async function selectLoadBalancer(id) {
   selectedLoadBalancer = id;
   document.querySelectorAll('#lb-wrap tr[data-lb-id]').forEach(r => {
@@ -182,9 +188,9 @@ function renderLoadBalancerDetail() {
     <div class="card" style="margin-bottom:10px">
       <div class="card-title">VIP Path</div>
       <div class="card-body">
-        <div class="mrow"><span class="ml">VIP network</span><span class="mv">${esc(joins.vip_network_name || '—')}</span></div>
+        <div class="mrow"><span class="ml">VIP network</span><span class="mv">${ld.vip_port?.network_id ? loadBalancerDetailLink(joins.vip_network_name || ld.vip_port.network_id, `navigateToNetworkDetail('${escAttr(ld.vip_port.network_id)}')`) : esc(joins.vip_network_name || '—')}</span></div>
         <div class="mrow"><span class="ml">VIP subnet</span><span class="mv">${esc(joins.vip_subnet_name || joins.vip_subnet_cidr || '—')}</span></div>
-        <div class="mrow"><span class="ml">Router</span><span class="mv">${esc(joins.router_name || '—')}</span></div>
+        <div class="mrow"><span class="ml">Router</span><span class="mv">${joins.router_id ? loadBalancerDetailLink(joins.router_name || joins.router_id, `navigateToRouterDetail('${escAttr(joins.router_id)}')`) : esc(joins.router_name || '—')}</span></div>
         <div class="mrow"><span class="ml">Floating IP</span><span class="mv">${esc(ld.floating_ip || '—')}</span></div>
         <div class="mrow"><span class="ml">Healthy members</span><span class="mv">${esc(String(joins.member_count_online ?? 0))} / ${esc(String(joins.member_count_total ?? 0))}</span></div>
       </div>
@@ -289,7 +295,7 @@ function renderLoadBalancerDetail() {
         ${(pool.members || []).length ? `<div style="margin-top:8px;border-top:1px solid #f0f2f5;padding-top:8px">
           ${(pool.members || []).map(member => `<div class="mrow">
             <span class="ml">${esc(member.address || '—')}${member.protocol_port ? `:${esc(String(member.protocol_port))}` : ''}</span>
-            <span class="mv">${esc(member.instance_name || member.compute_host || member.operating_status || '—')}</span>
+            <span class="mv">${member.instance_id && member.compute_host ? loadBalancerDetailLink(member.instance_name || member.compute_host || member.instance_id, `navigateToInstanceDetail('${escAttr(member.instance_id)}','${escAttr(member.compute_host)}')`) : esc(member.instance_name || member.compute_host || member.operating_status || '—')}</span>
           </div>`).join('')}
         </div>` : ''}
       </div>`).join('');

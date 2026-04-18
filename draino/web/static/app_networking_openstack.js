@@ -99,8 +99,8 @@ function renderNetworksView() {
       ? `<span class="sdot green"></span>up` : `<span class="sdot red"></span>down`;
     const ext    = n.external ? `<span class="tag-amp">ext</span>` : '—';
     const shared = n.shared ? '✓' : '—';
-    const routerPill = n.router_connected && n.router_id
-      ? `<button class="btn sm" style="padding:1px 8px;font-size:11px" onclick="event.stopPropagation();navigateToRouterFromNetwork('${escAttr(n.router_id)}')">Connected</button>`
+    const routerLink = n.router_connected && n.router_id
+      ? `<a href="#" class="obj-link" onclick="event.stopPropagation();navigateToRouterFromNetwork('${escAttr(n.router_id)}');return false">Connected</a>`
       : '<span style="color:var(--dim)">—</span>';
     const rowSel = selectedNetwork === n.id ? ' selected' : '';
     rows += `<tr class="${rowSel}" style="cursor:pointer" data-net-id="${escAttr(n.id)}" onclick="selectNetwork('${escAttr(n.id)}')">
@@ -110,7 +110,7 @@ function renderNetworksView() {
       <td>${esc(n.network_type) || '<span style="color:var(--dim)">—</span>'}</td>
       <td>${shared}</td>
       <td>${ext}</td>
-      <td>${routerPill}</td>
+      <td>${routerLink}</td>
       <td>${n.subnet_count}</td>
       <td class="uuid-short" title="${esc(n.project_id)}">${n.project_id.slice(0, 8) || '—'}</td>
     </tr>`;
