@@ -766,6 +766,246 @@ def get_hypervisor_detail(
     return result
 
 
+def get_hypervisor_placement_detail(
+    hypervisor: str,
+    auth: OpenStackAuth | None = None,
+) -> dict:
+    """Return Placement-oriented scheduling detail for a compute host."""
+    conn = _conn(auth=auth)
+    result: dict = {
+        "provider": {},
+        "availability_zone": None,
+        "aggregates": [],
+        "traits": [],
+        "custom_traits": [],
+        "inventories": [],
+        "service": {},
+        "constraints": [],
+        "fit": {},
+    }
+    try:
+        provider = conn.placement.find_resource_provider(hypervisor, ignore_missing=True)
+    except Exception:
+        provider = None
+    if provider is None:
+        return result
+
+    provider_id = getattr(provider, "id", None) or getattr(provider, "uuid", None)
+    provider_name = getattr(provider, "name", None) or hypervisor
+    result["provider"] = {
+        "id": provider_id,
+        "name": provider_name,
+        "generation": getattr(provider, "generation", None),
+        "parent_provider_id": getattr(provider, "parent_provider_uuid", None) or getattr(provider, "parent_provider_id", None),
+        "root_provider_id": getattr(provider, "root_provider_uuid", None) or getattr(provider, "root_provider_id", None),
+    }
+
+    service_info = {"state": None, "status": None, "disabled_reason": None}
+    try:
+        services = list(conn.compute.services(host=hypervisor, binary="nova-compute"))
+        if services:
+            svc = services[0]
+            service_info = {
+                "state": (getattr(svc, "state", None) or "").lower() or None,
+                "status": (getattr(svc, "status", None) or "").lower() or None,
+                "disabled_reason": getattr(svc, "disabled_reason", None) or None,
+            }
+    except Exception:
+        pass
+    result["service"] = service_info
+
+    compute_aggregates: list[str] = []
+    provider_aggregate_ids: list[str] = []
+    availability_zone = None
+    try:
+        for agg in conn.compute.aggregates():
+            agg_name = getattr(agg, "name", None) or ""
+            agg_az = (
+                getattr(agg, "availability_zone", None)
+                or (getattr(agg, "metadata", None) or {}).get("availability_zone")
+                or None
+            )
+            if hypervisor in (getattr(agg, "hosts", None) or []):
+                if agg_name:
+                    compute_aggregates.append(agg_name)
+                if agg_az and not availability_zone:
+                    availability_zone = agg_az
+    except Exception:
+        pass
+
+    inventories_by_class: dict[str, object] = {}
+    try:
+        inventories = list(conn.placement.resource_provider_inventories(provider))
+        inventories_by_class = {
+            getattr(item, "resource_class", None): item
+            for item in inventories
+            if getattr(item, "resource_class", None)
+        }
+    except Exception:
+        inventories_by_class = {}
+
+    endpoint = None
+    headers = {"OpenStack-API-Version": "placement 1.9"}
+    try:
+        endpoint = conn.endpoint_for("placement")
+    except Exception:
+        endpoint = None
+
+    usages: dict[str, object] = {}
+    traits: list[str] = []
+    if endpoint and provider_id:
+        base = f"{endpoint.rstrip('/')}/resource_providers/{quote(str(provider_id), safe='')}"
+        try:
+            response = conn.session.get(f"{base}/usages", headers=headers)
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+            payload = response.json() if hasattr(response, "json") else {}
+            usages = payload.get("usages", {}) if isinstance(payload, dict) else {}
+        except Exception:
+            usages = {}
+        try:
+            response = conn.session.get(f"{base}/traits", headers=headers)
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+            payload = response.json() if hasattr(response, "json") else {}
+            raw_traits = payload.get("traits", []) if isinstance(payload, dict) else []
+            traits = sorted(str(item) for item in raw_traits if item)
+        except Exception:
+            traits = []
+        try:
+            response = conn.session.get(f"{base}/aggregates", headers=headers)
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+            payload = response.json() if hasattr(response, "json") else {}
+            raw_aggregates = payload.get("aggregates", []) if isinstance(payload, dict) else []
+            provider_aggregate_ids = [str(item) for item in raw_aggregates if item]
+        except Exception:
+            provider_aggregate_ids = []
+
+    inventory_rows: list[dict] = []
+    for resource_class in sorted(inventories_by_class):
+        inventory = inventories_by_class[resource_class]
+        total = getattr(inventory, "total", None)
+        reserved = getattr(inventory, "reserved", None) or 0
+        allocation_ratio = getattr(inventory, "allocation_ratio", None)
+        min_unit = getattr(inventory, "min_unit", None)
+        max_unit = getattr(inventory, "max_unit", None)
+        step_size = getattr(inventory, "step_size", None)
+        used = usages.get(resource_class)
+        effective_total = None
+        free = None
+        free_pct = None
+        try:
+            if total is not None:
+                effective_total = max(0.0, float(total - reserved)) * float(allocation_ratio or 1.0)
+            if effective_total is not None and used is not None:
+                free = float(effective_total) - float(used)
+                if effective_total > 0:
+                    free_pct = max(0.0, free) / float(effective_total) * 100.0
+        except Exception:
+            effective_total = effective_total if effective_total is not None else None
+            free = None
+            free_pct = None
+        inventory_rows.append({
+            "resource_class": resource_class,
+            "total": total,
+            "reserved": reserved,
+            "allocation_ratio": allocation_ratio,
+            "min_unit": min_unit,
+            "max_unit": max_unit,
+            "step_size": step_size,
+            "used": used,
+            "effective_total": effective_total,
+            "free": free,
+            "free_pct": free_pct,
+        })
+
+    result["availability_zone"] = availability_zone
+    result["aggregates"] = sorted(compute_aggregates)
+    result["provider"]["aggregate_ids"] = provider_aggregate_ids
+    result["traits"] = traits
+    result["custom_traits"] = [trait for trait in traits if trait.startswith("CUSTOM_")]
+    result["inventories"] = inventory_rows
+
+    constraints: list[dict] = []
+
+    def _append_constraint(level: str, title: str, detail: str) -> None:
+        constraints.append({"level": level, "title": title, "detail": detail})
+
+    if service_info.get("state") == "down":
+        _append_constraint("critical", "Compute service down", "Nova reports this host as down, so new placements should not land here until service health recovers.")
+    elif service_info.get("status") == "disabled":
+        reason = service_info.get("disabled_reason")
+        detail = "Nova compute service is disabled, so the scheduler will not place new instances here."
+        if reason:
+            detail += f" Reason: {reason}"
+        _append_constraint("warning", "Compute service disabled", detail)
+
+    inventory_map = {item["resource_class"]: item for item in inventory_rows}
+    vcpu = inventory_map.get("VCPU")
+    mem = inventory_map.get("MEMORY_MB")
+
+    def _saturation_entry(item: dict | None, label: str, unit: str) -> None:
+        if not item:
+            return
+        effective = item.get("effective_total")
+        used = item.get("used")
+        if effective in (None, 0) or used is None:
+            return
+        try:
+            pct = float(used) / float(effective) * 100.0
+        except Exception:
+            return
+        if pct >= 95.0:
+            _append_constraint("critical", f"{label} saturated", f"{label} usage is {pct:.0f}% of effective capacity ({used:g} / {effective:g} {unit}).")
+        elif pct >= 80.0:
+            _append_constraint("warning", f"{label} tight", f"{label} usage is {pct:.0f}% of effective capacity ({used:g} / {effective:g} {unit}).")
+
+    _saturation_entry(vcpu, "VCPU", "vCPU")
+    _saturation_entry(mem, "Memory", "MB")
+
+    if result["aggregates"]:
+        _append_constraint("info", "Aggregate-scoped scheduling", f"This host is in {len(result['aggregates'])} host aggregate(s), which can narrow placement based on aggregate metadata and flavor/image requirements.")
+    if result["custom_traits"]:
+        joined = ", ".join(result["custom_traits"][:4])
+        suffix = "" if len(result["custom_traits"]) <= 4 else f", +{len(result['custom_traits']) - 4} more"
+        _append_constraint("info", "Custom traits present", f"Workloads requesting custom traits must match this host's trait set: {joined}{suffix}.")
+
+    fit_state = "general-purpose fit"
+    fit_reason = "No obvious placement blockers were detected from service state, core capacity, or trait scope."
+    if service_info.get("state") == "down":
+        fit_state = "unavailable"
+        fit_reason = "Nova marks the compute service down."
+    elif service_info.get("status") == "disabled":
+        fit_state = "administratively blocked"
+        fit_reason = "Nova compute service is disabled."
+    else:
+        try:
+            vcpu_pct = None if not vcpu or not vcpu.get("effective_total") or vcpu.get("used") is None else float(vcpu["used"]) / float(vcpu["effective_total"]) * 100.0
+            mem_pct = None if not mem or not mem.get("effective_total") or mem.get("used") is None else float(mem["used"]) / float(mem["effective_total"]) * 100.0
+            if vcpu_pct is not None and vcpu_pct >= 95.0:
+                fit_state = "cpu-constrained"
+                fit_reason = f"VCPU usage is {vcpu_pct:.0f}% of effective capacity."
+            elif mem_pct is not None and mem_pct >= 95.0:
+                fit_state = "ram-constrained"
+                fit_reason = f"Memory usage is {mem_pct:.0f}% of effective capacity."
+            elif result["custom_traits"]:
+                fit_state = "trait-restricted"
+                fit_reason = "Scheduling onto this host depends on trait-matching requests."
+            elif vcpu_pct is not None and vcpu_pct >= 80.0:
+                fit_state = "cpu-tight"
+                fit_reason = f"VCPU usage is already {vcpu_pct:.0f}% of effective capacity."
+            elif mem_pct is not None and mem_pct >= 80.0:
+                fit_state = "ram-tight"
+                fit_reason = f"Memory usage is already {mem_pct:.0f}% of effective capacity."
+        except Exception:
+            pass
+
+    result["constraints"] = constraints
+    result["fit"] = {"status": fit_state, "reason": fit_reason}
+    return result
+
+
 def _placement_hypervisor_inventory(conn, hypervisor: str) -> dict:
     """Return Placement-backed inventory and usages for a compute host."""
     result = {
@@ -913,8 +1153,24 @@ def get_instance_network_detail(
     network_names: dict[str, str] = {}
     subnet_dhcp: dict[str, bool | None] = {}
     subnet_gateway_ip: dict[str, str | None] = {}
+    subnet_name: dict[str, str] = {}
+    subnet_cidr: dict[str, str] = {}
     gateway_target_by_subnet: dict[str, str | None] = {}
+    gateway_router_by_subnet: dict[str, dict] = {}
     router_name_cache: dict[str, str | None] = {}
+    security_group_name_cache: dict[str, str] = {}
+
+    def _get_security_group_name(group_id: str) -> str:
+        if not group_id:
+            return ""
+        if group_id in security_group_name_cache:
+            return security_group_name_cache[group_id]
+        try:
+            group = conn.network.get_security_group(group_id)
+            security_group_name_cache[group_id] = getattr(group, "name", None) or group_id
+        except Exception:
+            security_group_name_cache[group_id] = group_id
+        return security_group_name_cache[group_id]
 
     def _get_router_name(router_id: str) -> str | None:
         if not router_id:
@@ -954,7 +1210,9 @@ def get_instance_network_detail(
             device_owner = getattr(candidate, "device_owner", None) or candidate_data.get("device_owner") or ""
             device_id = getattr(candidate, "device_id", None) or candidate_data.get("device_id") or ""
             if "router" in device_owner:
-                gateway_target_by_subnet[subnet_id] = _get_router_name(device_id) or device_id or gateway_ip
+                router_name = _get_router_name(device_id) or device_id or gateway_ip
+                gateway_target_by_subnet[subnet_id] = router_name
+                gateway_router_by_subnet[subnet_id] = {"id": device_id or "", "name": router_name}
             elif device_id:
                 gateway_target_by_subnet[subnet_id] = device_id
             else:
@@ -987,11 +1245,12 @@ def get_instance_network_detail(
         fixed_ips = [item.get("ip_address", "") for item in fixed_ip_items if item.get("ip_address")]
         dhcp_values: list[bool] = []
         gateway_targets: list[str] = []
+        subnet_entries: list[dict] = []
         for item in fixed_ip_items:
             subnet_id = item.get("subnet_id")
             if not subnet_id:
                 continue
-            if subnet_id not in subnet_dhcp or subnet_id not in subnet_gateway_ip:
+            if subnet_id not in subnet_dhcp or subnet_id not in subnet_gateway_ip or subnet_id not in subnet_name or subnet_id not in subnet_cidr:
                 try:
                     subnet = conn.network.get_subnet(subnet_id)
                     subnet_data = subnet.to_dict() if hasattr(subnet, "to_dict") else {}
@@ -1003,14 +1262,35 @@ def get_instance_network_detail(
                     subnet_gateway_ip[subnet_id] = getattr(subnet, "gateway_ip", None)
                     if subnet_gateway_ip[subnet_id] in ("", None):
                         subnet_gateway_ip[subnet_id] = subnet_data.get("gateway_ip")
+                    subnet_name[subnet_id] = getattr(subnet, "name", None) or subnet_data.get("name") or ""
+                    subnet_cidr[subnet_id] = getattr(subnet, "cidr", None) or subnet_data.get("cidr") or ""
                 except Exception:
                     subnet_dhcp[subnet_id] = None
                     subnet_gateway_ip[subnet_id] = None
+                    subnet_name[subnet_id] = ""
+                    subnet_cidr[subnet_id] = ""
             if subnet_dhcp[subnet_id] is not None:
                 dhcp_values.append(bool(subnet_dhcp[subnet_id]))
             gateway_target = _gateway_target_for_subnet(subnet_id, network_id)
             if gateway_target:
                 gateway_targets.append(gateway_target)
+            subnet_entries.append({
+                "id": subnet_id,
+                "name": subnet_name.get(subnet_id, ""),
+                "cidr": subnet_cidr.get(subnet_id, ""),
+                "ip_address": item.get("ip_address", "") or "",
+                "gateway_ip": subnet_gateway_ip.get(subnet_id),
+                "dhcp_enabled": subnet_dhcp.get(subnet_id),
+                "router": gateway_router_by_subnet.get(subnet_id, {}),
+            })
+
+        security_group_ids = list(getattr(port, "security_group_ids", None) or port_data.get("security_group_ids") or [])
+        binding_host = (
+            port_data.get("binding:host_id")
+            or getattr(port, "binding_host_id", None)
+            or getattr(port, "binding_host", None)
+            or ""
+        )
 
         ports.append({
             "id": getattr(port, "id", None) or "",
@@ -1021,6 +1301,7 @@ def get_instance_network_detail(
             "network_id": network_id,
             "network_name": network_names.get(network_id, ""),
             "fixed_ips": fixed_ips,
+            "subnets": subnet_entries,
             "dhcp_enabled": (any(dhcp_values) if dhcp_values else None),
             "gateway_target": gateway_targets[0] if gateway_targets else None,
             "allowed_address_pairs": [
@@ -1031,9 +1312,11 @@ def get_instance_network_detail(
                 for item in (getattr(port, "allowed_address_pairs", None) or port_data.get("allowed_address_pairs") or [])
                 if item.get("ip_address") or item.get("mac_address")
             ],
-            "security_groups": list(getattr(port, "security_group_ids", None) or port_data.get("security_group_ids") or []),
+            "security_groups": security_group_ids,
+            "security_group_names": [_get_security_group_name(group_id) for group_id in security_group_ids],
             "device_owner": getattr(port, "device_owner", None) or port_data.get("device_owner") or "",
             "binding_vnic_type": port_data.get("binding:vnic_type") or getattr(port, "binding_vnic_type", None) or "",
+            "binding_host": binding_host,
             "floating_ips": floating_ips,
         })
 

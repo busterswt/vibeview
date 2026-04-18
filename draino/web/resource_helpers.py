@@ -1,7 +1,12 @@
 """OpenStack-backed resource helpers for the web UI."""
 from __future__ import annotations
 
+from collections import defaultdict
+
 from ..operations import openstack_ops
+
+_OPEN_WORLD_CIDRS = {"0.0.0.0/0", "::/0"}
+_ADMIN_PORTS = {22, 3389, 5900, 6443}
 
 
 def coerce_bool(value: object) -> bool:
@@ -14,6 +19,19 @@ def coerce_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _project_names(conn) -> dict[str, str]:
+    names: dict[str, str] = {}
+    try:
+        for project in conn.identity.projects():
+            project_id = getattr(project, "id", None) or ""
+            if not project_id:
+                continue
+            names[project_id] = getattr(project, "name", None) or project_id
+    except Exception:
+        return names
+    return names
 
 
 def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
@@ -181,6 +199,319 @@ def _lookup_network_name(conn, network_id: str, cache: dict[str, str]) -> str:
     return cache[network_id]
 
 
+def _port_security_groups(port) -> list[str]:
+    port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+    raw_groups = (
+        getattr(port, "security_group_ids", None)
+        or getattr(port, "security_groups", None)
+        or port_data.get("security_group_ids")
+        or port_data.get("security_groups")
+        or []
+    )
+    result: list[str] = []
+    for item in raw_groups:
+        if isinstance(item, dict):
+            group_id = item.get("id") or item.get("security_group_id") or ""
+        else:
+            group_id = str(item or "")
+        if group_id:
+            result.append(group_id)
+    return result
+
+
+def _security_group_attachment_map(conn) -> dict[str, dict]:
+    attachment_map: dict[str, dict] = defaultdict(lambda: {
+        "port_count": 0,
+        "instance_count": 0,
+        "ports": [],
+        "instance_ids": set(),
+    })
+    try:
+        for port in conn.network.ports():
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            group_ids = _port_security_groups(port)
+            if not group_ids:
+                continue
+            port_id = getattr(port, "id", None) or port_data.get("id") or ""
+            network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+            device_owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+            device_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+            project_id = getattr(port, "project_id", None) or port_data.get("project_id") or ""
+            fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+            attachment = {
+                "port_id": port_id,
+                "network_id": network_id,
+                "device_owner": device_owner,
+                "device_id": device_id,
+                "project_id": project_id,
+                "fixed_ips": fixed_ips,
+            }
+            for group_id in group_ids:
+                entry = attachment_map[group_id]
+                entry["port_count"] += 1
+                entry["ports"].append(attachment)
+                if device_owner.startswith("compute:") and device_id:
+                    entry["instance_ids"].add(device_id)
+        for entry in attachment_map.values():
+            entry["instance_count"] = len(entry["instance_ids"])
+            entry["instance_ids"] = sorted(entry["instance_ids"])
+    except Exception:
+        return {}
+    return dict(attachment_map)
+
+
+def _normalize_rule_direction(rule, data: dict) -> str:
+    return str(getattr(rule, "direction", None) or data.get("direction") or "").lower() or "ingress"
+
+
+def _normalize_rule_protocol(rule, data: dict) -> str:
+    raw = getattr(rule, "protocol", None) or data.get("protocol")
+    text = str(raw or "").strip().lower()
+    if not text or text in {"any", "all", "-1", "none", "null"}:
+        return "any"
+    return text
+
+
+def _normalize_rule_ports(rule, data: dict) -> tuple[int | None, int | None, str]:
+    min_port = getattr(rule, "port_range_min", None)
+    max_port = getattr(rule, "port_range_max", None)
+    if min_port is None:
+        min_port = data.get("port_range_min")
+    if max_port is None:
+        max_port = data.get("port_range_max")
+    try:
+        min_value = int(min_port) if min_port is not None else None
+    except (TypeError, ValueError):
+        min_value = None
+    try:
+        max_value = int(max_port) if max_port is not None else None
+    except (TypeError, ValueError):
+        max_value = None
+    if min_value is None and max_value is None:
+        return None, None, "any"
+    if min_value is not None and max_value is not None and min_value == max_value:
+        return min_value, max_value, str(min_value)
+    if min_value is not None and max_value is not None:
+        return min_value, max_value, f"{min_value}-{max_value}"
+    value = min_value if min_value is not None else max_value
+    return min_value, max_value, str(value) if value is not None else "any"
+
+
+def _audit_security_group_rule(rule, data: dict) -> dict:
+    direction = _normalize_rule_direction(rule, data)
+    protocol = _normalize_rule_protocol(rule, data)
+    min_port, max_port, port_label = _normalize_rule_ports(rule, data)
+    remote_ip_prefix = str(
+        getattr(rule, "remote_ip_prefix", None)
+        or data.get("remote_ip_prefix")
+        or ""
+    ).strip()
+    ethertype = str(getattr(rule, "ethertype", None) or data.get("ethertype") or "").upper()
+    remote_group_id = str(
+        getattr(rule, "remote_group_id", None)
+        or data.get("remote_group_id")
+        or data.get("remote_group")
+        or ""
+    ).strip()
+    open_world = remote_ip_prefix in _OPEN_WORLD_CIDRS
+    any_port = min_port is None and max_port is None
+    admin_exposed = any(
+        port in _ADMIN_PORTS
+        for port in (min_port, max_port)
+        if isinstance(port, int)
+    )
+    flagged = False
+    severity = "clean"
+    category = ""
+    reason = ""
+    summary = ""
+
+    if direction == "ingress" and open_world and protocol == "any" and any_port:
+        flagged = True
+        severity = "critical"
+        category = "open-world-any-any"
+        summary = f"any:any {remote_ip_prefix}"
+        reason = "Ingress from any source to any protocol and any port."
+    elif direction == "ingress" and open_world:
+        flagged = True
+        severity = "high"
+        category = "open-world-ingress"
+        summary = f"{protocol}:{port_label} {remote_ip_prefix}"
+        reason = "Ingress from the entire internet."
+        if admin_exposed:
+            category = "public-admin-port"
+            reason = "Administrative port exposed to the entire internet."
+
+    return {
+        "direction": direction,
+        "ethertype": ethertype or "",
+        "protocol": protocol,
+        "port_range_min": min_port,
+        "port_range_max": max_port,
+        "port_range": port_label,
+        "remote_ip_prefix": remote_ip_prefix,
+        "remote_group_id": remote_group_id,
+        "is_open_world": open_world,
+        "flagged": flagged,
+        "severity": severity,
+        "category": category,
+        "summary": summary,
+        "reason": reason,
+    }
+
+
+def _security_group_rules(group) -> list[dict]:
+    rules = []
+    for rule in getattr(group, "security_group_rules", None) or []:
+        data = rule.to_dict() if hasattr(rule, "to_dict") else (rule if isinstance(rule, dict) else {})
+        audit = _audit_security_group_rule(rule, data)
+        rules.append({
+            "id": getattr(rule, "id", None) or data.get("id") or "",
+            "direction": audit["direction"],
+            "ethertype": audit["ethertype"],
+            "protocol": audit["protocol"],
+            "port_range_min": audit["port_range_min"],
+            "port_range_max": audit["port_range_max"],
+            "port_range": audit["port_range"],
+            "remote_ip_prefix": audit["remote_ip_prefix"],
+            "remote_group_id": audit["remote_group_id"],
+            "normalized": {
+                "open_world": audit["is_open_world"],
+                "summary": audit["summary"],
+            },
+            "audit": {
+                "flagged": audit["flagged"],
+                "severity": audit["severity"],
+                "category": audit["category"],
+                "reason": audit["reason"],
+                "summary": audit["summary"],
+            },
+        })
+    rules.sort(
+        key=lambda item: (
+            {"critical": 0, "high": 1, "medium": 2, "clean": 3}.get(item["audit"]["severity"], 4),
+            item["direction"],
+            item["protocol"],
+            item["port_range"],
+            item["remote_ip_prefix"],
+            item["remote_group_id"],
+        )
+    )
+    return rules
+
+
+def _summarize_security_group(group, project_names: dict[str, str], attachment_map: dict[str, dict]) -> dict:
+    data = group.to_dict() if hasattr(group, "to_dict") else {}
+    group_id = getattr(group, "id", None) or data.get("id") or ""
+    project_id = getattr(group, "project_id", None) or data.get("project_id") or ""
+    rules = _security_group_rules(group)
+    attachments = attachment_map.get(group_id, {})
+    port_count = int(attachments.get("port_count", 0) or 0)
+    instance_count = int(attachments.get("instance_count", 0) or 0)
+    critical_rules = [item for item in rules if item["audit"]["severity"] == "critical"]
+    high_rules = [item for item in rules if item["audit"]["severity"] == "high"]
+    flagged_rules = [item for item in rules if item["audit"]["flagged"]]
+    findings: list[dict] = []
+    if critical_rules:
+        findings.append({
+            "severity": "critical",
+            "category": "open-world-any-any",
+            "summary": critical_rules[0]["audit"]["summary"],
+            "count": len(critical_rules),
+        })
+    if high_rules:
+        findings.append({
+            "severity": "high",
+            "category": high_rules[0]["audit"]["category"],
+            "summary": high_rules[0]["audit"]["summary"],
+            "count": len(high_rules),
+        })
+    if port_count == 0:
+        findings.append({
+            "severity": "medium",
+            "category": "unused",
+            "summary": "0 attachments",
+            "count": 1,
+        })
+    severity = "clean"
+    if critical_rules:
+        severity = "critical"
+    elif high_rules:
+        severity = "high"
+    elif port_count == 0:
+        severity = "medium"
+    score = len(critical_rules) * 100 + len(high_rules) * 50 + (20 if port_count == 0 else 0)
+    return {
+        "id": group_id,
+        "name": getattr(group, "name", None) or data.get("name") or "(unnamed)",
+        "description": getattr(group, "description", None) or data.get("description") or "",
+        "project_id": project_id,
+        "project_name": project_names.get(project_id) or project_id or "unknown",
+        "revision_number": data.get("revision_number", getattr(group, "revision_number", None)),
+        "stateful": coerce_bool(data.get("stateful", getattr(group, "stateful", True))),
+        "rule_count": len(rules),
+        "ingress_rule_count": sum(1 for item in rules if item["direction"] == "ingress"),
+        "egress_rule_count": sum(1 for item in rules if item["direction"] == "egress"),
+        "flagged_rule_count": len(flagged_rules),
+        "attachment_port_count": port_count,
+        "attachment_instance_count": instance_count,
+        "audit": {
+            "severity": severity,
+            "score": score,
+            "findings": findings,
+            "has_open_world_ingress": any(
+                item["direction"] == "ingress" and item["normalized"]["open_world"]
+                for item in rules
+            ),
+            "has_any_any_open_world": any(item["audit"]["category"] == "open-world-any-any" for item in rules),
+            "has_unused": port_count == 0,
+        },
+        "rules": rules,
+        "attachments": attachments.get("ports", []),
+    }
+
+
+def get_security_groups(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    """Return Neutron security groups with audit annotations."""
+    conn = openstack_ops._conn(auth=auth)
+    project_names = _project_names(conn)
+    attachment_map = _security_group_attachment_map(conn)
+    items = [
+        _summarize_security_group(group, project_names, attachment_map)
+        for group in conn.network.security_groups()
+    ]
+    for item in items:
+        item.pop("rules", None)
+        item.pop("attachments", None)
+    items.sort(
+        key=lambda item: (
+            {"critical": 0, "high": 1, "medium": 2, "clean": 3}.get(item["audit"]["severity"], 4),
+            -int(item["audit"]["score"]),
+            item["project_name"],
+            item["name"],
+            item["id"],
+        )
+    )
+    return items
+
+
+def get_security_group_detail(group_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    """Return one Neutron security group with rules and attachment detail."""
+    conn = openstack_ops._conn(auth=auth)
+    group = conn.network.get_security_group(group_id)
+    project_names = _project_names(conn)
+    attachment_map = _security_group_attachment_map(conn)
+    item = _summarize_security_group(group, project_names, attachment_map)
+    item["attachments"].sort(
+        key=lambda row: (
+            row.get("device_owner", ""),
+            row.get("device_id", ""),
+            row.get("port_id", ""),
+        )
+    )
+    return item
+
+
 def _lookup_subnet_detail(conn, subnet_id: str, cache: dict[str, dict]) -> dict:
     if not subnet_id:
         return {}
@@ -216,6 +547,88 @@ def _iter_router_ports(conn, router_id: str) -> list:
 def _is_router_interface_owner(owner: str) -> bool:
     owner = owner or ""
     return "router" in owner and "interface" in owner
+
+
+def _safe_get_router(conn, router_id: str):
+    try:
+        return conn.network.get_router(router_id)
+    except Exception:
+        return None
+
+
+def _router_name(conn, router_id: str, cache: dict[str, str]) -> str:
+    if not router_id:
+        return ""
+    if router_id in cache:
+        return cache[router_id]
+    router = _safe_get_router(conn, router_id)
+    if router is None:
+        cache[router_id] = router_id
+    else:
+        router_data = router.to_dict() if hasattr(router, "to_dict") else {}
+        cache[router_id] = getattr(router, "name", None) or router_data.get("name") or router_id
+    return cache[router_id]
+
+
+def _network_router_map(conn) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    try:
+        for port in conn.network.ports():
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+            if not _is_router_interface_owner(owner):
+                continue
+            network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+            router_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+            if network_id and router_id and network_id not in result:
+                result[network_id] = {"id": router_id, "name": ""}
+    except Exception:
+        return result
+    return result
+
+
+def _ports_with_fixed_ip(conn, ip_address: str) -> list:
+    if not ip_address:
+        return []
+    try:
+        ports = list(conn.network.ports(fixed_ips=f"ip_address={ip_address}"))
+        if ports:
+            return ports
+    except Exception:
+        pass
+    try:
+        result = []
+        for port in conn.network.ports():
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+            if any(item.get("ip_address") == ip_address for item in fixed_ips):
+                result.append(port)
+        return result
+    except Exception:
+        return []
+
+
+def _count_network_consumers(conn, network_id: str) -> dict[str, int]:
+    counts = {"port_count": 0, "instance_count": 0, "load_balancer_count": 0}
+    if not network_id:
+        return counts
+    seen_instances: set[str] = set()
+    seen_lbs: set[str] = set()
+    try:
+        for port in conn.network.ports(network_id=network_id):
+            port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+            owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+            device_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+            counts["port_count"] += 1
+            if owner.startswith("compute:") and device_id:
+                seen_instances.add(device_id)
+            if "loadbalancer" in owner.lower() or "octavia" in owner.lower():
+                seen_lbs.add(device_id or (getattr(port, "id", None) or port_data.get("id") or ""))
+        counts["instance_count"] = len(seen_instances)
+        counts["load_balancer_count"] = len({item for item in seen_lbs if item})
+    except Exception:
+        pass
+    return counts
 
 
 def get_routers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
@@ -348,18 +761,27 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
     vip_address = getattr(lb, "vip_address", None) or lb_data.get("vip_address") or ""
     project_id = getattr(lb, "project_id", None) or lb_data.get("project_id") or ""
     floating_ip = _lookup_floating_ip_by_port_or_address(conn, vip_port_id, vip_address, {})
+    network_name_cache: dict[str, str] = {}
+    subnet_cache: dict[str, dict] = {}
+    router_cache = _network_router_map(conn)
+    router_name_cache: dict[str, str] = {}
     vip_port: dict[str, object] = {
         "id": vip_port_id,
         "name": "",
         "status": "",
         "network_id": "",
+        "network_name": "",
         "subnet_id": "",
+        "subnet_name": "",
+        "subnet_cidr": "",
         "ip_address": vip_address,
         "mac_address": "",
         "device_owner": "",
         "device_id": "",
         "project_id": project_id,
         "admin_state_up": False,
+        "router_id": "",
+        "router_name": "",
     }
     if vip_port_id:
         try:
@@ -368,18 +790,27 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
             fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
             primary_ip = next((item.get("ip_address", "") for item in fixed_ips if item.get("ip_address")), "") or vip_address
             primary_subnet = next((item.get("subnet_id", "") for item in fixed_ips if item.get("subnet_id")), "") or ""
+            subnet_detail = _lookup_subnet_detail(conn, primary_subnet, subnet_cache) if primary_subnet else {}
+            network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+            router_meta = router_cache.get(network_id, {})
+            router_id = router_meta.get("id", "") if isinstance(router_meta, dict) else ""
             vip_port = {
                 "id": getattr(port, "id", None) or port_data.get("id") or vip_port_id,
                 "name": getattr(port, "name", None) or port_data.get("name") or "",
                 "status": getattr(port, "status", None) or port_data.get("status") or "",
-                "network_id": getattr(port, "network_id", None) or port_data.get("network_id") or "",
+                "network_id": network_id,
+                "network_name": _lookup_network_name(conn, network_id, network_name_cache),
                 "subnet_id": primary_subnet,
+                "subnet_name": subnet_detail.get("name", ""),
+                "subnet_cidr": subnet_detail.get("cidr", ""),
                 "ip_address": primary_ip,
                 "mac_address": getattr(port, "mac_address", None) or port_data.get("mac_address") or "",
                 "device_owner": getattr(port, "device_owner", None) or port_data.get("device_owner") or "",
                 "device_id": getattr(port, "device_id", None) or port_data.get("device_id") or "",
                 "project_id": getattr(port, "project_id", None) or port_data.get("project_id") or project_id,
                 "admin_state_up": bool(getattr(port, "is_admin_state_up", port_data.get("admin_state_up", False))),
+                "router_id": router_id,
+                "router_name": _router_name(conn, router_id, router_name_cache) if router_id else "",
             }
         except Exception:
             pass
@@ -472,7 +903,45 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
             "healthmonitor": hm_text,
             "session_persistence": persistence or "None",
             "tls_enabled": tls_enabled,
+            "members": [],
         })
+        member_rows = []
+        try:
+            for member in conn.load_balancer.members(pool.id):
+                member_data = member.to_dict() if hasattr(member, "to_dict") else {}
+                address = getattr(member, "address", None) or member_data.get("address") or ""
+                protocol_port = getattr(member, "protocol_port", None) or member_data.get("protocol_port")
+                operating_status = getattr(member, "operating_status", None) or member_data.get("operating_status") or "UNKNOWN"
+                instance_name = ""
+                compute_host = ""
+                matched_port_id = ""
+                for matched_port in _ports_with_fixed_ip(conn, address):
+                    matched_port_data = matched_port.to_dict() if hasattr(matched_port, "to_dict") else {}
+                    matched_port_id = getattr(matched_port, "id", None) or matched_port_data.get("id") or ""
+                    owner = getattr(matched_port, "device_owner", None) or matched_port_data.get("device_owner") or ""
+                    device_id = getattr(matched_port, "device_id", None) or matched_port_data.get("device_id") or ""
+                    if owner.startswith("compute:") and device_id:
+                        try:
+                            server = conn.compute.get_server(device_id)
+                            server_data = server.to_dict() if hasattr(server, "to_dict") else {}
+                            instance_name = getattr(server, "name", None) or server_data.get("name") or device_id
+                            compute_host = openstack_ops._server_host(server) or ""
+                        except Exception:
+                            instance_name = device_id
+                        break
+                member_rows.append({
+                    "id": getattr(member, "id", None) or member_data.get("id") or "",
+                    "name": getattr(member, "name", None) or member_data.get("name") or "",
+                    "address": address,
+                    "protocol_port": protocol_port,
+                    "operating_status": operating_status,
+                    "instance_name": instance_name,
+                    "compute_host": compute_host,
+                    "port_id": matched_port_id,
+                })
+        except Exception:
+            member_rows = []
+        pools[-1]["members"] = member_rows
 
     amphorae = []
     amphora_hosts: set[str] = set()
@@ -523,6 +992,18 @@ def get_load_balancer_detail(lb_id: str, auth: openstack_ops.OpenStackAuth | Non
         "amphorae": amphorae,
         "distinct_host_count": len(amphora_hosts),
         "ha_summary": "HA spread OK" if len(amphora_hosts) >= 2 else ("Single host" if amphorae else "Unknown"),
+        "joins": {
+            "vip_network_name": vip_port.get("network_name", ""),
+            "vip_subnet_name": vip_port.get("subnet_name", ""),
+            "vip_subnet_cidr": vip_port.get("subnet_cidr", ""),
+            "router_id": vip_port.get("router_id", ""),
+            "router_name": vip_port.get("router_name", ""),
+            "member_count_online": sum(
+                1 for pool in pools for member in (pool.get("members") or [])
+                if str(member.get("operating_status") or "").upper() in {"ONLINE", "ACTIVE", "UP"}
+            ),
+            "member_count_total": sum(len(pool.get("members") or []) for pool in pools),
+        },
     }
 
 
@@ -533,6 +1014,7 @@ def get_router_detail(router_id: str, auth: openstack_ops.OpenStackAuth | None) 
     router_data = router.to_dict() if hasattr(router, "to_dict") else {}
     network_name_cache: dict[str, str] = {}
     subnet_cache: dict[str, dict] = {}
+    subnet_consumers: list[dict] = []
 
     gateway = router_data.get("external_gateway_info") or getattr(router, "external_gateway_info", None) or {}
     external_network_id = gateway.get("network_id") or ""
@@ -582,6 +1064,19 @@ def get_router_detail(router_id: str, auth: openstack_ops.OpenStackAuth | None) 
             "nexthop": route.get("nexthop", "") or "",
         })
 
+    for entry in connected_subnets:
+        counts = _count_network_consumers(conn, entry.get("network_id", ""))
+        subnet_consumers.append({
+            "network_id": entry.get("network_id", ""),
+            "network_name": entry.get("network_name", ""),
+            "subnet_id": entry.get("subnet_id", ""),
+            "subnet_name": entry.get("subnet_name", ""),
+            "cidr": entry.get("cidr", ""),
+            "instance_count": counts["instance_count"],
+            "load_balancer_count": counts["load_balancer_count"],
+            "port_count": counts["port_count"],
+        })
+
     return {
         "id": router.id,
         "name": getattr(router, "name", None) or "(unnamed)",
@@ -599,7 +1094,14 @@ def get_router_detail(router_id: str, auth: openstack_ops.OpenStackAuth | None) 
         "interface_count": len(interfaces),
         "route_count": len(routes),
         "connected_subnets": connected_subnets,
+        "subnet_consumers": subnet_consumers,
         "routes": routes,
+        "joins": {
+            "routed_instance_count": sum(item.get("instance_count", 0) for item in subnet_consumers),
+            "routed_load_balancer_count": sum(item.get("load_balancer_count", 0) for item in subnet_consumers),
+            "attached_network_count": len({item.get("network_id", "") for item in subnet_consumers if item.get("network_id", "")}),
+            "external_ip_count": len(external_fixed_ips),
+        },
     }
 
 

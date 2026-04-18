@@ -12,7 +12,7 @@ from draino.web.api import nodes as nodes_api
 
 
 def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
-    captured: dict[str, int] = {"k8s": 0, "hw": 0, "nova": 0}
+    captured: dict[str, int] = {"k8s": 0, "hw": 0, "nova": 0, "placement": 0}
 
     initial_nodes = [{"name": "node-a", "hostname": "hv-a", "ready": True, "cordoned": False}]
 
@@ -40,6 +40,11 @@ def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
         web_server.openstack_ops,
         "get_hypervisor_detail",
         lambda hypervisor, auth=None: captured.__setitem__("nova", captured["nova"] + 1) or {"hypervisor": hypervisor},
+    )
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_placement_detail",
+        lambda hypervisor, auth=None: captured.__setitem__("placement", captured["placement"] + 1) or {"provider": {"name": hypervisor}},
     )
 
     payload = {
@@ -72,7 +77,64 @@ def test_node_detail_endpoint_uses_cache_and_refresh_bypass(monkeypatch):
     assert first.status_code == 200
     assert second.status_code == 200
     assert refreshed.status_code == 200
-    assert captured == {"k8s": 2, "hw": 2, "nova": 2}
+    assert captured == {"k8s": 2, "hw": 2, "nova": 2, "placement": 2}
+
+
+def test_node_detail_endpoint_includes_placement_payload(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(web_server.k8s_ops, "get_node_k8s_detail", lambda node_name, auth=None: {"node": node_name})
+    monkeypatch.setattr(web_server.k8s_ops, "get_node_hardware_info", lambda node_name, hostname=None: {"hostname": hostname})
+    monkeypatch.setattr(web_server.openstack_ops, "get_hypervisor_detail", lambda hypervisor, auth=None: {"hypervisor": hypervisor})
+    monkeypatch.setattr(
+        web_server.openstack_ops,
+        "get_hypervisor_placement_detail",
+        lambda hypervisor, auth=None: {
+            "provider": {"id": "rp-1", "name": hypervisor},
+            "availability_zone": "nova",
+            "aggregates": ["agg-a"],
+            "traits": ["HW_CPU_X86_VMX", "CUSTOM_EDGE"],
+            "custom_traits": ["CUSTOM_EDGE"],
+            "inventories": [{"resource_class": "VCPU", "total": 96, "used": 72, "effective_total": 96.0, "reserved": 0, "allocation_ratio": 1.0}],
+            "constraints": [{"level": "warning", "title": "VCPU tight", "detail": "VCPU usage is 75% of effective capacity."}],
+            "fit": {"status": "trait-restricted", "reason": "Scheduling depends on trait matching."},
+            "service": {"state": "up", "status": "enabled", "disabled_reason": None},
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+
+        record = next(iter(web_server._sessions._sessions.values()))
+        record.server.node_states["node-a"] = NodeState(k8s_name="node-a", hypervisor="hv-a", is_compute=True)
+
+        resp = client.get("/api/nodes/node-a/detail")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["placement"]["provider"]["id"] == "rp-1"
+    assert body["placement"]["custom_traits"] == ["CUSTOM_EDGE"]
+    assert body["placement"]["fit"]["status"] == "trait-restricted"
 
 
 def test_node_metrics_endpoint_caches_and_refreshes(monkeypatch):
@@ -318,10 +380,13 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
                 "network_id": "net-1",
                 "network_name": "tenant-net",
                 "fixed_ips": ["10.0.0.12"],
+                "subnets": [{"id": "subnet-1", "name": "tenant-subnet", "cidr": "10.0.0.0/24", "gateway_ip": "10.0.0.1", "router": {"id": "router-1", "name": "router-a"}}],
                 "dhcp_enabled": True,
                 "gateway_target": "router-a",
                 "allowed_address_pairs": [{"ip_address": "10.0.0.50", "mac_address": "fa:16:3e:00:00:50"}],
                 "security_groups": ["default"],
+                "security_group_names": ["default"],
+                "binding_host": "hv-a",
                 "floating_ips": ["203.0.113.10"],
             }],
         },
@@ -364,6 +429,7 @@ def test_node_instance_detail_endpoint_returns_ports_flavor_and_ovn(monkeypatch)
     assert body["instance"]["ports"][0]["network_name"] == "tenant-net"
     assert body["instance"]["ports"][0]["dhcp_enabled"] is True
     assert body["instance"]["ports"][0]["gateway_target"] == "router-a"
+    assert body["instance"]["ports"][0]["subnets"][0]["router"]["name"] == "router-a"
 
 
 def test_node_instance_port_stats_endpoint_returns_node_agent_data(monkeypatch):
@@ -587,6 +653,103 @@ def test_hypervisor_detail_falls_back_to_placement_inventory(monkeypatch):
     assert detail["vcpus_used"] == 72
     assert detail["memory_mb"] == 524288
     assert detail["memory_mb_used"] == 430080
+
+
+def test_hypervisor_placement_detail_collects_traits_and_constraints(monkeypatch):
+    class FakeInventory:
+        def __init__(self, resource_class, total, reserved=0, allocation_ratio=1.0):
+            self.resource_class = resource_class
+            self.total = total
+            self.reserved = reserved
+            self.allocation_ratio = allocation_ratio
+            self.min_unit = 1
+            self.max_unit = total
+            self.step_size = 1
+
+    class FakeProvider:
+        id = "rp-1"
+        name = "hv-a01.example.com"
+        generation = 4
+
+    class FakePlacement:
+        @staticmethod
+        def find_resource_provider(name_or_id, ignore_missing=True):
+            assert name_or_id == "hv-a01.example.com"
+            return FakeProvider()
+
+        @staticmethod
+        def resource_provider_inventories(provider):
+            assert provider.id == "rp-1"
+            return [
+                FakeInventory("VCPU", 96),
+                FakeInventory("MEMORY_MB", 524288, reserved=8192, allocation_ratio=1.0),
+            ]
+
+    class FakeAggregate:
+        name = "agg-a"
+        availability_zone = "nova"
+        hosts = ["hv-a01.example.com"]
+        metadata = {}
+
+    class FakeService:
+        state = "up"
+        status = "disabled"
+        disabled_reason = "maintenance"
+
+    class FakeCompute:
+        @staticmethod
+        def aggregates():
+            return [FakeAggregate()]
+
+        @staticmethod
+        def services(host=None, binary=None):
+            assert host == "hv-a01.example.com"
+            assert binary == "nova-compute"
+            return [FakeService()]
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeSession:
+        @staticmethod
+        def get(url, headers=None):
+            assert headers == {"OpenStack-API-Version": "placement 1.9"}
+            if url.endswith("/resource_providers/rp-1/usages"):
+                return FakeResponse({"usages": {"VCPU": 90, "MEMORY_MB": 430080}})
+            if url.endswith("/resource_providers/rp-1/traits"):
+                return FakeResponse({"traits": ["HW_CPU_X86_VMX", "CUSTOM_EDGE"]})
+            if url.endswith("/resource_providers/rp-1/aggregates"):
+                return FakeResponse({"aggregates": ["uuid-agg-a"]})
+            raise AssertionError(f"unexpected URL {url}")
+
+    class FakeConn:
+        compute = FakeCompute()
+        placement = FakePlacement()
+        session = FakeSession()
+
+        @staticmethod
+        def endpoint_for(service_type):
+            assert service_type == "placement"
+            return "https://placement.example/v1"
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    detail = web_server.openstack_ops.get_hypervisor_placement_detail("hv-a01.example.com")
+
+    assert detail["provider"]["id"] == "rp-1"
+    assert detail["availability_zone"] == "nova"
+    assert detail["aggregates"] == ["agg-a"]
+    assert detail["custom_traits"] == ["CUSTOM_EDGE"]
+    assert detail["service"]["status"] == "disabled"
+    assert any(item["title"] == "Compute service disabled" for item in detail["constraints"])
+    assert detail["fit"]["status"] == "administratively blocked"
 
 
 def test_instance_network_detail_falls_back_to_flavor_name_lookup(monkeypatch):

@@ -151,6 +151,11 @@ function renderLoadBalancerDetail() {
   }
   try {
   const provCls = ld.provisioning_status === 'ACTIVE' ? 'st-active' : ld.provisioning_status === 'ERROR' ? 'st-error' : 'st-pending';
+  const joins = ld.joins || {};
+  const findings = [];
+  if (joins.router_name && ld.floating_ip) findings.push({ cls: 'good', title: 'VIP path is externally routed', detail: `VIP traffic is routed via ${joins.router_name} and exposed through ${ld.floating_ip}.` });
+  else if (joins.router_name) findings.push({ cls: 'warn', title: 'VIP has tenant routing but no floating IP', detail: `Router ${joins.router_name} is present, but the VIP is not externally exposed by floating IP.` });
+  if ((joins.member_count_total || 0) > 0 && (joins.member_count_online || 0) < (joins.member_count_total || 0)) findings.push({ cls: 'warn', title: 'Some backend members are unhealthy', detail: `${joins.member_count_online || 0} of ${joins.member_count_total || 0} members are currently online.` });
   let h = `<div class="net-detail-inner">
     <div class="net-detail-head">
       <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(ld.name)}</strong>
@@ -171,6 +176,17 @@ function renderLoadBalancerDetail() {
         <div class="mrow"><span class="ml">VIP subnet</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ld.vip_subnet_id || '—')}</span></div>
         <div class="mrow"><span class="ml">Project</span><span class="mv" style="font-family:monospace;font-size:10px">${esc(ld.project_id || '—')}</span></div>
         <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(ld.flavor_id || '—')}</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">VIP Path</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">VIP network</span><span class="mv">${esc(joins.vip_network_name || '—')}</span></div>
+        <div class="mrow"><span class="ml">VIP subnet</span><span class="mv">${esc(joins.vip_subnet_name || joins.vip_subnet_cidr || '—')}</span></div>
+        <div class="mrow"><span class="ml">Router</span><span class="mv">${esc(joins.router_name || '—')}</span></div>
+        <div class="mrow"><span class="ml">Floating IP</span><span class="mv">${esc(ld.floating_ip || '—')}</span></div>
+        <div class="mrow"><span class="ml">Healthy members</span><span class="mv">${esc(String(joins.member_count_online ?? 0))} / ${esc(String(joins.member_count_total ?? 0))}</span></div>
       </div>
     </div>`;
 
@@ -270,6 +286,12 @@ function renderLoadBalancerDetail() {
         <div class="mrow"><span class="ml">Health monitor</span><span class="mv" style="display:grid;gap:2px;text-align:right;white-space:pre-line">${esc(pool.healthmonitor || '—')}</span></div>
         <div class="mrow"><span class="ml">Session persistence</span><span class="mv">${esc(pool.session_persistence || 'None')}</span></div>
         <div class="mrow"><span class="ml">TLS enabled</span><span class="mv">${pool.tls_enabled ? 'Yes' : 'No'}</span></div>
+        ${(pool.members || []).length ? `<div style="margin-top:8px;border-top:1px solid #f0f2f5;padding-top:8px">
+          ${(pool.members || []).map(member => `<div class="mrow">
+            <span class="ml">${esc(member.address || '—')}${member.protocol_port ? `:${esc(String(member.protocol_port))}` : ''}</span>
+            <span class="mv">${esc(member.instance_name || member.compute_host || member.operating_status || '—')}</span>
+          </div>`).join('')}
+        </div>` : ''}
       </div>`).join('');
   }
   h += `</div></div>`;
@@ -307,6 +329,15 @@ function renderLoadBalancerDetail() {
       <div class="card-body">
         <div class="mrow"><span class="ml">Distinct hosts</span><span class="mv">${esc(String(ld.distinct_host_count ?? 0))}</span></div>
         <div class="mrow"><span class="ml">Failover posture</span><span class="mv">${esc(ld.ha_summary || 'Unknown')}</span></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Troubleshooting</div>
+      <div class="card-body">
+        ${findings.length ? findings.map(item => `<div class="finding ${item.cls}" style="margin-bottom:8px">
+          <div class="finding-mark">${item.cls === 'good' ? '✓' : item.cls === 'bad' ? '×' : '!'}</div>
+          <div><strong>${esc(item.title)}</strong>${esc(item.detail)}</div>
+        </div>`).join('') : '<div style="color:var(--dim);font-size:12px">No joined load balancer findings available.</div>'}
       </div>
     </div>
   </div>`;

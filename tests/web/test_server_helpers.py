@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from draino.models import NodeState
 from draino.web import server as web_server
 
@@ -189,8 +191,14 @@ def test_get_router_detail_includes_connected_subnets_and_gateway(monkeypatch):
             return FakeRouter()
 
         @staticmethod
-        def ports(device_id=None):
-            assert device_id == "router-1"
+        def ports(device_id=None, network_id=None):
+            if device_id == "router-1":
+                return [FakePort()]
+            if network_id == "net-1":
+                return [
+                    type("ConsumerPort", (), {"device_owner": "compute:nova", "device_id": "vm-1", "to_dict": lambda self: {}, "id": "consumer-1"})(),
+                    type("ConsumerPort", (), {"device_owner": "Octavia", "device_id": "lb-1", "to_dict": lambda self: {}, "id": "consumer-2"})(),
+                ]
             return [FakePort()]
 
         @staticmethod
@@ -205,6 +213,10 @@ def test_get_router_detail_includes_connected_subnets_and_gateway(monkeypatch):
                 "ext-subnet-1": {"name": "public-subnet", "cidr": "203.0.113.0/24", "gateway_ip": "203.0.113.1", "is_dhcp_enabled": False},
             }[subnet_id]
             return type("Subnet", (), details)()
+
+        @staticmethod
+        def ips():
+            return []
 
     class FakeConn:
         network = FakeNetworkAPI()
@@ -221,6 +233,9 @@ def test_get_router_detail_includes_connected_subnets_and_gateway(monkeypatch):
     assert item["connected_subnets"][0]["network_name"] == "tenant-net"
     assert item["connected_subnets"][0]["cidr"] == "10.0.0.0/24"
     assert item["routes"][0]["destination"] == "10.2.0.0/24"
+    assert item["subnet_consumers"][0]["instance_count"] == 1
+    assert item["subnet_consumers"][0]["load_balancer_count"] == 1
+    assert item["joins"]["routed_instance_count"] == 1
 
 
 def test_get_network_detail_includes_metadata_port_for_matching_subnet(monkeypatch):
@@ -562,7 +577,14 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
             return {}
 
     class FakeMember:
-        pass
+        def __init__(self, member_id, address, status):
+            self.id = member_id
+            self.address = address
+            self.protocol_port = 443
+            self.operating_status = status
+
+        def to_dict(self):
+            return {}
 
     class FakeAmphora:
         def __init__(self, amp_id, role, compute_id, status, lb_ip):
@@ -579,7 +601,8 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
             return {}
 
     class FakeServer:
-        def __init__(self, host, image_id):
+        def __init__(self, name, host, image_id):
+            self.name = name
             self.compute_host = host
             self.image = {"id": image_id}
 
@@ -609,12 +632,47 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
                 "to_dict": lambda self: {},
             })()
 
+        @staticmethod
+        def ports(device_id=None, network_id=None, fixed_ips=None):
+            if fixed_ips == "ip_address=10.10.0.21":
+                return [type("Port", (), {
+                    "id": "member-port-1",
+                    "device_owner": "compute:nova",
+                    "device_id": "server-1",
+                    "to_dict": lambda self: {"fixed_ips": [{"ip_address": "10.10.0.21"}]},
+                })()]
+            if fixed_ips == "ip_address=10.10.0.22":
+                return [type("Port", (), {
+                    "id": "member-port-2",
+                    "device_owner": "compute:nova",
+                    "device_id": "server-2",
+                    "to_dict": lambda self: {"fixed_ips": [{"ip_address": "10.10.0.22"}]},
+                })()]
+            if network_id == "net-1":
+                return [type("RouterPort", (), {"device_owner": "network:router_interface", "device_id": "router-1", "network_id": "net-1", "to_dict": lambda self: {}})()]
+            return []
+
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return type("Network", (), {"name": "tenant-net"})()
+
+        @staticmethod
+        def get_subnet(subnet_id):
+            assert subnet_id == "subnet-1"
+            return type("Subnet", (), {"name": "tenant-subnet", "cidr": "10.10.0.0/24", "gateway_ip": "10.10.0.1", "is_dhcp_enabled": True})()
+
+        @staticmethod
+        def get_router(router_id):
+            assert router_id == "router-1"
+            return type("Router", (), {"name": "tenant-router", "to_dict": lambda self: {}})()
+
     class FakeComputeAPI:
         @staticmethod
         def get_server(server_id):
             hosts = {
-                "server-1": FakeServer("compute-a.example", "image-1"),
-                "server-2": FakeServer("compute-b.example", "image-2"),
+                "server-1": FakeServer("api-01", "compute-a.example", "image-1"),
+                "server-2": FakeServer("api-02", "compute-b.example", "image-2"),
             }
             return hosts[server_id]
 
@@ -635,7 +693,7 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
         @staticmethod
         def members(pool_id):
             assert pool_id == "pool-1"
-            return [FakeMember(), FakeMember()]
+            return [FakeMember("member-1", "10.10.0.21", "ONLINE"), FakeMember("member-2", "10.10.0.22", "ERROR")]
 
         @staticmethod
         def get_health_monitor(hm_id):
@@ -665,6 +723,8 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
     assert item["vip_port"]["id"] == "vip-port-1"
     assert item["vip_port"]["name"] == "octavia-lb-vip"
     assert item["vip_port"]["network_id"] == "net-1"
+    assert item["vip_port"]["network_name"] == "tenant-net"
+    assert item["vip_port"]["router_name"] == "tenant-router"
     assert item["vip_port"]["subnet_id"] == "subnet-1"
     assert item["vip_port"]["ip_address"] == "10.10.0.5"
     assert item["vip_port"]["mac_address"] == "fa:16:3e:11:22:33"
@@ -673,6 +733,8 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
     assert item["listeners"][0]["id"] == "listener-1"
     assert item["listeners"][0]["protocol_port"] == 443
     assert item["pools"][0]["member_count"] == 2
+    assert item["pools"][0]["members"][0]["instance_name"] == "api-01"
+    assert item["pools"][0]["members"][1]["compute_host"] == "compute-b.example"
     assert item["pools"][0]["healthmonitor"] == "TCP\ndelay 5\ntimeout 3\nmax retries 3"
     assert item["pools"][0]["session_persistence"] == "SOURCE_IP"
     assert item["pools"][0]["tls_enabled"] is True
@@ -680,3 +742,167 @@ def test_get_load_balancer_detail_includes_listeners_pools_and_amphorae(monkeypa
     assert item["amphorae"][0]["compute_host"] == "compute-a.example"
     assert item["distinct_host_count"] == 2
     assert item["ha_summary"] == "HA spread OK"
+
+
+def test_get_security_groups_audits_open_world_and_unused_groups(monkeypatch):
+    class FakeRule:
+        def __init__(self, rule_id, direction, protocol, min_port, max_port, cidr="", ethertype="IPv4"):
+            self.id = rule_id
+            self.direction = direction
+            self.protocol = protocol
+            self.port_range_min = min_port
+            self.port_range_max = max_port
+            self.remote_ip_prefix = cidr
+            self.ethertype = ethertype
+
+        def to_dict(self):
+            return {}
+
+    class FakeSecurityGroup:
+        def __init__(self, group_id, name, project_id, rules):
+            self.id = group_id
+            self.name = name
+            self.project_id = project_id
+            self.description = ""
+            self.security_group_rules = rules
+            self.stateful = True
+
+        def to_dict(self):
+            return {"revision_number": 3, "stateful": True}
+
+    class FakeProject:
+        def __init__(self, project_id, name):
+            self.id = project_id
+            self.name = name
+
+    class FakePort:
+        def __init__(self, port_id, group_ids, device_owner, device_id):
+            self.id = port_id
+            self.security_group_ids = group_ids
+            self.device_owner = device_owner
+            self.device_id = device_id
+            self.project_id = "proj-1"
+            self.network_id = "net-1"
+            self.fixed_ips = [{"subnet_id": "subnet-1", "ip_address": "10.0.0.5"}]
+
+        def to_dict(self):
+            return {}
+
+    critical = FakeSecurityGroup(
+        "sg-1",
+        "allow-all",
+        "proj-1",
+        [FakeRule("rule-1", "ingress", None, None, None, "0.0.0.0/0")],
+    )
+    unused = FakeSecurityGroup(
+        "sg-2",
+        "unused-sg",
+        "proj-2",
+        [FakeRule("rule-2", "egress", "tcp", 443, 443, "0.0.0.0/0")],
+    )
+
+    class FakeIdentityAPI:
+        @staticmethod
+        def projects():
+            return [FakeProject("proj-1", "production"), FakeProject("proj-2", "staging")]
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def security_groups():
+            return [critical, unused]
+
+        @staticmethod
+        def ports():
+            return [FakePort("port-1", ["sg-1"], "compute:nova", "server-1")]
+
+    class FakeConn:
+        identity = FakeIdentityAPI()
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    items = web_server._get_security_groups(auth=None)
+
+    assert [item["id"] for item in items] == ["sg-1", "sg-2"]
+    assert items[0]["audit"]["severity"] == "critical"
+    assert items[0]["audit"]["has_any_any_open_world"] is True
+    assert items[0]["attachment_instance_count"] == 1
+    assert items[0]["project_name"] == "production"
+    assert items[1]["audit"]["severity"] == "medium"
+    assert items[1]["audit"]["has_unused"] is True
+    assert items[1]["attachment_port_count"] == 0
+
+
+def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
+    class FakeRule:
+        def __init__(self, rule_id, direction, protocol, min_port, max_port, cidr="", ethertype="IPv4"):
+            self.id = rule_id
+            self.direction = direction
+            self.protocol = protocol
+            self.port_range_min = min_port
+            self.port_range_max = max_port
+            self.remote_ip_prefix = cidr
+            self.ethertype = ethertype
+
+        def to_dict(self):
+            return {}
+
+    group = SimpleNamespace(
+        id="sg-1",
+        name="web-frontend",
+        description="web tier",
+        project_id="proj-1",
+        security_group_rules=[
+            FakeRule("rule-1", "ingress", "tcp", 22, 22, "0.0.0.0/0"),
+            FakeRule("rule-2", "egress", "tcp", 443, 443, "0.0.0.0/0"),
+        ],
+        stateful=True,
+        to_dict=lambda: {"revision_number": 7, "stateful": True},
+    )
+
+    class FakeProject:
+        id = "proj-1"
+        name = "production"
+
+    class FakePort:
+        id = "port-1"
+        security_group_ids = ["sg-1"]
+        device_owner = "compute:nova"
+        device_id = "server-1"
+        project_id = "proj-1"
+        network_id = "net-1"
+        fixed_ips = [{"subnet_id": "subnet-1", "ip_address": "10.0.0.5"}]
+
+        def to_dict(self):
+            return {}
+
+    class FakeIdentityAPI:
+        @staticmethod
+        def projects():
+            return [FakeProject()]
+
+    class FakeNetworkAPI:
+        @staticmethod
+        def get_security_group(group_id):
+            assert group_id == "sg-1"
+            return group
+
+        @staticmethod
+        def ports():
+            return [FakePort()]
+
+    class FakeConn:
+        identity = FakeIdentityAPI()
+        network = FakeNetworkAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    item = web_server._get_security_group_detail("sg-1", auth=None)
+
+    assert item["audit"]["severity"] == "high"
+    assert item["flagged_rule_count"] == 1
+    assert item["attachments"][0]["port_id"] == "port-1"
+    assert item["attachments"][0]["device_id"] == "server-1"
+    assert item["rules"][0]["audit"]["flagged"] is True
+    assert item["rules"][0]["audit"]["summary"] == "tcp:22 0.0.0.0/0"
+    assert item["rules"][1]["audit"]["flagged"] is False

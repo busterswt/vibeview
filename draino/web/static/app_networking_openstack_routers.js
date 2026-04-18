@@ -164,6 +164,13 @@ function renderRouterDetail() {
 
   const stCls = rd.status === 'ACTIVE' ? 'st-active' : rd.status === 'DOWN' ? 'st-down' : 'st-error';
   const gateway = rd.external_gateway || {};
+  const joins = rd.joins || {};
+  const subnetConsumers = rd.subnet_consumers || [];
+  const routerFindings = [];
+  if (gateway.network_name) routerFindings.push({ cls: 'good', title: 'External gateway configured', detail: `Router is connected to external network ${gateway.network_name}.` });
+  else routerFindings.push({ cls: 'bad', title: 'External gateway missing', detail: 'North-south routing will fail without an external gateway.' });
+  if ((joins.attached_network_count || 0) > 0) routerFindings.push({ cls: 'good', title: 'Attached subnets are populated', detail: `${joins.attached_network_count} tenant network(s) are connected to this router.` });
+  if ((joins.routed_load_balancer_count || 0) > 0) routerFindings.push({ cls: 'warn', title: 'Router has downstream load balancers', detail: `${joins.routed_load_balancer_count} load balancer(s) sit behind this router.` });
   let h = `<div class="net-detail-inner">
     <div class="net-detail-head">
       <strong style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${esc(rd.name)}</strong>
@@ -193,6 +200,16 @@ function renderRouterDetail() {
         <div class="mrow"><span class="ml">SNAT</span><span class="mv">${gateway.enable_snat ? 'Enabled' : 'Disabled'}</span></div>
         <div class="mrow"><span class="ml">External IPs</span><span class="mv">${gateway.external_fixed_ips?.length ? gateway.external_fixed_ips.map(item => esc(item.ip_address)).join(', ') : '<span style="color:var(--dim)">—</span>'}</span></div>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Blast Radius</div>
+      <div class="card-body">
+        <div class="mrow"><span class="ml">Attached networks</span><span class="mv">${joins.attached_network_count ?? 0}</span></div>
+        <div class="mrow"><span class="ml">Instances behind router</span><span class="mv">${joins.routed_instance_count ?? 0}</span></div>
+        <div class="mrow"><span class="ml">Load balancers behind router</span><span class="mv">${joins.routed_load_balancer_count ?? 0}</span></div>
+        <div class="mrow"><span class="ml">External gateway IPs</span><span class="mv">${joins.external_ip_count ?? 0}</span></div>
+      </div>
     </div>`;
 
   const subnets = rd.connected_subnets || [];
@@ -221,6 +238,24 @@ function renderRouterDetail() {
   }
   h += `</div></div>`;
 
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Attached Network Consumers</div>
+    <div class="card-body" style="padding:0">`;
+  if (!subnetConsumers.length) {
+    h += `<div style="color:var(--dim);font-size:12px;padding:8px 10px">No connected subnet consumers found.</div>`;
+  } else {
+    h += `<table class="data-table" style="font-size:11px">
+      <thead><tr><th>Network</th><th>Subnet</th><th>Instances</th><th>Load Balancers</th><th>Ports</th></tr></thead>
+      <tbody>${subnetConsumers.map(item => `<tr>
+        <td>${esc(item.network_name || '—')}</td>
+        <td><div>${esc(item.subnet_name || '—')}</div><div style="font-family:monospace;font-size:10px;color:var(--dim)">${esc(item.cidr || '') || '—'}</div></td>
+        <td>${esc(String(item.instance_count ?? 0))}</td>
+        <td>${esc(String(item.load_balancer_count ?? 0))}</td>
+        <td>${esc(String(item.port_count ?? 0))}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  h += `</div></div>`;
+
   const routes = rd.routes || [];
   h += `<div class="card" style="margin-bottom:10px">
     <div class="card-title">Static Routes (${routes.length})</div>
@@ -236,6 +271,16 @@ function renderRouterDetail() {
       </tr>`).join('')}</tbody></table>`;
   }
   h += `</div></div>`;
+
+  h += `<div class="card" style="margin-bottom:10px">
+    <div class="card-title">Troubleshooting</div>
+    <div class="card-body">
+      ${routerFindings.map(item => `<div class="finding ${item.cls}" style="margin-bottom:8px">
+        <div class="finding-mark">${item.cls === 'good' ? '✓' : item.cls === 'bad' ? '×' : '!'}</div>
+        <div><strong>${esc(item.title)}</strong>${esc(item.detail)}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
 
   const ovn = routerDetailState.ovn;
   h += `<div class="card" style="margin-bottom:10px">

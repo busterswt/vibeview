@@ -162,6 +162,20 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
   const ports = inst.ports || [];
   const expandedPortId = expandedPortIdByInstance[instanceId] || '';
   const expandedPort = ports.find((port) => port.id === expandedPortId) || null;
+  const firstPort = ports[0] || null;
+  const firstSubnet = firstPort?.subnets?.[0] || {};
+  const firstRouter = firstSubnet?.router || {};
+  const firstFloatingIp = (firstPort?.floating_ips || [])[0] || '';
+  const sgNames = [...new Set(ports.flatMap((port) => port.security_group_names || []))].filter(Boolean);
+  const findings = [];
+  if (firstPort) {
+    if ((firstPort.status || '').toUpperCase() === 'ACTIVE') findings.push({ cls: 'good', title: 'Port is active', detail: 'Neutron reports the primary interface as ACTIVE.' });
+    else findings.push({ cls: 'bad', title: 'Port is not active', detail: `Neutron reports port state ${firstPort.status || 'UNKNOWN'}.` });
+    if (firstPort.binding_host && inst.compute_host && firstPort.binding_host === inst.compute_host) findings.push({ cls: 'good', title: 'Binding host matches compute host', detail: `${firstPort.binding_host} matches the current Nova host.` });
+    else if (firstPort.binding_host || inst.compute_host) findings.push({ cls: 'warn', title: 'Binding host mismatch', detail: `Port binding is ${firstPort.binding_host || 'unknown'}, Nova host is ${inst.compute_host || 'unknown'}.` });
+    if (firstFloatingIp && firstRouter?.name) findings.push({ cls: 'good', title: 'North-south path exists', detail: `Floating IP ${firstFloatingIp} is associated through router ${firstRouter.name}.` });
+    else if (firstRouter?.name) findings.push({ cls: 'warn', title: 'Primary interface is not externally exposed', detail: `Router ${firstRouter.name} is present, but there is no floating IP on the primary port.` });
+  }
   let h = `<div class="card" style="margin-top:10px">
     <div class="card-title">Instance Detail</div>
     <div class="card-body">
@@ -187,6 +201,28 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
             <div class="mrow"><span class="ml">Disk</span><span class="mv">${flavor.disk_gb != null ? esc(`${flavor.disk_gb} GB`) : '—'}</span></div>
             <div class="mrow"><span class="ml">Ephemeral</span><span class="mv">${flavor.ephemeral_gb != null ? esc(`${flavor.ephemeral_gb} GB`) : '—'}</span></div>
             <div class="mrow"><span class="ml">Swap</span><span class="mv">${flavor.swap_mb != null ? esc(`${flavor.swap_mb} MB`) : '—'}</span></div>
+          </div>
+        </div>
+      </div>`;
+  h += `<div class="summary-grid" style="margin-top:10px">
+        <div class="card">
+          <div class="card-title">Network Path</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Primary port</span><span class="mv" style="font-family:monospace;font-size:11px">${esc(firstPort?.id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Tenant network</span><span class="mv">${esc(firstPort?.network_name || firstPort?.network_id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Subnet</span><span class="mv">${esc(firstSubnet?.name || firstSubnet?.cidr || '—')}</span></div>
+            <div class="mrow"><span class="ml">Router</span><span class="mv">${esc(firstRouter?.name || '—')}</span></div>
+            <div class="mrow"><span class="ml">Floating IP</span><span class="mv">${esc(firstFloatingIp || '—')}</span></div>
+            <div class="mrow"><span class="ml">Security groups</span><span class="mv">${esc(sgNames.join(', ') || '—')}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Troubleshooting</div>
+          <div class="card-body">
+            ${findings.length ? findings.map((item) => `<div class="finding ${item.cls}" style="margin-bottom:8px">
+                <div class="finding-mark">${item.cls === 'good' ? '✓' : item.cls === 'bad' ? '×' : '!'}</div>
+                <div><strong>${esc(item.title)}</strong>${esc(item.detail)}</div>
+              </div>`).join('') : '<div style="color:var(--dim);font-size:12px">No joined networking findings available.</div>'}
           </div>
         </div>
       </div>`;
@@ -253,9 +289,10 @@ function renderPortDetailPanel(port) {
             <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv">${esc((port.fixed_ips || []).join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Allowed address pairs</span><span class="mv">${esc(allowedAddressPairs.join(', ') || '—')}</span></div>
-            <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_groups || []).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${esc((port.security_group_names || port.security_groups || []).join(', ') || '—')}</span></div>
             <div class="mrow"><span class="ml">Device owner</span><span class="mv dim">${esc(port.device_owner || '—')}</span></div>
             <div class="mrow"><span class="ml">vNIC type</span><span class="mv dim">${esc(port.binding_vnic_type || '—')}</span></div>
+            <div class="mrow"><span class="ml">Binding host</span><span class="mv dim">${esc(port.binding_host || '—')}</span></div>
           </div>
         </div>
         <div class="card">
@@ -283,6 +320,15 @@ function renderPortDetailPanel(port) {
               <div class="mrow"><span class="ml">Enabled</span><span class="mv">${ovnPort.enabled == null ? '—' : (ovnPort.enabled ? 'true' : 'false')}</span></div>
               <div class="mrow"><span class="ml">Addresses</span><span class="mv" style="font-family:monospace;font-size:11px">${esc((ovnPort.addresses || []).join(', ') || '—')}</span></div>
             `}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Joined Path</div>
+          <div class="card-body">
+            <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(port.network_name || port.network_id || '—')}</span></div>
+            <div class="mrow"><span class="ml">Subnets</span><span class="mv">${esc((port.subnets || []).map(item => item.name || item.cidr || item.id).join(', ') || '—')}</span></div>
+            <div class="mrow"><span class="ml">Router</span><span class="mv">${esc((port.subnets || []).map(item => item.router?.name).filter(Boolean)[0] || port.gateway_target || '—')}</span></div>
+            <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc((port.floating_ips || []).join(', ') || '—')}</span></div>
           </div>
         </div>
       </div>
