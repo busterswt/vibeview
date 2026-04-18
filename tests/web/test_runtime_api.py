@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from draino.web import server as web_server
 from draino.web import latency as web_latency
+from draino.release import release_metadata, short_sha
 
 
 def test_normalise_image_digest_handles_kubernetes_image_ids():
@@ -220,6 +221,7 @@ def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
         web_server,
         "_get_public_version_status",
         lambda: {
+            "version": "0.2.0",
             "current_digest": "sha256:1234567890abcdef",
             "short_sha": "1234567890ab",
             "latest_digest": "sha256:abcdef1234567890",
@@ -234,9 +236,29 @@ def test_version_endpoint_returns_short_sha_without_auth(monkeypatch):
         version = client.get("/api/version")
 
     assert version.status_code == 200
+    assert version.json()["version"] == "0.2.0"
     assert version.json()["short_sha"] == "1234567890ab"
     assert version.json()["latest_short_sha"] == "abcdef123456"
     assert version.json()["error"] is None
+
+
+def test_release_metadata_prefers_explicit_build_sha(monkeypatch):
+    monkeypatch.setenv("DRAINO_BUILD_SHA", "abcdef1234567890")
+    monkeypatch.setenv("DRAINO_IMAGE_TAG", "0.2.0")
+    monkeypatch.setenv("DRAINO_APP_VERSION", "0.2.0")
+
+    meta = release_metadata(resolve_current_digest=lambda: "sha256:should-not-be-used")
+
+    assert meta["version"] == "0.2.0"
+    assert meta["current_digest"] == "abcdef1234567890"
+    assert meta["short_sha"] == "abcdef123456"
+    assert meta["sha_source"] == "build_sha"
+    assert meta["image_tag"] == "0.2.0"
+
+
+def test_short_sha_truncates_digests_and_plain_shas():
+    assert short_sha("sha256:1234567890abcdef") == "1234567890ab"
+    assert short_sha("abcdef1234567890") == "abcdef123456"
 
 
 def test_app_runtime_endpoint_returns_runtime_snapshot(monkeypatch):

@@ -28,6 +28,7 @@ from .node_agent_common import (
     _reboot_host,
     _run_host_shell,
 )
+from .release import release_metadata
 from .node_agent_host_ops import (
     _HOST_STATIC_DETAIL_TTL,
     _get_cached_static_host_detail,
@@ -53,7 +54,19 @@ def run(host: str = "0.0.0.0", port: int = 8443) -> None:
     for path in (cert_file, key_file, token_file):
         if not Path(path).exists():
             raise RuntimeError(f"required file does not exist: {path}")
-    _LOGGER.info("node agent starting node=%s host=%s port=%s", _node_name(), host, port)
+    release = release_metadata()
+    _LOGGER.info(
+        "node agent starting node=%s host=%s port=%s version=%s sha=%s sha_source=%s image_tag=%s pod=%s namespace=%s",
+        _node_name(),
+        host,
+        port,
+        release["version"],
+        release["short_sha"] or "unknown",
+        release["sha_source"] or "unknown",
+        release["image_tag"] or "unknown",
+        release["pod_name"] or "unknown",
+        release["pod_namespace"] or "unknown",
+    )
     uvicorn.run(
         node_agent_app,
         host=host,

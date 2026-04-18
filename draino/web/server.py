@@ -51,6 +51,7 @@ from kubernetes.config.config_exception import ConfigException
 from .. import node_agent_client
 from ..models import NodeState
 from ..operations import k8s_ops, openstack_ops
+from ..release import release_metadata, short_sha
 from .app import create_fastapi_app
 from .auth_builders import (
     K8sLoginPayload,
@@ -340,19 +341,15 @@ def _get_app_update_status(force: bool = False) -> dict:
 
 def _get_public_version_status() -> dict:
     meta = _get_app_update_status(force=True)
+    release = release_metadata(resolve_current_digest=_get_running_image_digest)
     digest = meta.get("current_digest")
-    short_sha = ""
     latest_digest = meta.get("latest_digest")
-    latest_short_sha = ""
-    if isinstance(digest, str) and digest.startswith("sha256:"):
-        short_sha = digest[len("sha256:"):][:12]
-    if isinstance(latest_digest, str) and latest_digest.startswith("sha256:"):
-        latest_short_sha = latest_digest[len("sha256:"):][:12]
     return {
+        "version": release["version"],
         "current_digest": digest,
-        "short_sha": short_sha,
+        "short_sha": short_sha(digest if isinstance(digest, str) else None),
         "latest_digest": latest_digest,
-        "latest_short_sha": latest_short_sha,
+        "latest_short_sha": short_sha(latest_digest if isinstance(latest_digest, str) else None),
         "error": meta.get("error"),
         "current_tag": meta.get("current_tag"),
         "current_digest_source": meta.get("current_digest_source"),
@@ -515,5 +512,16 @@ def run(
     _audit_log_path = audit_log
     openstack_ops.configure(cloud=cloud)
     k8s_ops.configure(context=context)
-    _LOGGER.info("web ui starting host=%s port=%s", host, port)
+    release = release_metadata(resolve_current_digest=_get_running_image_digest)
+    _LOGGER.info(
+        "web ui starting host=%s port=%s version=%s sha=%s sha_source=%s image_tag=%s pod=%s namespace=%s",
+        host,
+        port,
+        release["version"],
+        release["short_sha"] or "unknown",
+        release["sha_source"] or "unknown",
+        release["image_tag"] or "unknown",
+        release["pod_name"] or "unknown",
+        release["pod_namespace"] or "unknown",
+    )
     uvicorn.run(fastapi_app, host=host, port=port, log_level="warning")

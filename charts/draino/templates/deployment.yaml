@@ -76,6 +76,10 @@ spec:
               value: {{ .Values.image.repository | quote }}
             - name: DRAINO_IMAGE_TAG
               value: {{ .Values.image.tag | quote }}
+            {{- if .Values.buildSha }}
+            - name: DRAINO_BUILD_SHA
+              value: {{ .Values.buildSha | quote }}
+            {{- end }}
             - name: DRAINO_POD_NAME
               valueFrom:
                 fieldRef:

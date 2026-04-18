@@ -66,6 +66,22 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: DRAINO_IMAGE_REPOSITORY
+              value: {{ .Values.image.repository | quote }}
+            - name: DRAINO_IMAGE_TAG
+              value: {{ .Values.image.tag | quote }}
+            {{- if .Values.buildSha }}
+            - name: DRAINO_BUILD_SHA
+              value: {{ .Values.buildSha | quote }}
+            {{- end }}
+            - name: DRAINO_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: DRAINO_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: DRAINO_NODE_AGENT_TOKEN_FILE
               value: /var/run/draino-node-agent/token
             - name: DRAINO_NODE_AGENT_TLS_CERT_FILE
