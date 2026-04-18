@@ -280,7 +280,6 @@ function renderNetworkDetail() {
         ${nd.project_id ? `<div class="mrow"><span class="ml">Project</span><span class="mv uuid-short" title="${esc(nd.project_id)}">${nd.project_id.slice(0, 8)}</span></div>` : ''}
       </div>
     </div>`;
-  h += renderNetworkOverlayCard(nd);
 
   // Subnets
   const subnets = nd.subnets || [];
@@ -598,4 +597,3 @@ function renderOvnPortDetail(portId, cached) {
 // ════════════════════════════════════════════════════════════════════════════
 // § ROUTERS VIEW
 // ════════════════════════════════════════════════════════════════════════════
-

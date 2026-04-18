@@ -194,7 +194,6 @@ function renderRouterDetail() {
         <div class="mrow"><span class="ml">External IPs</span><span class="mv">${gateway.external_fixed_ips?.length ? gateway.external_fixed_ips.map(item => esc(item.ip_address)).join(', ') : '<span style="color:var(--dim)">—</span>'}</span></div>
       </div>
     </div>`;
-  h += renderRouterOverlayCard(rd);
 
   const subnets = rd.connected_subnets || [];
   h += `<div class="card" style="margin-bottom:10px">

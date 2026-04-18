@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
+
+from kubernetes import client
+
+from .k8s_ops import K8sAuth, _api_client
+
 
 def get_etcd_node_names(auth: K8sAuth | None = None) -> set[str]:
     """Return the set of node names in the etcd role."""
@@ -115,5 +121,4 @@ def _pod_owner_label(pod) -> tuple[str, str]:
     if kind == "ReplicaSet":
         return ("Deployment", _deployment_name_from_rs(name))
     return (kind, name)
-
 

@@ -409,6 +409,93 @@ def test_list_k8s_network_domains_groups_services_gateways_and_routes(monkeypatc
     }]
 
 
+def test_list_k8s_services_and_vpcs_include_identity_hints(monkeypatch):
+    class FakeService:
+        def __init__(self):
+            self.metadata = SimpleNamespace(
+                namespace="apps",
+                name="tenant-a-lb",
+                annotations={
+                    "ovn.kubernetes.io/load_balancer_id": "lb-123",
+                    "neutron.openstack.org/vip": "172.18.0.50",
+                },
+                labels={"app": "frontend"},
+                creation_timestamp="2026-04-15T03:00:00Z",
+            )
+            self.spec = SimpleNamespace(
+                type="LoadBalancer",
+                cluster_ip="10.96.0.10",
+                load_balancer_class="kube-ovn",
+                ports=[SimpleNamespace(port=443, protocol="TCP", node_port=None)],
+            )
+            self.status = SimpleNamespace(
+                load_balancer=SimpleNamespace(
+                    ingress=[SimpleNamespace(ip="172.18.0.50", hostname=None)],
+                ),
+            )
+
+    class FakeCore:
+        def list_service_for_all_namespaces(self):
+            return SimpleNamespace(items=[FakeService()])
+
+    class FakeCustom:
+        def list_cluster_custom_object(self, group, version, plural):
+            assert group == "kubeovn.io"
+            assert version == "v1"
+            if plural == "vpcs":
+                return {
+                    "items": [{
+                        "metadata": {
+                            "name": "tenant-a",
+                            "annotations": {"ovn.kubernetes.io/router": "neutron-router-1"},
+                            "creationTimestamp": "2026-04-15T03:05:00Z",
+                        },
+                        "spec": {"namespaces": ["apps"]},
+                        "status": {"router": "neutron-router-1"},
+                    }],
+                }
+            return {"items": []}
+
+    monkeypatch.setattr(k8s_inventory_ops, "_api_client", lambda auth=None: object())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CoreV1Api", lambda api_client: FakeCore())
+    monkeypatch.setattr(k8s_inventory_ops.client, "CustomObjectsApi", lambda api_client: FakeCustom())
+
+    services = k8s_inventory_ops.list_k8s_services()
+    vpcs = k8s_inventory_ops.list_k8s_kubeovn_vpcs()
+
+    assert services == [{
+        "namespace": "apps",
+        "name": "tenant-a-lb",
+        "type": "LoadBalancer",
+        "cluster_ip": "10.96.0.10",
+        "external_ips": ["172.18.0.50"],
+        "ports": "443",
+        "load_balancer_class": "kube-ovn",
+        "annotations": {
+            "ovn.kubernetes.io/load_balancer_id": "lb-123",
+            "neutron.openstack.org/vip": "172.18.0.50",
+        },
+        "labels": {"app": "frontend"},
+        "identity_hints": ["172.18.0.50", "apps", "kube-ovn", "lb-123", "tenant-a-lb"],
+        "created": "2026-04-15T03:00:00Z",
+    }]
+    assert vpcs == [{
+        "name": "tenant-a",
+        "default": False,
+        "namespace_count": 1,
+        "namespaces": ["apps"],
+        "subnet_count": 0,
+        "subnets": [],
+        "static_route_count": 0,
+        "policy_route_count": 0,
+        "standby": False,
+        "annotations": {"ovn.kubernetes.io/router": "neutron-router-1"},
+        "labels": {},
+        "identity_hints": ["neutron-router-1", "tenant-a"],
+        "created": "2026-04-15T03:05:00Z",
+    }]
+
+
 def test_list_k8s_kubeovn_vpcs_and_subnets(monkeypatch):
     class FakeCustom:
         def list_cluster_custom_object(self, group, version, plural):
@@ -468,6 +555,9 @@ def test_list_k8s_kubeovn_vpcs_and_subnets(monkeypatch):
         "static_route_count": 1,
         "policy_route_count": 1,
         "standby": True,
+        "annotations": {},
+        "labels": {},
+        "identity_hints": ["tenant-a"],
         "created": "2026-04-15T01:00:00Z",
     }]
     assert subnets == [{

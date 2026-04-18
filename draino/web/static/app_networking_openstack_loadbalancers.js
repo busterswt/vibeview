@@ -173,7 +173,6 @@ function renderLoadBalancerDetail() {
         <div class="mrow"><span class="ml">Flavor</span><span class="mv">${esc(ld.flavor_id || '—')}</span></div>
       </div>
     </div>`;
-  h += renderLoadBalancerOverlayCard(ld);
 
   const vipPort = ld.vip_port || null;
   h += `<div class="card" style="margin-bottom:10px">

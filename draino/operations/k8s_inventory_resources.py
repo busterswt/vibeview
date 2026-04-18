@@ -2,12 +2,52 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from kubernetes import client
 
 from .k8s_ops import K8sAuth, _api_client
 from .k8s_inventory_utils import _deployment_name_from_rs, _ts
 from .k8s_inventory_storage import get_k8s_pvc_workload_summary
+
+
+def _normalise_identity_hint(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _append_identity_hint(target: set[str], value) -> None:
+    if value is None:
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _append_identity_hint(target, item)
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _append_identity_hint(target, item)
+        return
+    text = _normalise_identity_hint(str(value))
+    if not text:
+        return
+    target.add(text)
+
+
+def _collect_identity_hints(payload, *, key_pattern: re.Pattern[str], key_name: str = "") -> set[str]:
+    hints: set[str] = set()
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            child_key = str(key or "")
+            if key_pattern.search(child_key):
+                _append_identity_hint(hints, value)
+            hints.update(_collect_identity_hints(value, key_pattern=key_pattern, key_name=child_key))
+        return hints
+    if isinstance(payload, (list, tuple, set)):
+        for item in payload:
+            hints.update(_collect_identity_hints(item, key_pattern=key_pattern, key_name=key_name))
+        return hints
+    if key_name and key_pattern.search(key_name):
+        _append_identity_hint(hints, payload)
+    return hints
 def list_k8s_namespaces(auth: K8sAuth | None = None) -> list[dict]:
     v1 = client.CoreV1Api(_api_client(auth))
     return [
@@ -51,6 +91,9 @@ def list_k8s_services(namespace: str | None = None, auth: K8sAuth | None = None)
     raw = v1.list_service_for_all_namespaces() if not namespace else v1.list_namespaced_service(namespace)
     result = []
     for service in raw.items:
+        metadata = service.metadata
+        annotations = dict(metadata.annotations or {})
+        labels = dict(metadata.labels or {})
         ports = ", ".join(
             f"{port.port}{'/' + port.protocol if port.protocol != 'TCP' else ''}"
             + (f":{port.node_port}" if port.node_port else "")
@@ -59,13 +102,26 @@ def list_k8s_services(namespace: str | None = None, auth: K8sAuth | None = None)
         external_ips: list[str] = []
         if service.status.load_balancer and service.status.load_balancer.ingress:
             external_ips = [ingress.ip or ingress.hostname or "" for ingress in service.status.load_balancer.ingress]
+        identity_pattern = re.compile(r"(loadbalancer|load-balancer|\\blb\\b|octavia|neutron|ovn|vip|ingress)", re.IGNORECASE)
+        identity_hints = {
+            _normalise_identity_hint(metadata.name),
+            _normalise_identity_hint(metadata.namespace),
+            _normalise_identity_hint(service.spec.load_balancer_class or ""),
+            *(_normalise_identity_hint(value) for value in external_ips if value),
+        }
+        identity_hints.update(_collect_identity_hints(annotations, key_pattern=identity_pattern))
+        identity_hints.update(_collect_identity_hints(labels, key_pattern=identity_pattern))
         result.append({
-            "namespace": service.metadata.namespace,
-            "name": service.metadata.name,
+            "namespace": metadata.namespace,
+            "name": metadata.name,
             "type": service.spec.type or "ClusterIP",
             "cluster_ip": service.spec.cluster_ip or "",
             "external_ips": [value for value in external_ips if value],
             "ports": ports,
+            "load_balancer_class": service.spec.load_balancer_class or "",
+            "annotations": annotations,
+            "labels": labels,
+            "identity_hints": sorted(value for value in identity_hints if value),
             "created": _ts(service),
         })
     return result
@@ -209,10 +265,18 @@ def list_k8s_kubeovn_vpcs(auth: K8sAuth | None = None) -> list[dict]:
         metadata = item.get("metadata") or {}
         spec = item.get("spec") or {}
         status = item.get("status") or {}
+        annotations = dict(metadata.get("annotations") or {})
+        labels = dict(metadata.get("labels") or {})
         namespaces = sorted(str(value) for value in (spec.get("namespaces") or []) if str(value))
         static_routes = spec.get("staticRoutes") or spec.get("static_routes") or []
         policy_routes = spec.get("policyRoutes") or spec.get("policy_routes") or []
         subnets = sorted(str(value) for value in (status.get("subnets") or spec.get("subnets") or []) if str(value))
+        identity_pattern = re.compile(r"(router|logical|neutron|ovn|vpc|gateway|loadbalancer|load-balancer|\\blb\\b)", re.IGNORECASE)
+        identity_hints = {_normalise_identity_hint(metadata.get("name", ""))}
+        identity_hints.update(_collect_identity_hints(annotations, key_pattern=identity_pattern))
+        identity_hints.update(_collect_identity_hints(labels, key_pattern=identity_pattern))
+        identity_hints.update(_collect_identity_hints(spec, key_pattern=identity_pattern))
+        identity_hints.update(_collect_identity_hints(status, key_pattern=identity_pattern))
         result.append({
             "name": metadata.get("name", ""),
             "default": bool(spec.get("default")),
@@ -223,6 +287,9 @@ def list_k8s_kubeovn_vpcs(auth: K8sAuth | None = None) -> list[dict]:
             "static_route_count": len(static_routes),
             "policy_route_count": len(policy_routes),
             "standby": bool(status.get("standby", False)),
+            "annotations": annotations,
+            "labels": labels,
+            "identity_hints": sorted(value for value in identity_hints if value),
             "created": metadata.get("creationTimestamp", ""),
         })
     return result
@@ -485,5 +552,4 @@ def list_k8s_httproutes(auth: K8sAuth | None = None) -> list[dict]:
             "created": metadata.get("creationTimestamp", ""),
         })
     return result
-
 
