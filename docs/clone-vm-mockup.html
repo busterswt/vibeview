@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeView Clone VM Mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #0072c6;
+      --blue-lt: #1e88e5;
+      --blue-bg: #e3f2fd;
+      --header: #1a2332;
+      --sidebar: #f4f6f8;
+      --border: #d1d9e0;
+      --hover: #e8f4fd;
+      --text: #1a2332;
+      --dim: #607d8b;
+      --white: #ffffff;
+      --gray-bg: #f0f2f5;
+      --green: #2e7d32;
+      --yellow: #f57f17;
+      --red: #c62828;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--gray-bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #top-bar {
+      background: var(--header);
+      height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 2px solid var(--blue);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
+
+    .top-nav {
+      display: flex;
+      gap: 2px;
+      margin-left: 28px;
+    }
+
+    .top-nav a {
+      color: #b0bec5;
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: default;
+    }
+
+    .top-nav a.active { color: white; background: rgba(255,255,255,0.08); }
+
+    .top-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: #90a4ae;
+      font-size: 12px;
+    }
+
+    .top-search {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      width: 220px;
+      outline: none;
+    }
+
+    .top-search::placeholder { color: #78909c; }
+
+    #breadcrumb-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .bc-link { color: var(--blue); }
+    .bc-sep { color: #b0bec5; }
+    .bc-cur { color: var(--text); font-weight: 500; }
+    .bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+    .btn {
+      padding: 4px 11px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      border-radius: 3px;
+      font-size: 12px;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: inherit;
+    }
+
+    .btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+    .btn.warning { background: #fff8e1; color: #8d6e00; border-color: #f2d27a; }
+
+    #body { display: flex; flex: 1; overflow: hidden; }
+
+    #sidebar {
+      width: 320px;
+      min-width: 320px;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-head {
+      padding: 12px 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--dim);
+      position: sticky;
+      top: 0;
+    }
+
+    .group-label {
+      padding: 12px 14px 6px;
+      color: var(--dim);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      border-radius: 3px;
+      margin: 1px 6px;
+    }
+
+    .nav-item.selected { background: var(--blue); color: #fff; }
+    .nav-item .tree-badge { margin-left: auto; }
+
+    #content {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #obj-header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .obj-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--blue-bg);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .obj-meta { flex: 1; min-width: 0; }
+    .obj-meta h2 { font-size: 16px; font-weight: 600; }
+    .obj-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+    .obj-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+
+    .badge, .tree-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .badge.green { background: #e8f5e9; color: var(--green); }
+    .badge.yellow { background: #fff8e1; color: var(--yellow); }
+    .badge.red { background: #ffebee; color: var(--red); }
+    .badge.blue, .tree-badge { background: var(--blue-bg); color: var(--blue); }
+    .tree-badge.agg { background: #ede7f6; color: #6a1b9a; }
+
+    #tabs-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      display: flex;
+      flex-shrink: 0;
+    }
+
+    .tab {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--dim);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 500; }
+
+    #tab-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      background: var(--gray-bg);
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--dim);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .card-body { padding: 10px 12px; }
+
+    .mrow {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 5px 0;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 12px;
+    }
+
+    .mrow:last-child { border-bottom: none; }
+    .ml { color: var(--dim); }
+    .mv { font-weight: 600; text-align: right; }
+    .mv.dim { color: var(--dim); font-weight: 400; }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .data-table thead th {
+      background: var(--gray-bg);
+      padding: 6px 10px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--dim);
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .data-table tbody tr { border-bottom: 1px solid #f0f2f5; }
+    .data-table td { padding: 6px 10px; font-size: 12px; vertical-align: top; }
+    .data-table tbody tr.selected td { background: #f4f9fe; }
+
+    .finding {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 9px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #fafbfd;
+      font-size: 12px;
+      line-height: 1.45;
+      margin-bottom: 8px;
+    }
+
+    .finding:last-child { margin-bottom: 0; }
+    .finding.good { background: #f1f8f2; border-color: #cfe7d1; }
+    .finding.warn { background: #fff9ec; border-color: #f0e0b7; }
+    .finding.bad { background: #fff1f1; border-color: #efcccc; }
+
+    .finding-mark {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .finding.good .finding-mark { background: #dcedc8; color: var(--green); }
+    .finding.warn .finding-mark { background: #fff3cd; color: #8d6e00; }
+    .finding.bad .finding-mark { background: #ffcdd2; color: var(--red); }
+
+    .finding strong { display: block; margin-bottom: 2px; }
+    .hint { color: var(--dim); font-size: 11px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .wizard-steps {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .wizard-step {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--white);
+      color: var(--dim);
+      font-size: 11px;
+    }
+
+    .wizard-step.active {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border-color: #b6d9fb;
+      font-weight: 600;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .toggle .pill {
+      width: 34px;
+      height: 18px;
+      border-radius: 999px;
+      background: #c5d6e3;
+      position: relative;
+      display: inline-block;
+    }
+
+    .toggle .pill::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: white;
+      position: absolute;
+      top: 2px;
+      left: 18px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .drawer {
+      position: sticky;
+      top: 0;
+    }
+
+    @media (max-width: 1180px) {
+      #sidebar { display: none; }
+      .summary-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <div>
+        <div>VibeView</div>
+        <div class="logo-sub">Vibing Cloud Infrastructure Since Last Week</div>
+      </div>
+    </div>
+    <nav class="top-nav">
+      <a class="active">Infrastructure</a>
+      <a>Monitor</a>
+      <a>Kubernetes</a>
+      <a>Networking</a>
+      <a>Storage</a>
+      <a>Reports</a>
+    </nav>
+    <div class="top-right">
+      <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…">
+      <span>mockup session</span>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Infrastructure</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-link">cmp-12</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-link">Instances</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-cur">Clone api-01</span>
+    <div class="bc-actions">
+      <button class="btn">Cancel</button>
+      <button class="btn primary">Review Clone</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <div id="sidebar">
+      <div class="sidebar-head">Navigator — Clone VM</div>
+
+      <div class="group-label">Workflow</div>
+      <div class="nav-item selected"><span>1.</span> Source VM <span class="tree-badge">api-01</span></div>
+      <div class="nav-item"><span>2.</span> Clone Method <span class="tree-badge">suggested</span></div>
+      <div class="nav-item"><span>3.</span> Identity & Placement</div>
+      <div class="nav-item"><span>4.</span> Storage & Networking</div>
+      <div class="nav-item"><span>5.</span> Review & Launch</div>
+
+      <div class="group-label">Detected Inputs</div>
+      <div class="nav-item"><span>🖥️</span> Volume-backed root <span class="tree-badge">boot vol</span></div>
+      <div class="nav-item"><span>💾</span> 2 attached data volumes <span class="tree-badge">optional</span></div>
+      <div class="nav-item"><span>🌐</span> 1 Neutron port <span class="tree-badge">reuse config</span></div>
+      <div class="nav-item"><span>🔐</span> 3 security groups <span class="tree-badge">detected</span></div>
+      <div class="nav-item"><span>⚖️</span> 1 load balancer membership <span class="tree-badge agg">excluded</span></div>
+
+      <div class="group-label">vCenter Expectations</div>
+      <div class="nav-item"><span>✓</span> Preserve disk state</div>
+      <div class="nav-item"><span>✓</span> Prefill related resources</div>
+      <div class="nav-item"><span>!</span> Don’t duplicate IP/FIP by default</div>
+      <div class="nav-item"><span>!</span> Require fresh server identity</div>
+    </div>
+
+    <div id="content">
+      <div id="obj-header">
+        <div class="obj-icon">⧉</div>
+        <div class="obj-meta">
+          <h2>Clone VM: api-01</h2>
+          <div class="obj-sub">Operator-assisted clone flow using native OpenStack resources: clone boot volume or snapshot the server, discover related resources, and prefill safe defaults before launch.</div>
+          <div class="obj-badges">
+            <span class="badge green">Source VM ACTIVE</span>
+            <span class="badge blue">Project prod-admin</span>
+            <span class="badge blue">Flavor m1.large</span>
+            <span class="badge blue">Host cmp-12</span>
+            <span class="badge yellow">Load balancer membership will not be cloned automatically</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="tabs-bar">
+        <div class="tab active">Clone Wizard</div>
+        <div class="tab">Detected Resources</div>
+        <div class="tab">Safety Checks</div>
+        <div class="tab">Launch Preview</div>
+      </div>
+
+      <div id="tab-body">
+        <div class="wizard-steps">
+          <div class="wizard-step active">1. Analyze Source</div>
+          <div class="wizard-step active">2. Choose Clone Method</div>
+          <div class="wizard-step active">3. Prefill Related Resources</div>
+          <div class="wizard-step">4. Validate</div>
+          <div class="wizard-step">5. Create Server</div>
+        </div>
+
+        <div class="summary-grid">
+          <div>
+            <div class="card">
+              <div class="card-title">Clone Method <span class="hint">Closest to vCenter clone</span></div>
+              <div class="card-body">
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>Recommended: clone from boot volume</strong>
+                    Source instance is volume-backed, so VibeView can clone the boot volume, optionally clone attached data volumes, and boot a new server from the copied root disk.
+                  </div>
+                </div>
+                <div class="mrow"><span class="ml">Method</span><span class="mv">Clone boot volume + boot new server</span></div>
+                <div class="mrow"><span class="ml">Boot volume</span><span class="mv mono">vol-6ec2…</span></div>
+                <div class="mrow"><span class="ml">Fallback</span><span class="mv">Snapshot instance to image</span></div>
+                <div class="mrow"><span class="ml">Power state of clone</span><span class="mv">Boot after create</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Identity & Placement</div>
+              <div class="card-body">
+                <div class="mrow"><span class="ml">New server name</span><span class="mv">api-01-clone</span></div>
+                <div class="mrow"><span class="ml">Project</span><span class="mv">prod-admin</span></div>
+                <div class="mrow"><span class="ml">Availability Zone</span><span class="mv">nova</span></div>
+                <div class="mrow"><span class="ml">Flavor</span><span class="mv">m1.large</span></div>
+                <div class="mrow"><span class="ml">Placement hint</span><span class="mv dim">Prefer same host aggregate, not same host</span></div>
+                <div class="mrow"><span class="ml">Metadata</span><span class="mv">Clone source metadata by default</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Storage</div>
+              <div class="card-body" style="padding:0">
+                <table class="data-table" style="border:none;border-radius:0;margin-bottom:0">
+                  <thead>
+                    <tr>
+                      <th>Volume</th>
+                      <th>Role</th>
+                      <th>Default Action</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="selected">
+                      <td><span class="mono">vol-6ec2…</span><br><span class="hint">root disk</span></td>
+                      <td>Boot</td>
+                      <td>Clone volume</td>
+                      <td>New bootable copy</td>
+                    </tr>
+                    <tr>
+                      <td><span class="mono">vol-a441…</span><br><span class="hint">/srv/data</span></td>
+                      <td>Attached data</td>
+                      <td>Clone volume</td>
+                      <td>Attach to new VM</td>
+                    </tr>
+                    <tr>
+                      <td><span class="mono">vol-f222…</span><br><span class="hint">backup cache</span></td>
+                      <td>Attached data</td>
+                      <td>Skip clone</td>
+                      <td>Not attached</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Networking & Security</div>
+              <div class="card-body" style="padding:0">
+                <table class="data-table" style="border:none;border-radius:0;margin-bottom:0">
+                  <thead>
+                    <tr>
+                      <th>Resource</th>
+                      <th>Detected</th>
+                      <th>Default</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="selected">
+                      <td>Tenant network</td>
+                      <td>prod-api / 10.14.8.0/24</td>
+                      <td>Reuse network</td>
+                      <td>Common vCenter-style expectation</td>
+                    </tr>
+                    <tr>
+                      <td>Port / MAC / fixed IP</td>
+                      <td>port-7d3c… / 10.14.8.23</td>
+                      <td>Create new port</td>
+                      <td>Prevent duplicate identity</td>
+                    </tr>
+                    <tr>
+                      <td>Floating IP</td>
+                      <td>203.0.113.42</td>
+                      <td>Do not clone</td>
+                      <td>Needs explicit reassignment</td>
+                    </tr>
+                    <tr>
+                      <td>Security groups</td>
+                      <td>web, ssh, monitoring</td>
+                      <td>Reuse SG set</td>
+                      <td>Usually desired and safe</td>
+                    </tr>
+                    <tr>
+                      <td>Allowed address pairs</td>
+                      <td>none</td>
+                      <td>Reuse if present</td>
+                      <td>May be required for VIP/service patterns</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer">
+            <div class="card">
+              <div class="card-title">Detected Related Resources</div>
+              <div class="card-body">
+                <div class="mrow"><span class="ml">Load balancer memberships</span><span class="mv">1 pool member</span></div>
+                <div class="mrow"><span class="ml">Neutron ports</span><span class="mv">1 primary interface</span></div>
+                <div class="mrow"><span class="ml">Security groups</span><span class="mv">3 attached</span></div>
+                <div class="mrow"><span class="ml">Metadata / tags</span><span class="mv">9 keys</span></div>
+                <div class="mrow"><span class="ml">Server groups</span><span class="mv">anti-affinity: api-tier</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Safety Checks</div>
+              <div class="card-body">
+                <div class="finding good">
+                  <div class="finding-mark">✓</div>
+                  <div>
+                    <strong>Boot volume clone path is available</strong>
+                    Cinder can create a new bootable volume from the current root volume.
+                  </div>
+                </div>
+                <div class="finding warn">
+                  <div class="finding-mark">!</div>
+                  <div>
+                    <strong>Network identity cannot be duplicated exactly</strong>
+                    The clone should get a fresh Neutron port, MAC, and fixed IP by default even if it stays on the same tenant network.
+                  </div>
+                </div>
+                <div class="finding warn">
+                  <div class="finding-mark">!</div>
+                  <div>
+                    <strong>Load balancer membership is detected but excluded</strong>
+                    A new clone should not silently join the same pool until the operator confirms backend readiness.
+                  </div>
+                </div>
+                <div class="finding bad">
+                  <div class="finding-mark">×</div>
+                  <div>
+                    <strong>Floating IP is not auto-reusable</strong>
+                    The original floating IP remains attached to the source port; cloning it automatically would create an unsafe conflict.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">vCenter-Like Defaults</div>
+              <div class="card-body">
+                <div class="mrow"><span class="ml">Keep disk state</span><span class="mv">Yes</span></div>
+                <div class="mrow"><span class="ml">Keep VM sizing</span><span class="mv">Yes</span></div>
+                <div class="mrow"><span class="ml">Keep network attachment</span><span class="mv">Yes, same network only</span></div>
+                <div class="mrow"><span class="ml">Keep security policy</span><span class="mv">Yes</span></div>
+                <div class="mrow"><span class="ml">Keep exact IP / MAC</span><span class="mv">No</span></div>
+                <div class="mrow"><span class="ml">Keep LB membership</span><span class="mv">No, opt-in later</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Launch Preview</div>
+              <div class="card-body">
+                <div class="mrow"><span class="ml">Create new server</span><span class="mv">api-01-clone</span></div>
+                <div class="mrow"><span class="ml">Boot from</span><span class="mv">cloned root volume</span></div>
+                <div class="mrow"><span class="ml">Attach cloned data volumes</span><span class="mv">1</span></div>
+                <div class="mrow"><span class="ml">Create new Neutron port</span><span class="mv">Yes</span></div>
+                <div class="mrow"><span class="ml">Assign floating IP</span><span class="mv">No</span></div>
+                <div class="mrow"><span class="ml">Power on after create</span><span class="mv">Yes</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Advanced Options <span class="hint">Operator overrides before launch</span></div>
+          <div class="card-body">
+            <div class="summary-grid" style="margin-bottom:0">
+              <div>
+                <div class="mrow"><span class="ml">Clone attached data volumes</span><span class="mv"><span class="toggle">Enabled <span class="pill"></span></span></span></div>
+                <div class="mrow"><span class="ml">Copy metadata and tags</span><span class="mv"><span class="toggle">Enabled <span class="pill"></span></span></span></div>
+                <div class="mrow"><span class="ml">Reuse server group hints</span><span class="mv"><span class="toggle">Enabled <span class="pill"></span></span></span></div>
+              </div>
+              <div>
+                <div class="mrow"><span class="ml">Auto-assign new floating IP</span><span class="mv"><span class="toggle">Disabled <span class="pill" style="background:#d8e3ea"><span></span></span></span></span></div>
+                <div class="mrow"><span class="ml">Join same load balancer pool</span><span class="mv"><span class="toggle">Disabled <span class="pill" style="background:#d8e3ea"><span></span></span></span></span></div>
+                <div class="mrow"><span class="ml">Power off source before clone</span><span class="mv"><span class="toggle">Disabled <span class="pill" style="background:#d8e3ea"><span></span></span></span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup - Cinder Retype Blocked</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#1a2332;margin:0;padding:24px}
+.card{max-width:920px;margin:0 auto;background:#fff;border:1px solid #d1d9e0;border-top:3px solid #c62828;border-radius:6px;overflow:hidden}
+.head{padding:16px 18px;border-bottom:1px solid #d1d9e0;background:#ffebee}.title{font-size:24px;font-weight:700}.sub{margin-top:6px;color:#7b1f1f;line-height:1.45}
+.pill{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#ffebee;color:#c62828;border:1px solid #ffcdd2;margin-top:10px}
+.body{padding:16px 18px;display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+.box{border:1px solid #d1d9e0;border-radius:4px;padding:10px 12px;margin-bottom:10px;background:#fbfcfd}
+.box strong{display:block;margin-bottom:3px}.box div{font-size:12px;color:#546e7a;line-height:1.35}
+.decision{border:1px solid #ffcdd2;background:#fff5f5;border-radius:4px;padding:10px 12px}
+.decision strong{display:block;margin-bottom:3px}
+.foot{padding:12px 18px;border-top:1px solid #d1d9e0;background:#fafbfd;display:flex;justify-content:flex-end;gap:8px}
+.btn{padding:5px 11px;border:1px solid #d1d9e0;border-radius:3px;background:#fff}.btn.danger{background:#b71c1c;color:#fff;border-color:#b71c1c}
+@media(max-width:900px){.body{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="title">Blocked</div>
+      <div class="sub">Example state for a risky attached root disk or incompatible workload where the app should not allow direct submission.</div>
+      <div class="pill">Do Not Proceed</div>
+    </div>
+    <div class="body">
+      <div>
+        <div class="box"><strong>Volume</strong><div>db-prod-01-root · attached root disk · gold-rbd-a → gold-rbd-b</div></div>
+        <div class="box"><strong>Checks</strong><div>Target type valid, but attached root disk, maintenance acknowledgment missing, and workload blast radius is high.</div></div>
+        <div class="box"><strong>Operator posture</strong><div>The UI should block direct submission and steer the operator to a change process or explicit migration review.</div></div>
+      </div>
+      <div>
+        <div class="decision"><strong>Planner assessment</strong><div>Blocked. Do not present a normal submit path. Require escalation or a different workflow.</div></div>
+      </div>
+    </div>
+    <div class="foot"><button class="btn">Close</button><button class="btn danger">Blocked Pending Review</button></div>
+  </div>
+</body>
+</html>

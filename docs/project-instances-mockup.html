@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeView Project Instances Mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #0072c6;
+      --blue-lt: #1e88e5;
+      --blue-bg: #e3f2fd;
+      --header: #1a2332;
+      --sidebar: #f4f6f8;
+      --border: #d1d9e0;
+      --hover: #e8f4fd;
+      --text: #1a2332;
+      --dim: #607d8b;
+      --white: #ffffff;
+      --gray-bg: #f0f2f5;
+      --green: #2e7d32;
+      --yellow: #f57f17;
+      --red: #c62828;
+      --purple: #6a1b9a;
+      --cyan: #00838f;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--gray-bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #top-bar {
+      background: var(--header);
+      height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 2px solid var(--blue);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .logo-sub {
+      font-size: 11px;
+      font-weight: 400;
+      color: #90a4ae;
+    }
+
+    .top-nav {
+      display: flex;
+      gap: 2px;
+      margin-left: 28px;
+    }
+
+    .top-nav a {
+      color: #b0bec5;
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: default;
+    }
+
+    .top-nav a.active {
+      color: white;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .top-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: #90a4ae;
+      font-size: 12px;
+    }
+
+    .top-search {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      width: 220px;
+      outline: none;
+    }
+
+    .top-search::placeholder { color: #78909c; }
+
+    #breadcrumb-bar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .bc-link { color: var(--blue); }
+    .bc-sep { color: #b0bec5; }
+    .bc-cur { color: var(--text); font-weight: 500; }
+    .bc-actions { margin-left: auto; display: flex; gap: 6px; }
+
+    .btn {
+      padding: 4px 11px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      border-radius: 3px;
+      font-size: 12px;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: inherit;
+    }
+
+    .btn.primary {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    .btn.warn {
+      background: #fff8e1;
+      color: #8d6e00;
+      border-color: #f2d27a;
+    }
+
+    #body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #sidebar {
+      width: 316px;
+      min-width: 316px;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-head {
+      padding: 12px 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--dim);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .section-label {
+      padding: 12px 14px 6px;
+      color: var(--dim);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 14px;
+      font-size: 12px;
+      margin: 1px 6px;
+      border-radius: 3px;
+      cursor: default;
+    }
+
+    .nav-item.selected {
+      background: var(--blue);
+      color: white;
+    }
+
+    .tree-badge {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+      background: #e8eef3;
+      color: var(--dim);
+    }
+
+    .nav-item.selected .tree-badge {
+      background: rgba(255,255,255,0.16);
+      color: white;
+    }
+
+    .project-hint {
+      color: #78909c;
+      font-size: 11px;
+      padding: 0 14px 8px;
+    }
+
+    #content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #obj-header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+
+    .obj-icon {
+      width: 42px;
+      height: 42px;
+      background: var(--blue-bg);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: var(--blue);
+      flex-shrink: 0;
+    }
+
+    .obj-meta { flex: 1; min-width: 0; }
+    .obj-meta h2 { font-size: 16px; font-weight: 600; }
+    .obj-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+    .obj-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .badge.blue { background: #e3f2fd; color: #1565c0; }
+    .badge.green { background: #e8f5e9; color: var(--green); }
+    .badge.yellow { background: #fff8e1; color: #8d6e00; }
+    .badge.red { background: #ffebee; color: var(--red); }
+    .badge.purple { background: #f3e5f5; color: var(--purple); }
+    .badge.cyan { background: #e0f7fa; color: var(--cyan); }
+
+    .obj-actions {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+      align-self: center;
+    }
+
+    #tabs {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      padding: 0 12px;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .tab {
+      padding: 10px 12px 9px;
+      font-size: 12px;
+      color: var(--dim);
+      border-bottom: 2px solid transparent;
+      cursor: default;
+    }
+
+    .tab.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+      font-weight: 600;
+    }
+
+    #workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .filter {
+      border: 1px solid var(--border);
+      background: white;
+      padding: 5px 9px;
+      border-radius: 3px;
+      color: var(--text);
+      font-size: 12px;
+      min-width: 120px;
+    }
+
+    .toolbar .spacer { margin-left: auto; }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--gray-bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .metric {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+    }
+
+    .metric-label {
+      color: var(--dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .metric-value {
+      margin-top: 5px;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .metric-sub {
+      margin-top: 4px;
+      color: var(--dim);
+      font-size: 11px;
+    }
+
+    .table-wrap {
+      flex: 1;
+      overflow: auto;
+      background: var(--white);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #fafbfd;
+      color: var(--dim);
+      text-align: left;
+      font-weight: 600;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tbody td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #edf1f4;
+      vertical-align: top;
+    }
+
+    tbody tr.selected { background: #f4f9fe; }
+    tbody tr:hover { background: #f8fbfd; }
+
+    .name-link {
+      color: var(--blue);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .subline {
+      margin-top: 2px;
+      color: var(--dim);
+      font-size: 11px;
+    }
+
+    .host-link, .resource-link {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .green-dot { background: #4caf50; }
+    .yellow-dot { background: #ffb300; }
+    .red-dot { background: #ef5350; }
+
+    #drawer {
+      width: 430px;
+      min-width: 430px;
+      border-left: 1px solid var(--border);
+      background: #fbfcfd;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .drawer-head {
+      padding: 12px 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .drawer-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-right: auto;
+    }
+
+    .drawer-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .card h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.35px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: #fafbfd;
+    }
+
+    .card-body {
+      padding: 12px;
+    }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 14px;
+    }
+
+    .kv label {
+      display: block;
+      color: var(--dim);
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+
+    .kv div {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .finding {
+      display: flex;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-top: 8px;
+      border: 1px solid;
+    }
+
+    .finding.green {
+      background: #edf7ee;
+      border-color: #cde8d0;
+      color: #215c26;
+    }
+
+    .finding.yellow {
+      background: #fff8e8;
+      border-color: #f2ddb0;
+      color: #7a5a00;
+    }
+
+    .finding.blue {
+      background: #eef5fd;
+      border-color: #d2e4f7;
+      color: #0d4f8f;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .list-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid #edf1f4;
+    }
+
+    .list-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .list-main {
+      font-weight: 500;
+    }
+
+    .list-meta {
+      color: var(--dim);
+      white-space: nowrap;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: #eef3f7;
+      color: #4e6574;
+      font-weight: 500;
+    }
+
+    .drawer-foot {
+      border-top: 1px solid var(--border);
+      background: var(--white);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .foot-note {
+      color: var(--dim);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo">
+      <span>VibeView</span>
+      <span class="logo-sub">OpenStack + Kubernetes Operations</span>
+    </div>
+    <div class="top-nav">
+      <a href="#">Infrastructure</a>
+      <a href="#">Networking</a>
+      <a href="#">Storage</a>
+      <a class="active" href="#">Projects</a>
+      <a href="#">Kubernetes</a>
+      <a href="#">Tasks</a>
+    </div>
+    <div class="top-right">
+      <input class="top-search" placeholder="Search instance, project, network..." />
+      <span>admin / RegionOne</span>
+    </div>
+  </div>
+
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Projects</span>
+    <span class="bc-sep">/</span>
+    <span class="bc-link">prod-payments</span>
+    <span class="bc-sep">/</span>
+    <span class="bc-cur">Instances</span>
+    <div class="bc-actions">
+      <button class="btn">Export</button>
+      <button class="btn">Project Timeline</button>
+      <button class="btn primary">Create Instance</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <aside id="sidebar">
+      <div class="sidebar-head">Projects</div>
+
+      <div class="section-label">Active Scope</div>
+      <div class="nav-item selected">
+        <span>▣</span>
+        <span>prod-payments</span>
+        <span class="tree-badge">42 VMs</span>
+      </div>
+      <div class="project-hint">Project ID: 8f4f3d... · Owner: platform-payments</div>
+
+      <div class="section-label">Project Views</div>
+      <div class="nav-item">
+        <span>◫</span>
+        <span>Overview</span>
+      </div>
+      <div class="nav-item selected">
+        <span>🖥</span>
+        <span>Instances</span>
+        <span class="tree-badge">42</span>
+      </div>
+      <div class="nav-item">
+        <span>⇆</span>
+        <span>Networks</span>
+        <span class="tree-badge">11</span>
+      </div>
+      <div class="nav-item">
+        <span>💽</span>
+        <span>Volumes</span>
+        <span class="tree-badge">67</span>
+      </div>
+      <div class="nav-item">
+        <span>⚖</span>
+        <span>Load Balancers</span>
+        <span class="tree-badge">4</span>
+      </div>
+      <div class="nav-item">
+        <span>🔒</span>
+        <span>Security Groups</span>
+        <span class="tree-badge">9</span>
+      </div>
+      <div class="nav-item">
+        <span>📊</span>
+        <span>Quota + Capacity</span>
+      </div>
+
+      <div class="section-label">Other Projects</div>
+      <div class="nav-item">
+        <span>▣</span>
+        <span>prod-checkout</span>
+        <span class="tree-badge">18</span>
+      </div>
+      <div class="nav-item">
+        <span>▣</span>
+        <span>prod-observability</span>
+        <span class="tree-badge">25</span>
+      </div>
+      <div class="nav-item">
+        <span>▣</span>
+        <span>staging-payments</span>
+        <span class="tree-badge">13</span>
+      </div>
+    </aside>
+
+    <section id="content">
+      <div id="obj-header">
+        <div class="obj-icon">▣</div>
+        <div class="obj-meta">
+          <h2>prod-payments</h2>
+          <div class="obj-sub">Project-scoped workload view. Reuses infrastructure-style instance details, but centered on tenant operations.</div>
+          <div class="obj-badges">
+            <span class="badge blue">42 instances</span>
+            <span class="badge cyan">67 volumes</span>
+            <span class="badge purple">11 networks</span>
+            <span class="badge green">34 ACTIVE</span>
+            <span class="badge yellow">6 in maintenance</span>
+            <span class="badge red">2 ERROR</span>
+          </div>
+        </div>
+        <div class="obj-actions">
+          <button class="btn">Bulk Tags</button>
+          <button class="btn">Bulk Reboot</button>
+          <button class="btn warn">Clone Selected</button>
+        </div>
+      </div>
+
+      <div id="tabs">
+        <div class="tab">Summary</div>
+        <div class="tab active">Instances</div>
+        <div class="tab">Activity</div>
+        <div class="tab">Networking</div>
+        <div class="tab">Storage</div>
+      </div>
+
+      <div id="workspace">
+        <div id="main">
+          <div class="toolbar">
+            <input class="filter" value="Name contains: api" />
+            <input class="filter" value="Status: Active + Error" />
+            <input class="filter" value="Host: any" />
+            <input class="filter" value="Flavor: any" />
+            <div class="spacer"></div>
+            <button class="btn">Saved Views</button>
+            <button class="btn">Columns</button>
+            <button class="btn primary">Clone VM</button>
+          </div>
+
+          <div class="summary-row">
+            <div class="metric">
+              <div class="metric-label">Instances</div>
+              <div class="metric-value">42</div>
+              <div class="metric-sub">34 active · 2 error · 6 planned changes</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">vCPU Footprint</div>
+              <div class="metric-value">244</div>
+              <div class="metric-sub">Largest share on `cmp-12` and `cmp-14`</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">RAM Footprint</div>
+              <div class="metric-value">912 GB</div>
+              <div class="metric-sub">6 high-memory workloads</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Networked VIP Consumers</div>
+              <div class="metric-value">8</div>
+              <div class="metric-sub">Across 4 load balancers</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Clone Candidates</div>
+              <div class="metric-value">11</div>
+              <div class="metric-sub">Volume-backed, healthy, reproducible</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:28px;"><input type="checkbox" checked /></th>
+                  <th>Instance</th>
+                  <th>Status</th>
+                  <th>Flavor</th>
+                  <th>Host</th>
+                  <th>Networks</th>
+                  <th>Volumes</th>
+                  <th>Age</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="selected">
+                  <td><input type="checkbox" checked /></td>
+                  <td>
+                    <a class="name-link" href="#">api-01</a>
+                    <div class="subline">Ubuntu 24.04 · volume-backed · boot-from-volume</div>
+                  </td>
+                  <td><span class="status-dot green-dot"></span>ACTIVE</td>
+                  <td>m1.large<div class="subline">4 vCPU · 16 GB</div></td>
+                  <td><a class="host-link" href="#">cmp-12</a><div class="subline">AZ: nova</div></td>
+                  <td>prod-api<div class="subline">10.14.8.23 · FIP 203.0.113.42</div></td>
+                  <td>3<div class="subline">1 boot · 2 data</div></td>
+                  <td>94d</td>
+                  <td><span class="badge blue">Clone</span> <span class="badge yellow">Resize</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <a class="name-link" href="#">api-02</a>
+                    <div class="subline">Ubuntu 24.04 · volume-backed</div>
+                  </td>
+                  <td><span class="status-dot green-dot"></span>ACTIVE</td>
+                  <td>m1.large<div class="subline">4 vCPU · 16 GB</div></td>
+                  <td><a class="host-link" href="#">cmp-14</a><div class="subline">AZ: nova</div></td>
+                  <td>prod-api<div class="subline">10.14.8.24</div></td>
+                  <td>3<div class="subline">1 boot · 2 data</div></td>
+                  <td>94d</td>
+                  <td><span class="badge blue">Clone</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <a class="name-link" href="#">worker-07</a>
+                    <div class="subline">RHEL 9 · local-root image instance</div>
+                  </td>
+                  <td><span class="status-dot yellow-dot"></span>VERIFY_RESIZE</td>
+                  <td>c2.2xlarge<div class="subline">8 vCPU · 32 GB</div></td>
+                  <td><a class="host-link" href="#">cmp-18</a><div class="subline">AZ: nova</div></td>
+                  <td>prod-workers<div class="subline">10.14.9.77</div></td>
+                  <td>1<div class="subline">ephemeral root</div></td>
+                  <td>16d</td>
+                  <td><span class="badge yellow">Review</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <a class="name-link" href="#">reporting-03</a>
+                    <div class="subline">Ubuntu 22.04 · volume-backed</div>
+                  </td>
+                  <td><span class="status-dot red-dot"></span>ERROR</td>
+                  <td>m1.xlarge<div class="subline">8 vCPU · 32 GB</div></td>
+                  <td><a class="host-link" href="#">cmp-09</a><div class="subline">AZ: nova</div></td>
+                  <td>prod-data<div class="subline">10.14.10.91</div></td>
+                  <td>2<div class="subline">1 boot · 1 data</div></td>
+                  <td>121d</td>
+                  <td><span class="badge red">Investigate</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <a class="name-link" href="#">batch-11</a>
+                    <div class="subline">Rocky Linux 9 · volume-backed</div>
+                  </td>
+                  <td><span class="status-dot green-dot"></span>ACTIVE</td>
+                  <td>m1.medium<div class="subline">2 vCPU · 8 GB</div></td>
+                  <td><a class="host-link" href="#">cmp-07</a><div class="subline">AZ: nova</div></td>
+                  <td>prod-workers<div class="subline">10.14.9.112</div></td>
+                  <td>2<div class="subline">1 boot · 1 data</div></td>
+                  <td>51d</td>
+                  <td><span class="badge blue">Clone</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside id="drawer">
+          <div class="drawer-head">
+            <div class="drawer-title">Instance Detail: api-01</div>
+            <span class="badge green">ACTIVE</span>
+            <span class="badge blue">Clone Candidate</span>
+            <button class="btn warn">Clone</button>
+          </div>
+
+          <div class="drawer-body">
+            <div class="card">
+              <h3>Overview</h3>
+              <div class="card-body">
+                <div class="kv-grid">
+                  <div class="kv"><label>Project</label><div>prod-payments</div></div>
+                  <div class="kv"><label>Host</label><div>cmp-12</div></div>
+                  <div class="kv"><label>Flavor</label><div>m1.large</div></div>
+                  <div class="kv"><label>Availability Zone</label><div>nova</div></div>
+                  <div class="kv"><label>Image</label><div>Ubuntu 24.04</div></div>
+                  <div class="kv"><label>Created</label><div>2026-01-14 09:22</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Infrastructure Reuse</h3>
+              <div class="card-body">
+                <div class="finding blue">Use the same detail model as infrastructure instances: summary, workloads, networking joins, and related storage all stay in one drawer.</div>
+                <div class="finding green">Project context adds tenant-safe actions like Clone, Snapshot, Rebuild, and quota-aware resize recommendations.</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Clone Readiness</h3>
+              <div class="card-body">
+                <div class="list">
+                  <div class="list-row">
+                    <div class="list-main">Boot volume is volume-backed and healthy</div>
+                    <div class="list-meta">vol-13f2 · 80 GB</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main">2 attached data volumes can be cloned</div>
+                    <div class="list-meta">db-cache · app-logs</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main">Network attachments can be reused as defaults</div>
+                    <div class="list-meta">prod-api</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main">Security groups can be copied directly</div>
+                    <div class="list-meta">web · ssh · monitoring</div>
+                  </div>
+                </div>
+                <div class="finding yellow">Floating IP and load balancer membership should stay opt-in. Safe default is to exclude both from the new VM.</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Detected Related Resources</h3>
+              <div class="card-body">
+                <div class="list">
+                  <div class="list-row">
+                    <div class="list-main"><a class="resource-link" href="#">prod-api</a></div>
+                    <div class="list-meta">Network · 10.14.8.23</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main"><a class="resource-link" href="#">tenant-edge-2</a></div>
+                    <div class="list-meta">Router</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main"><a class="resource-link" href="#">public-api-lb</a></div>
+                    <div class="list-meta">LB member on :443</div>
+                  </div>
+                  <div class="list-row">
+                    <div class="list-main"><a class="resource-link" href="#">web</a>, <a class="resource-link" href="#">ssh</a>, <a class="resource-link" href="#">monitoring</a></div>
+                    <div class="list-meta">Security groups</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Default Clone Profile</h3>
+              <div class="card-body">
+                <div class="pill-row">
+                  <span class="pill">Method: clone boot volume</span>
+                  <span class="pill">Clone data volumes: yes</span>
+                  <span class="pill">Reuse flavor: m1.large</span>
+                  <span class="pill">Reuse network: prod-api</span>
+                  <span class="pill">Reuse SGs: yes</span>
+                  <span class="pill">Assign new IPs: yes</span>
+                  <span class="pill">Floating IP: no</span>
+                  <span class="pill">LB membership: no</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer-foot">
+            <div class="foot-note">This view is project-centric, but the drawer should feel the same as infrastructure instance details.</div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn">Open in Infrastructure</button>
+              <button class="btn primary">Launch Clone Wizard</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

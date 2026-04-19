@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup - Cinder Retype Compact</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue: #0072c6; --blue-bg: #e3f2fd; --header: #1a2332; --sidebar: #f4f6f8;
+  --border: #d1d9e0; --sel: #bbdefb; --hover: #e8f4fd; --text: #1a2332; --dim: #607d8b;
+  --white: #fff; --gray-bg: #f0f2f5; --green: #2e7d32; --green-bg: #e8f5e9;
+  --yellow: #f57f17; --yellow-bg: #fff8e1; --red: #c62828; --red-bg: #ffebee; --orange: #e65100; --orange-bg: #fff3e0;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; color: var(--text); background: var(--gray-bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+#top-bar { background: var(--header); height: 40px; display: flex; align-items: center; padding: 0 14px; border-bottom: 2px solid var(--blue); flex-shrink: 0; }
+.logo { display: flex; align-items: baseline; gap: 10px; color: white; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.logo-sub { font-size: 11px; font-weight: 400; color: #90a4ae; }
+.top-nav { display: flex; gap: 2px; margin-left: 28px; }
+.top-nav a { color: #b0bec5; text-decoration: none; padding: 4px 10px; border-radius: 3px; font-size: 12px; }
+.top-nav a.active { color: white; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.top-search { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 10px; border-radius: 3px; font-size: 12px; width: 210px; }
+.mock-pill { background: #ff6f00; color: white; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; letter-spacing: 0.5px; }
+#breadcrumb-bar { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 14px; height: 34px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); flex-shrink: 0; }
+.bc-link { color: var(--blue); } .bc-sep { color: #b0bec5; } .bc-cur { color: var(--text); font-weight: 500; } .bc-actions { margin-left: auto; display: flex; gap: 6px; }
+.btn { padding: 4px 11px; border: 1px solid var(--border); background: var(--white); border-radius: 3px; font-size: 12px; color: var(--text); display: inline-flex; align-items: center; gap: 4px; cursor: default; }
+.btn.primary { background: var(--blue); color: white; border-color: var(--blue); } .btn.warning { background: var(--orange); color: white; border-color: var(--orange); } .btn.danger { background: #b71c1c; color: white; border-color: #b71c1c; }
+#body { display: flex; flex: 1; overflow: hidden; }
+#storage-sidebar { width: 230px; min-width: 230px; background: var(--sidebar); border-right: 1px solid var(--border); overflow-y: auto; }
+.sidebar-head { padding: 8px 12px; font-size: 11px; font-weight: 700; color: var(--dim); border-bottom: 1px solid var(--border); }
+.section-label { padding: 12px 14px 6px; color: var(--dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.nav-item { display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 12px; border-radius: 3px; margin: 1px 6px; }
+.nav-item.selected { background: var(--blue); color: #fff; }
+.tree-badge { margin-left: auto; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 700; background: #dde7ef; color: var(--dim); }
+.tree-badge.warn { background: var(--orange-bg); color: var(--orange); }
+#storage-content { flex: 1; overflow: auto; padding: 16px; }
+.workspace-card { background: linear-gradient(180deg, #f8fbfe 0%, #eef4f9 100%); border: 1px solid var(--border); border-top: 3px solid var(--blue); border-radius: 4px; padding: 14px 16px; margin-bottom: 12px; }
+.workspace-kicker { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.45px; color: var(--blue); }
+.workspace-title { margin-top: 5px; font-size: 22px; font-weight: 700; line-height: 1.1; }
+.workspace-subtitle { margin-top: 6px; color: var(--dim); max-width: 980px; line-height: 1.45; }
+.workspace-meta { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.pill, .status-chip, .mini-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.pill.blue, .status-chip.blue { background: var(--blue-bg); color: var(--blue); }
+.pill.orange, .status-chip.orange { background: var(--orange-bg); color: var(--orange); }
+.pill.green, .status-chip.green { background: var(--green-bg); color: var(--green); }
+.pill.red, .status-chip.red { background: var(--red-bg); color: var(--red); }
+.audit-banner { display: flex; gap: 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 4px; padding: 8px 10px; margin-bottom: 12px; line-height: 1.4; color: #6d4c41; }
+.audit-icon { width: 20px; height: 20px; border-radius: 50%; background: var(--orange); color: white; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.45fr) 360px; gap: 12px; align-items: start; }
+.card { background: white; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+.card-title { padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 12px; background: #fafbfd; }
+.card-body { padding: 10px 12px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.search, .select { border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; font-size: 12px; background: white; }
+.search { min-width: 180px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; background: #edf3f8; color: var(--dim); font-size: 11px; font-weight: 700; }
+.chip.on { background: var(--blue-bg); color: var(--blue); } .chip.warn { background: var(--orange-bg); color: var(--orange); } .chip.bad { background: var(--red-bg); color: var(--red); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 7px 8px; text-align: left; border-bottom: 1px solid #eef2f5; vertical-align: top; }
+thead th { background: #fafbfd; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+tbody tr.selected { background: var(--sel); }
+.uuid { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; color: var(--dim); }
+.status-tag { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.status-tag.blue { background: var(--blue-bg); color: var(--blue); } .status-tag.green { background: var(--green-bg); color: var(--green); } .status-tag.orange { background: var(--orange-bg); color: var(--orange); } .status-tag.red { background: var(--red-bg); color: var(--red); }
+.compact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.metric { border: 1px solid var(--border); border-radius: 4px; padding: 8px 9px; background: #fbfcfd; }
+.metric strong { display: block; font-size: 12px; margin-bottom: 2px; }
+.metric div { font-size: 11px; color: #546e7a; line-height: 1.35; }
+.mrow { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid #eef2f5; }
+.mrow:last-child { border-bottom: none; }
+.ml { color: var(--dim); } .mv { text-align: right; }
+.decision { padding: 9px 10px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 8px; }
+.decision.good { background: #f3fbf6; border-color: #c8e6c9; } .decision.warn { background: #fff8e1; border-color: #ffe082; } .decision.bad { background: #ffebee; border-color: #ffcdd2; }
+.decision-title { font-weight: 700; margin-bottom: 3px; } .decision-copy { color: #455a64; line-height: 1.4; font-size: 12px; }
+.mini-callout { border-left: 3px solid var(--orange); background: #fffaf3; padding: 7px 9px; font-size: 12px; line-height: 1.35; margin-bottom: 8px; }
+.mini-callout.red { border-left-color: var(--red); background: #fff5f5; }
+.checklist { display: flex; flex-direction: column; gap: 6px; }
+.checkline { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--border); border-radius: 4px; padding: 7px 8px; background: #fbfcfd; }
+.mark { width: 16px; font-weight: 700; text-align: center; flex-shrink: 0; }
+.mark.green { color: var(--green); } .mark.orange { color: var(--orange); } .mark.red { color: var(--red); }
+.checkcopy strong { display: block; font-size: 12px; margin-bottom: 1px; } .checkcopy div { font-size: 11px; color: #546e7a; line-height: 1.3; }
+.modal-shell { position: fixed; right: 20px; bottom: 20px; width: 360px; }
+.sheet { background: white; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; box-shadow: 0 18px 48px rgba(20, 30, 48, 0.2); overflow: hidden; }
+.sheet-head { padding: 11px 12px; border-bottom: 1px solid var(--border); background: #fafbfd; }
+.sheet-title { font-size: 14px; font-weight: 700; } .sheet-subtitle { margin-top: 3px; font-size: 12px; color: var(--dim); }
+.sheet-body { padding: 12px; }
+.field { margin-bottom: 10px; }
+.label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--dim); margin-bottom: 4px; }
+.field input, .field select { width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 8px 9px; font-size: 12px; background: white; }
+.gate { border: 1px solid #ffcdd2; background: #fff5f5; color: #8a1f1f; border-radius: 4px; padding: 8px 9px; font-size: 12px; line-height: 1.35; margin-bottom: 10px; }
+.ack { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: #455a64; line-height: 1.35; margin-bottom: 8px; }
+.box { width: 15px; height: 15px; border: 1px solid #c8ccd2; border-radius: 3px; background: white; margin-top: 2px; flex-shrink: 0; }
+.box.checked { background: var(--blue); border-color: var(--blue); position: relative; }
+.box.checked::after { content: "✓"; color: white; position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+.sheet-foot { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; background: #fafbfd; }
+@media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } .modal-shell { position: static; width: auto; } }
+@media (max-width: 960px) { #storage-sidebar { display: none; } .compact-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <div id="top-bar">
+    <div class="logo"><span>VibeView</span><span class="logo-sub">Operator Console</span></div>
+    <div class="top-nav"><a href="#">Infrastructure</a><a href="#">Networking</a><a href="#" class="active">Storage</a><a href="#">Kubernetes</a><a href="#">Reports</a></div>
+    <div class="top-right"><input class="top-search" placeholder="Search volumes, hosts, projects"><span class="mock-pill">MOCKUP</span></div>
+  </div>
+  <div id="breadcrumb-bar">
+    <span class="bc-link">Storage</span><span class="bc-sep">/</span><span class="bc-link">Cinder Volumes</span><span class="bc-sep">/</span><span class="bc-cur">Retype Planner</span>
+    <div class="bc-actions"><button class="btn">Refresh</button><button class="btn warning">Advanced Migrate</button><button class="btn primary">Retype Volume</button></div>
+  </div>
+  <div id="body">
+    <div id="storage-sidebar">
+      <div class="sidebar-head">Storage Navigation</div>
+      <div class="section-label">OpenStack Storage</div>
+      <div class="nav-item selected"><span>●</span> Volumes <span class="tree-badge">418</span></div>
+      <div class="nav-item"><span>◌</span> Snapshots <span class="tree-badge">139</span></div>
+      <div class="nav-item"><span>◌</span> Backups <span class="tree-badge">84</span></div>
+      <div class="nav-item"><span>◌</span> Volume Types <span class="tree-badge">12</span></div>
+      <div class="nav-item"><span>◌</span> Backends <span class="tree-badge warn">3 draining</span></div>
+      <div class="section-label">Operator Views</div>
+      <div class="nav-item"><span>◌</span> Expansion Queue <span class="tree-badge">7</span></div>
+      <div class="nav-item"><span>◌</span> Failed Attachments <span class="tree-badge warn">4</span></div>
+      <div class="nav-item selected"><span>◉</span> Retype Planner <span class="tree-badge warn">21 candidates</span></div>
+    </div>
+    <div id="storage-content">
+      <div class="workspace-card">
+        <div class="workspace-kicker">OpenStack Storage</div>
+        <div class="workspace-title">Cinder Retype Planner</div>
+        <div class="workspace-subtitle">Retype is the default operator path when the goal is to change storage policy. The planner keeps the table compact and puts all safety logic in a single readiness rail.</div>
+        <div class="workspace-meta">
+          <span class="pill blue">418 visible volumes</span>
+          <span class="pill orange">21 retype candidates on draining backends</span>
+          <span class="pill green">13 likely metadata-only retypes</span>
+          <span class="pill red">4 blocked pending review</span>
+        </div>
+      </div>
+      <div class="audit-banner"><div class="audit-icon">!</div><div><strong>Operator guidance:</strong> decide if the action is safe now, safe in a maintenance window, or blocked. Keep backend placement details secondary.</div></div>
+      <div class="layout">
+        <div>
+          <div class="card">
+            <div class="card-title">Retype Candidates</div>
+            <div class="card-body">
+              <div class="toolbar">
+                <input class="search" value="backend-a">
+                <select class="select"><option>Filter: draining backend</option></select>
+                <span class="chip on">Retype candidates</span>
+                <span class="chip warn">In-use</span>
+                <span class="chip bad">Blocked</span>
+              </div>
+              <table>
+                <thead><tr><th>Volume</th><th>Project</th><th>Target Type</th><th>Readiness</th><th>Risk</th></tr></thead>
+                <tbody>
+                  <tr class="selected">
+                    <td><strong>db-prod-01-root</strong><div class="uuid">8d4e1a77-0f1c-4c95-8dc9-5d6fd9e230ab</div></td>
+                    <td>production</td>
+                    <td>gold-rbd-b</td>
+                    <td><span class="status-tag red">Blocked</span></td>
+                    <td>in-use root disk</td>
+                  </tr>
+                  <tr>
+                    <td><strong>api-cache-02</strong><div class="uuid">9ae5b1f2-a962-421d-a0e5-0b366e993f20</div></td>
+                    <td>platform</td>
+                    <td>silver-rbd-b</td>
+                    <td><span class="status-tag green">Safe Now</span></td>
+                    <td>available</td>
+                  </tr>
+                  <tr>
+                    <td><strong>backup-staging-03</strong><div class="uuid">30a9fbc4-b956-4a5b-97bc-9979728b67f0</div></td>
+                    <td>operations</td>
+                    <td>archive-hdd-b</td>
+                    <td><span class="status-tag orange">Window</span></td>
+                    <td>attached workload</td>
+                  </tr>
+                  <tr>
+                    <td><strong>ml-notebook-07</strong><div class="uuid">fd7be7af-bfe4-4655-8c75-694cff7a8a10</div></td>
+                    <td>ml-team</td>
+                    <td>fast-ssd-b</td>
+                    <td><span class="status-tag red">Blocked</span></td>
+                    <td>multiattach</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="workspace-meta" style="margin-top:0;margin-bottom:8px">
+            <span class="status-chip red">Blocked pending acknowledgements</span>
+            <span class="status-chip orange">3 warnings</span>
+            <span class="status-chip green">2 checks passed</span>
+          </div>
+          <div class="card">
+            <div class="card-title">Retype Readiness</div>
+            <div class="card-body">
+              <div class="decision warn">
+                <div class="decision-title">Recommended path: Retype with on-demand migration</div>
+                <div class="decision-copy">The target type moves the volume from <strong>rbd-a</strong> to <strong>rbd-b</strong>. This is a policy-driven move, not an explicit placement workflow.</div>
+              </div>
+              <div class="compact-grid">
+                <div class="metric"><strong>Workload</strong><div>vm-db-01 · production database · root disk</div></div>
+                <div class="metric"><strong>Fallback</strong><div>DB platform team owns rollback and maintenance coordination</div></div>
+                <div class="metric"><strong>Current</strong><div>gold-rbd-a on cinder-a@rbd-a#pool1</div></div>
+                <div class="metric"><strong>Target</strong><div>gold-rbd-b on rbd-b with unchanged QoS</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Checks</div>
+            <div class="card-body">
+              <div class="checklist">
+                <div class="checkline"><div class="mark green">✓</div><div class="checkcopy"><strong>Target type valid</strong><div>Visible to project and schedulable.</div></div></div>
+                <div class="checkline"><div class="mark orange">!</div><div class="checkcopy"><strong>Volume attached</strong><div>In-use retype is driver-dependent.</div></div></div>
+                <div class="checkline"><div class="mark orange">!</div><div class="checkcopy"><strong>Boot-from-volume</strong><div>Failure handling must be explicit.</div></div></div>
+                <div class="checkline"><div class="mark red">×</div><div class="checkcopy"><strong>Acknowledgements missing</strong><div>Window and owner confirmation not complete.</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Operator Notes</div>
+            <div class="card-body">
+              <div class="mini-callout red"><strong>Blocked right now:</strong> attached root disk plus incomplete acknowledgements.</div>
+              <div class="mini-callout"><strong>Use `on-demand` by default:</strong> `never` is fail-fast advanced mode.</div>
+              <div class="mini-callout"><strong>Escalate to explicit migrate only when backend inference is unclear.</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-shell">
+        <div class="sheet">
+          <div class="sheet-head">
+            <div class="sheet-title">Retype Confirm</div>
+            <div class="sheet-subtitle">Short confirm sheet, not a second workspace.</div>
+          </div>
+          <div class="sheet-body">
+            <div class="gate">Submit is blocked because this volume is in use and the final acknowledgements are incomplete.</div>
+            <div class="field"><div class="label">Target Type</div><select><option>gold-rbd-b</option></select></div>
+            <div class="field"><div class="label">Migration Policy</div><select><option>on-demand (recommended)</option></select></div>
+            <div class="field"><div class="label">Change Window</div><select><option>Next approved maintenance window</option></select></div>
+            <div class="ack"><div class="box checked"></div><div>I verified the target type is the intended storage policy.</div></div>
+            <div class="ack"><div class="box"></div><div>I accept the workload impact for an attached root disk.</div></div>
+            <div class="ack"><div class="box"></div><div>I confirmed rollback ownership with the DB platform team.</div></div>
+          </div>
+          <div class="sheet-foot"><button class="btn">Cancel</button><button class="btn danger">Blocked Pending Checks</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

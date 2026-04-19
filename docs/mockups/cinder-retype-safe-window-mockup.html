@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup - Cinder Retype Safe In Window</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#1a2332;margin:0;padding:24px}
+.card{max-width:920px;margin:0 auto;background:#fff;border:1px solid #d1d9e0;border-top:3px solid #f57f17;border-radius:6px;overflow:hidden}
+.head{padding:16px 18px;border-bottom:1px solid #d1d9e0;background:#fff8e1}.title{font-size:24px;font-weight:700}.sub{margin-top:6px;color:#6d4c41;line-height:1.45}
+.pill{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#fff3e0;color:#e65100;margin-top:10px}
+.body{padding:16px 18px;display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+.box{border:1px solid #d1d9e0;border-radius:4px;padding:10px 12px;margin-bottom:10px;background:#fbfcfd}
+.box strong{display:block;margin-bottom:3px}.box div{font-size:12px;color:#546e7a;line-height:1.35}
+.decision{border:1px solid #ffe082;background:#fff8e1;border-radius:4px;padding:10px 12px}
+.decision strong{display:block;margin-bottom:3px}
+.foot{padding:12px 18px;border-top:1px solid #d1d9e0;background:#fafbfd;display:flex;justify-content:flex-end;gap:8px}
+.btn{padding:5px 11px;border:1px solid #d1d9e0;border-radius:3px;background:#fff}.btn.warning{background:#e65100;color:#fff;border-color:#e65100}
+@media(max-width:900px){.body{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="title">Safe In Window</div>
+      <div class="sub">Example state for an attached workload where the target is valid but the app should steer the operator into a maintenance window instead of immediate execution.</div>
+      <div class="pill">Queue For Window</div>
+    </div>
+    <div class="body">
+      <div>
+        <div class="box"><strong>Volume</strong><div>backup-staging-03 · attached workload · archive-hdd-a → archive-hdd-b</div></div>
+        <div class="box"><strong>Checks</strong><div>Target type valid, migration likely, attachment present, fallback owner known.</div></div>
+        <div class="box"><strong>Operator posture</strong><div>Action is reasonable, but should be scheduled into an approved change window with impact acknowledged.</div></div>
+      </div>
+      <div>
+        <div class="decision"><strong>Planner assessment</strong><div>Safe in window. The UI should default to “Queue for maintenance window” rather than “Submit now.”</div></div>
+      </div>
+    </div>
+    <div class="foot"><button class="btn">Cancel</button><button class="btn warning">Queue Retype</button></div>
+  </div>
+</body>
+</html>
