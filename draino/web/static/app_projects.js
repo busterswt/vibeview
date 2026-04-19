@@ -24,6 +24,45 @@ function projectSectionKey(name = activeProjectView) {
   })[name] || 'overview';
 }
 
+function projectNetworkingFamilyKey(name = activeProjectNetworkingView) {
+  return ({
+    networks: 'networks',
+    routers: 'routers',
+    ports: 'ports',
+    floatingips: 'floating_ips',
+    loadbalancers: 'load_balancers',
+  })[name] || '';
+}
+
+function allProjectNetworkingFamilies() {
+  return ['networks', 'routers', 'ports', 'floating_ips', 'load_balancers'];
+}
+
+function projectInventoryPendingKey(section = projectSectionKey(activeProjectView), family = '') {
+  const key = projectSectionKey(section);
+  const normalizedFamily = String(family || '').trim();
+  return key === 'networking' && normalizedFamily ? `${key}:${normalizedFamily}` : key;
+}
+
+function projectRefreshTimestamp(projectId = selectedProjectId, section = activeProjectView, family = '') {
+  const key = projectInventoryPendingKey(section, family);
+  return projectInventoryState.refreshedAt?.[projectId]?.[key] || 0;
+}
+
+function formatProjectRefreshTimestamp(value) {
+  const ts = Number(value || 0);
+  if (!ts) return 'never';
+  try {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch (_) {
+    return 'just now';
+  }
+}
+
+function projectRefreshMeta(section = activeProjectView, family = '') {
+  return `<span class="hint">Last refreshed ${esc(formatProjectRefreshTimestamp(projectRefreshTimestamp(selectedProjectId, section, family)))}</span>`;
+}
+
 function resetProjectQuotaEditor() {
   projectQuotaEditState.section = '';
   projectQuotaEditState.resource = '';
@@ -49,7 +88,18 @@ function switchProjectSection(name) {
   projectDetailState.error = null;
   if (activeView === 'projects') {
     renderProjectsWorkspace();
-    if (selectedProjectId) loadProjectInventory(selectedProjectId, projectSectionKey(name));
+    if (selectedProjectId) {
+      if (name === 'networking') {
+        ensureProjectNetworkingFamiliesLoaded(selectedProjectId);
+      } else {
+        loadProjectInventory(
+          selectedProjectId,
+          projectSectionKey(name),
+          false,
+          '',
+        );
+      }
+    }
   }
 }
 
@@ -64,6 +114,9 @@ function switchProjectNetworkingView(name) {
   projectDetailState.data = null;
   projectDetailState.error = null;
   renderProjectsWorkspace();
+  if (activeView === 'projects' && selectedProjectId) {
+    ensureProjectNetworkingFamiliesLoaded(selectedProjectId);
+  }
 }
 
 function switchProjectStorageView(name) {
@@ -116,14 +169,26 @@ function projectSectionCache(projectId = selectedProjectId) {
 }
 
 function isProjectSectionLoading(projectId, section) {
-  const key = projectSectionKey(section);
+  const key = projectInventoryPendingKey(section);
   return Boolean(projectInventoryState.pending?.[projectId]?.[key]);
+}
+
+function isProjectNetworkingFamilyLoading(projectId, family = projectNetworkingFamilyKey()) {
+  return Boolean(projectInventoryState.pending?.[projectId]?.[projectInventoryPendingKey('networking', family)]);
+}
+
+function ensureProjectNetworkingFamiliesLoaded(projectId, force = false) {
+  if (!projectId) return;
+  allProjectNetworkingFamilies().forEach((family) => {
+    loadProjectInventory(projectId, 'networking', force, family);
+  });
 }
 
 function projectHasBackgroundLoading(projectId, activeSection = activeProjectView) {
   const pending = projectInventoryState.pending?.[projectId] || {};
   const activeKey = projectSectionKey(activeSection);
-  return Object.keys(pending).some((key) => key !== activeKey && pending[key]);
+  const activeNetworkingKey = activeKey === 'networking' ? projectInventoryPendingKey('networking', projectNetworkingFamilyKey()) : '';
+  return Object.keys(pending).some((key) => key !== activeKey && key !== activeNetworkingKey && pending[key]);
 }
 
 function projectOverviewStats(projectId = selectedProjectId) {
@@ -137,9 +202,10 @@ function projectOverviewStats(projectId = selectedProjectId) {
   const placement = cache.quota?.placement || overview.placement || null;
   const activeInstances = instances.filter((item) => item.status === 'ACTIVE');
   const errorInstances = instances.filter((item) => item.status === 'ERROR');
+  const networkingLoaded = ['networks', 'routers', 'ports', 'floating_ips', 'load_balancers'].every((key) => Array.isArray(networking[key]));
   return {
     instancesLoaded: Boolean(cache.instances),
-    networkingLoaded: Boolean(cache.networking),
+    networkingLoaded,
     storageLoaded: Boolean(cache.storage),
     securityLoaded: Boolean(cache.security),
     quotaLoaded: Boolean(cache.quota || cache.overview),
@@ -201,6 +267,34 @@ function projectValue(value, loaded, suffix = '') {
   return esc(`${value}${suffix}`);
 }
 
+function projectSummaryMetricReady(summary, key) {
+  return summary?.[key] != null && summary[key] !== '';
+}
+
+function projectNetworkingSummary(summary, stats) {
+  const networkQuota = stats?.quotas?.network || {};
+  const fromSummary = (key) => projectSummaryMetricReady(summary, key) ? Number(summary[key] || 0) : null;
+  const fromQuota = (key) => {
+    const entry = networkQuota[key];
+    if (!entry || entry.used == null) return null;
+    return Number(entry.used || 0);
+  };
+  const metric = (summaryKey, quotaKey, statsLoaded, statsValue) => {
+    const value = stats.networkingLoaded ? statsValue : (fromSummary(summaryKey) ?? fromQuota(quotaKey));
+    return {
+      ready: stats.networkingLoaded || fromSummary(summaryKey) != null || fromQuota(quotaKey) != null,
+      value: value ?? 0,
+    };
+  };
+    return {
+    networks: metric('network_count', 'network', stats.networkingLoaded, stats.networkCount),
+    routers: metric('router_count', 'router', stats.networkingLoaded, stats.routerCount),
+    ports: metric('port_count', 'port', stats.networkingLoaded, stats.portCount),
+    floatingIps: metric('floating_ip_count', 'floatingip', stats.networkingLoaded, stats.floatingIpCount),
+    loadBalancers: metric('load_balancer_count', 'load_balancer', stats.networkingLoaded, stats.loadBalancerCount),
+  };
+}
+
 function openProjectQuotaEditor(section, resource, currentLimit) {
   if (!authInfo?.is_admin) return;
   projectQuotaEditState.section = section;
@@ -257,7 +351,7 @@ function prefetchProjectDetails(projectId) {
   if (!projectId) return;
   if (projectInventoryState.prefetched?.[projectId]) return;
   projectInventoryState.prefetched = { ...(projectInventoryState.prefetched || {}), [projectId]: true };
-  ['instances', 'networking', 'storage', 'security', 'quota'].forEach((section) => {
+  ['instances', 'storage', 'quota'].forEach((section) => {
     if (!projectSectionCache(projectId)[section]) loadProjectInventory(projectId, section);
   });
 }
@@ -297,55 +391,92 @@ async function loadProjects(force = false) {
     projectsState.loading = false;
     renderProjectsWorkspace();
     if (selectedProjectId) {
-      loadProjectInventory(selectedProjectId, projectSectionKey(activeProjectView));
+      if (activeProjectView === 'networking') ensureProjectNetworkingFamiliesLoaded(selectedProjectId);
+      else loadProjectInventory(
+        selectedProjectId,
+        projectSectionKey(activeProjectView),
+        false,
+        '',
+      );
       prefetchProjectDetails(selectedProjectId);
     }
   }
 }
 
-async function loadProjectInventory(projectId, section = projectSectionKey(activeProjectView), force = false) {
+async function loadProjectInventory(projectId, section = projectSectionKey(activeProjectView), force = false, family = '') {
   if (!projectId) return;
   const key = projectSectionKey(section);
+  const normalizedFamily = key === 'networking' ? String(family || '').trim() : '';
+  const pendingKey = projectInventoryPendingKey(key, normalizedFamily);
   const cache = projectInventoryState.sections[projectId] || {};
-  if (isProjectSectionLoading(projectId, key)) return;
-  if (cache[key] && !force) {
+  if (Boolean(projectInventoryState.pending?.[projectId]?.[pendingKey])) return;
+  if (key === 'networking' && normalizedFamily) {
+    if (cache[key]?.[normalizedFamily] && !force) {
+      renderProjectsWorkspace();
+      return;
+    }
+  } else if (cache[key] && !force) {
     renderProjectsWorkspace();
     return;
   }
   projectInventoryState.projectId = projectId;
-  projectInventoryState.activeSection = key;
+  projectInventoryState.activeSection = pendingKey;
   projectInventoryState.pending = {
     ...(projectInventoryState.pending || {}),
     [projectId]: {
       ...(projectInventoryState.pending?.[projectId] || {}),
-      [key]: true,
+      [pendingKey]: true,
     },
   };
   projectInventoryState.loading = true;
   renderProjectsWorkspace();
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/inventory?section=${encodeURIComponent(key)}`);
+    const params = new URLSearchParams({ section: key });
+    if (normalizedFamily) params.set('family', normalizedFamily);
+    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/inventory?${params.toString()}`);
     const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('OpenStack');
     if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
-    projectInventoryState.sections[projectId] = {
-      ...(projectInventoryState.sections[projectId] || {}),
-      [key]: json.inventory || null,
+    if (key === 'networking' && normalizedFamily) {
+      const existingSections = projectInventoryState.sections[projectId] || {};
+      const existingNetworking = existingSections.networking || {};
+      projectInventoryState.sections[projectId] = {
+        ...existingSections,
+        networking: {
+          ...(existingNetworking || {}),
+          summary: json.inventory?.summary || existingNetworking.summary || {},
+          [normalizedFamily]: json.inventory?.[normalizedFamily] || [],
+        },
+      };
+    } else {
+      projectInventoryState.sections[projectId] = {
+        ...(projectInventoryState.sections[projectId] || {}),
+        [key]: json.inventory || null,
+      };
+    }
+    projectInventoryState.refreshedAt = {
+      ...(projectInventoryState.refreshedAt || {}),
+      [projectId]: {
+        ...(projectInventoryState.refreshedAt?.[projectId] || {}),
+        [pendingKey]: Date.now(),
+      },
     };
     if (key === 'quota' && projectQuotaEditState.successKey) {
       projectQuotaEditState.successKey = '';
     }
   } catch (err) {
-    projectInventoryState.sections[projectId] = {
-      ...(projectInventoryState.sections[projectId] || {}),
-      [key]: null,
-    };
+    if (key !== 'networking' || !normalizedFamily) {
+      projectInventoryState.sections[projectId] = {
+        ...(projectInventoryState.sections[projectId] || {}),
+        [key]: null,
+      };
+    }
     onLog?.({ node: '-', message: `Project inventory API error: ${err}`, color: 'error' });
   } finally {
     if (projectInventoryState.pending?.[projectId]) {
       const nextPending = { ...(projectInventoryState.pending[projectId] || {}) };
-      delete nextPending[key];
+      delete nextPending[pendingKey];
       projectInventoryState.pending = {
         ...(projectInventoryState.pending || {}),
         [projectId]: nextPending,
@@ -359,7 +490,18 @@ async function loadProjectInventory(projectId, section = projectSectionKey(activ
 function refreshActiveProjectView() {
   if (projectsState.loading) return;
   if (!projectsState.data) return loadProjects(true);
-  if (selectedProjectId) return loadProjectInventory(selectedProjectId, projectSectionKey(activeProjectView), true);
+  if (selectedProjectId) {
+    if (activeProjectView === 'networking') {
+      ensureProjectNetworkingFamiliesLoaded(selectedProjectId, true);
+      return;
+    }
+    return loadProjectInventory(
+      selectedProjectId,
+      projectSectionKey(activeProjectView),
+      true,
+      '',
+    );
+  }
   return loadProjects(true);
 }
 
@@ -377,7 +519,13 @@ function selectProject(projectId) {
   projectDetailState.data = null;
   projectDetailState.error = null;
   renderProjectsWorkspace();
-  loadProjectInventory(projectId, projectSectionKey(activeProjectView), true);
+  if (activeProjectView === 'networking') ensureProjectNetworkingFamiliesLoaded(projectId, true);
+  else loadProjectInventory(
+    projectId,
+    projectSectionKey(activeProjectView),
+    true,
+    '',
+  );
   prefetchProjectDetails(projectId);
 }
 
@@ -404,12 +552,29 @@ function renderProjectsSidebar() {
 }
 
 function renderProjectToolbar(title, count, placeholder, extra = '') {
+  const section = activeProjectView;
+  const family = section === 'networking' ? projectNetworkingFamilyKey() : '';
   return `
     <div class="data-view-toolbar">
       <h2>${esc(title)} <span class="hint">Project Scoped</span></h2>
       ${extra}
+      ${projectRefreshMeta(section, family)}
+      <button class="btn" onclick="refreshActiveProjectView()">⟳ Refresh</button>
       <input class="dv-filter" type="text" placeholder="${esc(placeholder)}" value="${esc(projectInventoryState.filter || '')}" oninput="projectInventoryState.filter=this.value;renderProjectsWorkspace()">
       <span style="font-size:11px;color:var(--dim)">${esc(String(count || 0))} item(s)</span>
+    </div>
+  `;
+}
+
+function renderProjectSectionToolbar(title, extra = '') {
+  const section = activeProjectView;
+  const family = section === 'networking' ? projectNetworkingFamilyKey() : '';
+  return `
+    <div class="data-view-toolbar">
+      <h2>${esc(title)} <span class="hint">Project Scoped</span></h2>
+      ${extra}
+      ${projectRefreshMeta(section, family)}
+      <button class="btn" onclick="refreshActiveProjectView()">⟳ Refresh</button>
     </div>
   `;
 }
@@ -525,7 +690,9 @@ function renderProjectOverview(inv) {
   const networkQuota = quotas.network || {};
   const storageQuota = quotas.block_storage || {};
   const hostPct = Number(placement.top_host_pct || summary.top_host_pct || 0);
+  const networkingSummary = projectNetworkingSummary(summary, stats);
   return `
+    ${renderProjectSectionToolbar('Overview')}
     <div class="summary-grid" style="margin-bottom:10px">
       ${renderOverviewCard('Workloads', [
         { label: 'Instances', value: projectValue(summary.instance_count || 0, stats.instancesLoaded) },
@@ -533,11 +700,11 @@ function renderProjectOverview(inv) {
         { label: 'Active / Error', value: stats.instancesLoaded ? esc(`${summary.active_instance_count || 0} / ${summary.error_instance_count || 0}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
       ])}
       ${renderOverviewCard('Networking', [
-        { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
-        { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
-        { label: 'Ports', value: projectValue(summary.port_count || 0, stats.networkingLoaded) },
-        { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
-        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) }
+        { label: 'Networks', value: projectValue(networkingSummary.networks.value, networkingSummary.networks.ready) },
+        { label: 'Routers', value: projectValue(networkingSummary.routers.value, networkingSummary.routers.ready) },
+        { label: 'Ports', value: projectValue(networkingSummary.ports.value, networkingSummary.ports.ready) },
+        { label: 'Floating IPs', value: projectValue(networkingSummary.floatingIps.value, networkingSummary.floatingIps.ready) },
+        { label: 'Load Balancers', value: projectValue(networkingSummary.loadBalancers.value, networkingSummary.loadBalancers.ready) }
       ])}
       ${renderOverviewCard('Capacity', [
         { label: 'vCPU', value: projectValue(summary.vcpu_count || 0, stats.instancesLoaded) },
@@ -620,13 +787,34 @@ function renderProjectNetworking(inv) {
     loadbalancers: loadBalancers.length,
   };
   const activeCount = counts[activeProjectNetworkingView] || 0;
+  const loadingStates = {
+    networks: isProjectNetworkingFamilyLoading(selectedProjectId, 'networks'),
+    routers: isProjectNetworkingFamilyLoading(selectedProjectId, 'routers'),
+    ports: isProjectNetworkingFamilyLoading(selectedProjectId, 'ports'),
+    floatingips: isProjectNetworkingFamilyLoading(selectedProjectId, 'floating_ips'),
+    loadbalancers: isProjectNetworkingFamilyLoading(selectedProjectId, 'load_balancers'),
+  };
+  const activeFamily = projectNetworkingFamilyKey();
+  const loadingFamily = isProjectNetworkingFamilyLoading(selectedProjectId, activeFamily);
+  const toolbarExtra = loadingFamily ? '<span class="hint"><span class="spinner">⟳</span> Loading current view…</span>' : '';
+  const navLabel = (icon, label, key, count) => `${icon} ${label} <span>${loadingStates[key] ? '<span class="spinner">⟳</span>' : count}</span>`;
+  const filterActive = Boolean(String(projectInventoryState.filter || '').trim());
+  const familyEmptyState = (colspan, loadedItems, label) => {
+    if (loadingFamily && !loadedItems.length) {
+      return `<tr><td colspan="${colspan}" style="text-align:center;color:var(--dim);padding:16px"><span class="spinner">⟳</span> Loading ${label}…</td></tr>`;
+    }
+    if (filterActive) {
+      return `<tr><td colspan="${colspan}" style="text-align:center;color:var(--dim);padding:16px">No ${label} match the current filter.</td></tr>`;
+    }
+    return `<tr><td colspan="${colspan}" style="text-align:center;color:var(--dim);padding:16px">No ${label} found for this project.</td></tr>`;
+  };
   const familyNav = `
     <div class="project-subnav">
-      <button class="project-subnav-item ${activeProjectNetworkingView === 'networks' ? 'active' : ''}" onclick="switchProjectNetworkingView('networks')">🌐 Networks <span>${counts.networks}</span></button>
-      <button class="project-subnav-item ${activeProjectNetworkingView === 'routers' ? 'active' : ''}" onclick="switchProjectNetworkingView('routers')">🛣️ Routers <span>${counts.routers}</span></button>
-      <button class="project-subnav-item ${activeProjectNetworkingView === 'ports' ? 'active' : ''}" onclick="switchProjectNetworkingView('ports')">🔌 Ports <span>${counts.ports}</span></button>
-      <button class="project-subnav-item ${activeProjectNetworkingView === 'floatingips' ? 'active' : ''}" onclick="switchProjectNetworkingView('floatingips')">📡 Floating IPs <span>${counts.floatingips}</span></button>
-      <button class="project-subnav-item ${activeProjectNetworkingView === 'loadbalancers' ? 'active' : ''}" onclick="switchProjectNetworkingView('loadbalancers')">⚖️ Load Balancers <span>${counts.loadbalancers}</span></button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'networks' ? 'active' : ''}" onclick="switchProjectNetworkingView('networks')">${navLabel('🌐', 'Networks', 'networks', counts.networks)}</button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'routers' ? 'active' : ''}" onclick="switchProjectNetworkingView('routers')">${navLabel('🛣️', 'Routers', 'routers', counts.routers)}</button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'ports' ? 'active' : ''}" onclick="switchProjectNetworkingView('ports')">${navLabel('🔌', 'Ports', 'ports', counts.ports)}</button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'floatingips' ? 'active' : ''}" onclick="switchProjectNetworkingView('floatingips')">${navLabel('📡', 'Floating IPs', 'floatingips', counts.floatingips)}</button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'loadbalancers' ? 'active' : ''}" onclick="switchProjectNetworkingView('loadbalancers')">${navLabel('⚖️', 'Load Balancers', 'loadbalancers', counts.loadbalancers)}</button>
     </div>`;
   let table = '';
   if (activeProjectNetworkingView === 'networks') {
@@ -639,7 +827,7 @@ function renderProjectNetworking(inv) {
             <tbody>
               ${networks.map((item) => `<tr class="${projectDetailState.kind === 'networks' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('networks','${escAttr(item.id)}')">
                 <td>${esc(item.name || item.id)}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.network_type || '—')}</td><td>${esc(String(item.subnet_count ?? 0))}</td><td>${item.router_id ? renderObjectLink(item.router_id, `navigateToRouterDetail('${escAttr(item.router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
-              </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No networks match the current filter.</td></tr>'}
+              </tr>`).join('') || familyEmptyState(5, inv.networks || [], 'networks')}
             </tbody>
           </table>
         </div>
@@ -659,7 +847,7 @@ function renderProjectNetworking(inv) {
                 <td>${esc(item.external_network_name || item.external_network_id || '—')}</td>
                 <td>${esc(String(item.interface_count || 0))}</td>
                 <td>${esc(String(item.route_count || 0))}</td>
-              </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No routers match the current filter.</td></tr>'}
+              </tr>`).join('') || familyEmptyState(6, inv.routers || [], 'routers')}
             </tbody>
           </table>
         </div>
@@ -686,7 +874,7 @@ function renderProjectNetworking(inv) {
                       : esc(item.attached_name || item.attached_id || '—')}</td>
                 <td>${item.connected_router_id ? renderObjectLink(item.connected_router_name || item.connected_router_id, `navigateToRouterDetail('${escAttr(item.connected_router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
                 <td style="font-family:monospace;font-size:10px">${esc((item.floating_ips || []).map((ip) => ip.address).join(', ') || '—')}</td>
-              </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:16px">No ports match the current filter.</td></tr>'}
+              </tr>`).join('') || familyEmptyState(7, inv.ports || [], 'ports')}
             </tbody>
           </table>
         </div>
@@ -701,7 +889,7 @@ function renderProjectNetworking(inv) {
             <tbody>
               ${floatingIps.map((item) => `<tr class="${projectDetailState.kind === 'floatingips' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('floatingips','${escAttr(item.id)}')">
                 <td>${esc(item.floating_ip_address || '—')}</td><td>${esc(item.fixed_ip_address || '—')}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.floating_network_name || item.floating_network_id || '—')}</td><td>${item.instance_id && item.compute_host ? renderObjectLink(item.instance_name || item.instance_id, `navigateToInstanceDetail('${escAttr(item.instance_id)}','${escAttr(item.compute_host)}')`) : esc(item.instance_name || '—')}</td><td>${item.port_id ? renderObjectLink((item.port_id || '').slice(0, 12), `navigateToPortDetail('${escAttr(item.port_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
-              </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No floating IPs match the current filter.</td></tr>'}
+              </tr>`).join('') || familyEmptyState(6, inv.floating_ips || [], 'floating IPs')}
             </tbody>
           </table>
         </div>
@@ -716,14 +904,14 @@ function renderProjectNetworking(inv) {
             <tbody>
               ${loadBalancers.map((item) => `<tr class="${projectDetailState.kind === 'loadbalancers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('loadbalancers','${escAttr(item.id)}')">
                 <td>${esc(item.name || item.id)}</td><td>${esc(item.vip_address || '—')}</td><td>${esc(item.floating_ip || '—')}</td><td>${esc(item.operating_status || 'UNKNOWN')} / ${esc(item.provisioning_status || 'UNKNOWN')}</td><td>${esc(String(item.pool_count || 0))}</td>
-              </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No load balancers match the current filter.</td></tr>'}
+              </tr>`).join('') || familyEmptyState(5, inv.load_balancers || [], 'load balancers')}
             </tbody>
           </table>
         </div>
       </div>`;
   }
   return `
-    ${renderProjectToolbar('Networking', activeCount, 'Filter networking…')}
+    ${renderProjectToolbar('Networking', activeCount, 'Filter networking…', toolbarExtra)}
     ${familyNav}
     ${table}
   `;
@@ -801,7 +989,9 @@ function renderProjectQuota(inv) {
   const quotas = inv.quotas || stats.quotas || {};
   const placement = inv.placement || stats.placement || {};
   const hostPct = Number(placement.top_host_pct || summary.top_host_pct || 0);
+  const networkingSummary = projectNetworkingSummary(summary, stats);
   return `
+    ${renderProjectSectionToolbar('Quota + Capacity')}
     <div class="summary-grid" style="margin-bottom:10px">
       ${renderOverviewCard('Instance Footprint', [
         { label: 'Instances', value: projectValue(summary.instance_count || 0, stats.instancesLoaded) },
@@ -814,11 +1004,11 @@ function renderProjectQuota(inv) {
         { label: 'Concentration', value: stats.quotaLoaded ? (hostPct ? esc(`${hostPct.toFixed(0)}%`) : '—') : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
       ])}
       ${renderOverviewCard('Project Networking', [
-        { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
-        { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
-        { label: 'Ports', value: projectValue(summary.port_count || 0, stats.networkingLoaded) },
-        { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
-        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) }
+        { label: 'Networks', value: projectValue(networkingSummary.networks.value, networkingSummary.networks.ready) },
+        { label: 'Routers', value: projectValue(networkingSummary.routers.value, networkingSummary.routers.ready) },
+        { label: 'Ports', value: projectValue(networkingSummary.ports.value, networkingSummary.ports.ready) },
+        { label: 'Floating IPs', value: projectValue(networkingSummary.floatingIps.value, networkingSummary.floatingIps.ready) },
+        { label: 'Load Balancers', value: projectValue(networkingSummary.loadBalancers.value, networkingSummary.loadBalancers.ready) }
       ])}
     </div>
     ${renderQuotaSection('Compute Quotas', quotas.compute || {})}
@@ -836,17 +1026,20 @@ function renderProjectMainContent() {
   }
 
   const selected = projectSelectedRecord();
-  const inv = projectInventoryForView(activeProjectView);
-  const activeSection = projectSectionKey(activeProjectView);
-  if (projectsState.loading && !(projectsState.data || []).length) {
-    wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading projects…</div>`;
-    return;
-  }
   if (!selected) {
+    if (projectsState.loading && !(projectsState.data || []).length) {
+      wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading projects…</div>`;
+      return;
+    }
     wrap.innerHTML = `<div style="color:var(--dim);padding:20px">Select a project from the navigator.</div>`;
     return;
   }
-  if (isProjectSectionLoading(selected.project_id, activeSection) && !inv) {
+  const inv = projectInventoryForView(activeProjectView);
+  const activeSection = projectSectionKey(activeProjectView);
+  const activeLoading = activeSection === 'networking'
+    ? isProjectNetworkingFamilyLoading(selected.project_id, projectNetworkingFamilyKey())
+    : isProjectSectionLoading(selected.project_id, activeSection);
+  if (activeLoading && !inv) {
     wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading project data…</div>`;
     return;
   }

@@ -151,6 +151,19 @@ function renderNetworkingWorkspace() {
   const open = detailPanes.some(id => document.getElementById(id)?.classList.contains('open'));
   detailWrap?.classList.toggle('open', open);
   resizer?.classList.toggle('open', open);
+
+  if (activeView !== 'networking') return;
+  if (isNetworkingK8sView()) {
+    const k8sType = networkingK8sType();
+    if (k8sType && hasK8sAuth()) selectK8sResource(k8sType);
+    return;
+  }
+  if (!hasOpenStackAuth()) return;
+  if (activeNetworkingView === 'networking' && !netState.data && !netState.loading) loadNetworks();
+  if (activeNetworkingView === 'routers' && !routerState.data && !routerState.loading) loadRouters();
+  if (activeNetworkingView === 'ports' && !portState.data && !portState.loading) loadPorts();
+  if (activeNetworkingView === 'loadbalancers' && !lbState.data && !lbState.loading) loadLoadBalancers();
+  if (activeNetworkingView === 'securitygroups' && !sgState.data && !sgState.loading) loadSecurityGroups();
 }
 
 function syncStorageDetailShell() {

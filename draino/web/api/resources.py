@@ -122,8 +122,9 @@ async def api_search(request: Request):
 async def api_project_inventory(project_id: str, request: Request):
     session = _require_session_record()(request)
     section = str(request.query_params.get("section") or "instances")
+    family = str(request.query_params.get("family") or "")
     try:
-        data = await _run_with_timeout(get_project_inventory, project_id, session.server.openstack_auth, section)
+        data = await _run_with_timeout(get_project_inventory, project_id, session.server.openstack_auth, section, family)
         return {"inventory": data, "error": None, "api_issue": None}
     except TimeoutError:
         return {

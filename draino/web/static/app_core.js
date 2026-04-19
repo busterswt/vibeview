@@ -210,7 +210,7 @@ const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: 
 // Projects view state
 const projectsState = { data: null, loading: false, filter: '' };
 let selectedProjectId = '';
-const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '', pending: {}, prefetched: {} };
+const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '', pending: {}, prefetched: {}, refreshedAt: {} };
 const projectDetailState = { kind: '', item: null, loading: false, data: null, error: null };
 const projectQuotaEditState = { section: '', resource: '', value: '', saving: false, error: '', successKey: '', successTimer: null };
 
@@ -517,6 +517,7 @@ function setAuthenticatedUI(info) {
   if (!nodeIrqBalanceTimer) nodeIrqBalanceTimer = setInterval(refreshSelectedNodeIrqBalance, 10000);
   if (!nodeSarTrendsTimer) nodeSarTrendsTimer = setInterval(refreshSelectedNodeSarTrends, 60000);
   if (!instancePortStatsTimer) instancePortStatsTimer = setInterval(refreshSelectedInstancePortStats, 3000);
+  if (typeof switchView === 'function') switchView(activeView);
 }
 
 function fmtBytes(bytes) {

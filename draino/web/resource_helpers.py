@@ -73,6 +73,36 @@ def _obj_dict(obj) -> dict:
     return {}
 
 
+def _iter_with_project_filter(list_fn, project_id: str = "", **filters):
+    if project_id:
+        filters = {"project_id": project_id, **filters}
+    try:
+        return list(list_fn(**filters))
+    except TypeError:
+        pass
+    except Exception:
+        if project_id:
+            try:
+                items = list(list_fn())
+            except Exception:
+                return []
+            return [
+                item for item in items
+                if (getattr(item, "project_id", None) or _obj_dict(item).get("project_id") or _obj_dict(item).get("tenant_id") or "") == project_id
+            ]
+        return []
+    try:
+        items = list(list_fn())
+    except Exception:
+        return []
+    if not project_id:
+        return items
+    return [
+        item for item in items
+        if (getattr(item, "project_id", None) or _obj_dict(item).get("project_id") or _obj_dict(item).get("tenant_id") or "") == project_id
+    ]
+
+
 def _project_entry(project, names: dict[str, str]) -> dict:
     data = _obj_dict(project)
     project_id = getattr(project, "id", None) or data.get("id") or ""
@@ -225,7 +255,7 @@ def _normalize_quota_section(raw: object, keys: list[str]) -> dict[str, dict[str
     return normalized
 
 
-def _backfill_compute_quota_usage(project_id: str, auth: openstack_ops.OpenStackAuth | None, quotas: dict) -> dict:
+def _backfill_compute_quota_usage(project_id: str, auth: openstack_ops.OpenStackAuth | None, quotas: dict, instances: list[dict] | None = None) -> dict:
     compute = quotas.get("compute")
     if not isinstance(compute, dict):
         return quotas
@@ -235,11 +265,11 @@ def _backfill_compute_quota_usage(project_id: str, auth: openstack_ops.OpenStack
     ]
     if not needed:
         return quotas
-    instances = [item for item in get_project_instances(auth) if item.get("project_id") == project_id]
+    project_instances = instances if instances is not None else get_project_instances(auth, project_id=project_id)
     usage = {
-        "instances": len(instances),
-        "cores": sum(int(item.get("vcpus") or 0) for item in instances),
-        "ram": sum(int(item.get("ram_mb") or 0) for item in instances),
+        "instances": len(project_instances),
+        "cores": sum(int(item.get("vcpus") or 0) for item in project_instances),
+        "ram": sum(int(item.get("ram_mb") or 0) for item in project_instances),
     }
     quotas["compute"] = {
         **compute,
@@ -252,6 +282,33 @@ def _backfill_compute_quota_usage(project_id: str, auth: openstack_ops.OpenStack
         },
     }
     return quotas
+
+
+def _project_instance_placement(instances: list[dict]) -> dict | None:
+    host_counts: dict[str, int] = {}
+    for item in instances:
+        status = str(item.get("status") or "").upper()
+        if status == "ERROR":
+            continue
+        host = str(item.get("compute_host") or "").strip()
+        if not host:
+            continue
+        host_counts[host] = host_counts.get(host, 0) + 1
+    if not host_counts:
+        return None
+    ordered = sorted(host_counts.items(), key=lambda item: (-item[1], item[0]))
+    top_host, top_count = ordered[0]
+    vm_count = sum(host_counts.values())
+    dominant = top_count > 1 and sum(1 for _host, count in ordered if count == top_count) == 1
+    return {
+        "vm_count": vm_count,
+        "host_count": len(ordered),
+        "top_host": top_host if dominant else "",
+        "top_host_count": top_count,
+        "top_host_pct": (top_count / vm_count * 100.0) if vm_count and dominant else 0.0,
+        "has_dominant_host": dominant,
+        "host_counts": [{"host": host, "vm_count": count} for host, count in ordered],
+    }
 
 
 _EDITABLE_PROJECT_QUOTA_KEYS: dict[str, set[str]] = {
@@ -479,11 +536,20 @@ def get_project_quota_summary(project_id: str, auth: openstack_ops.OpenStackAuth
     return summary
 
 
-def get_project_instances(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_project_instances(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     conn = openstack_ops._conn(auth=auth)
     project_names = _project_names(conn)
     result: list[dict] = []
-    for server in openstack_ops._iter_servers(conn, all_projects=True, details=True):
+    try:
+        servers = list(openstack_ops._iter_servers(conn, all_projects=True, details=True, project_id=project_id)) if project_id else list(openstack_ops._iter_servers(conn, all_projects=True, details=True))
+    except TypeError:
+        servers = list(openstack_ops._iter_servers(conn, all_projects=True, details=True))
+    if project_id:
+        servers = [
+            server for server in servers
+            if (openstack_ops._server_project_id(server) or "unknown") == project_id
+        ]
+    for server in servers:
         if openstack_ops._server_deleted(server):
             continue
         data = _obj_dict(server)
@@ -774,17 +840,14 @@ def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit
     return results[: max(1, int(limit or 20))]
 
 
-def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_floating_ips(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     conn = openstack_ops._conn(auth=auth)
     project_names = _project_names(conn)
     network_name_cache: dict[str, str] = {}
     port_cache: dict[str, dict] = {}
     server_cache: dict[str, dict[str, str]] = {}
     result: list[dict] = []
-    try:
-        ips = conn.network.ips()
-    except Exception:
-        return result
+    ips = _iter_with_project_filter(conn.network.ips, project_id)
     for ip in ips:
         data = _obj_dict(ip)
         project_id = getattr(ip, "project_id", None) or data.get("project_id") or data.get("tenant_id") or ""
@@ -935,7 +998,7 @@ def _port_record(conn, port, network_name_cache: dict[str, str], subnet_cache: d
     }
 
 
-def get_ports(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_ports(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     conn = openstack_ops._conn(auth=auth)
     network_name_cache: dict[str, str] = {}
     subnet_cache: dict[str, dict] = {}
@@ -945,7 +1008,7 @@ def get_ports(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     floating_ip_map = _floating_ip_map_by_port(conn)
     result: list[dict] = []
     try:
-        for port in conn.network.ports():
+        for port in _iter_with_project_filter(conn.network.ports, project_id):
             result.append(_port_record(conn, port, network_name_cache, subnet_cache, router_cache, router_name_cache, server_cache, floating_ip_map))
     except Exception:
         return result
@@ -1017,7 +1080,7 @@ def _project_summary_header(conn, project_id: str, project_names: dict[str, str]
     }
 
 
-def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | None, section: str = "instances") -> dict:
+def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | None, section: str = "instances", family: str = "") -> dict:
     conn = openstack_ops._conn(auth=auth)
     project_names = _project_names(conn)
     membership_project_ids = _current_membership_project_ids(conn)
@@ -1026,22 +1089,34 @@ def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | N
     payload = {"summary": summary}
     normalized = str(section or "instances").strip().lower()
     if normalized == "overview":
+        instances = get_project_instances(auth, project_id=project_id)
         quotas = _backfill_compute_quota_usage(project_id, auth, get_project_quota_summary(project_id, auth))
-        placement = next((item for item in openstack_ops.get_project_vm_distribution(auth) if item.get("project_id") == project_id), None)
+        placement = _project_instance_placement(instances)
         payload["overview"] = {
             "quotas": quotas,
             "placement": placement or None,
         }
         return payload
     if normalized == "instances":
-        payload["instances"] = [item for item in get_project_instances(auth) if item.get("project_id") == project_id]
+        payload["instances"] = get_project_instances(auth, project_id=project_id)
         return payload
     if normalized == "networking":
-        payload["networks"] = [item for item in get_networks(auth) if item.get("project_id") == project_id]
-        payload["routers"] = [item for item in get_routers(auth) if item.get("project_id") == project_id]
-        payload["ports"] = [item for item in get_ports(auth) if item.get("project_id") == project_id]
-        payload["floating_ips"] = [item for item in get_floating_ips(auth) if item.get("project_id") == project_id]
-        payload["load_balancers"] = [item for item in get_load_balancers(auth) if item.get("project_id") == project_id]
+        normalized_family = str(family or "").strip().lower()
+        family_loaders = {
+            "networks": lambda: get_networks(auth, project_id=project_id),
+            "routers": lambda: get_routers(auth, project_id=project_id),
+            "ports": lambda: get_ports(auth, project_id=project_id),
+            "floating_ips": lambda: get_floating_ips(auth, project_id=project_id),
+            "load_balancers": lambda: get_load_balancers(auth, project_id=project_id),
+        }
+        if normalized_family in family_loaders:
+            payload[normalized_family] = family_loaders[normalized_family]()
+            return payload
+        payload["networks"] = family_loaders["networks"]()
+        payload["routers"] = family_loaders["routers"]()
+        payload["ports"] = family_loaders["ports"]()
+        payload["floating_ips"] = family_loaders["floating_ips"]()
+        payload["load_balancers"] = family_loaders["load_balancers"]()
         return payload
     if normalized == "storage":
         volumes, all_projects = get_volumes(auth)
@@ -1052,19 +1127,20 @@ def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | N
         payload["security_groups"] = [item for item in get_security_groups(auth) if item.get("project_id") == project_id]
         return payload
     if normalized == "quota":
+        instances = get_project_instances(auth, project_id=project_id)
         payload["quotas"] = _backfill_compute_quota_usage(project_id, auth, get_project_quota_summary(project_id, auth))
-        placement = next((item for item in openstack_ops.get_project_vm_distribution(auth) if item.get("project_id") == project_id), None)
+        placement = _project_instance_placement(instances)
         payload["placement"] = placement or None
         return payload
     return payload
 
 
-def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_networks(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     """Return all Neutron networks visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)
     connected_router_by_network: dict[str, str] = {}
     try:
-        for port in conn.network.ports():
+        for port in _iter_with_project_filter(conn.network.ports, project_id):
             port_data = port.to_dict() if hasattr(port, "to_dict") else {}
             device_owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
             if not _is_router_interface_owner(device_owner):
@@ -1077,7 +1153,7 @@ def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
         connected_router_by_network = {}
 
     result = []
-    for network in conn.network.networks():
+    for network in _iter_with_project_filter(conn.network.networks, project_id):
         data = network.to_dict() if hasattr(network, "to_dict") else {}
         raw_external = data.get("router:external")
         if raw_external is None:
@@ -1849,12 +1925,12 @@ def _count_network_consumers(conn, network_id: str) -> dict[str, int]:
     return counts
 
 
-def get_routers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_routers(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     """Return all Neutron routers visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)
     network_name_cache: dict[str, str] = {}
     result = []
-    for router in conn.network.routers():
+    for router in _iter_with_project_filter(conn.network.routers, project_id):
         data = router.to_dict() if hasattr(router, "to_dict") else {}
         gateway = data.get("external_gateway_info") or getattr(router, "external_gateway_info", None) or {}
         external_network_id = gateway.get("network_id") or ""
@@ -1933,7 +2009,7 @@ def _lb_pool_ids(lb, data: dict) -> list[str]:
     return ids
 
 
-def get_load_balancers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+def get_load_balancers(auth: openstack_ops.OpenStackAuth | None, project_id: str = "") -> list[dict]:
     """Return all Octavia load balancers visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)
     fip_cache: dict[str, str] = {}
@@ -1942,7 +2018,9 @@ def get_load_balancers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
         data = lb.to_dict() if hasattr(lb, "to_dict") else {}
         vip_address = getattr(lb, "vip_address", None) or data.get("vip_address") or ""
         vip_port_id = getattr(lb, "vip_port_id", None) or data.get("vip_port_id") or ""
-        project_id = getattr(lb, "project_id", None) or data.get("project_id") or ""
+        lb_project_id = getattr(lb, "project_id", None) or data.get("project_id") or ""
+        if project_id and lb_project_id != project_id:
+            continue
         listener_ids = _lb_listener_ids(lb, data)
         pool_ids = _lb_pool_ids(lb, data)
         amphora_count = 0
@@ -1961,7 +2039,7 @@ def get_load_balancers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
             "vip_address": vip_address,
             "floating_ip": _lookup_floating_ip_by_port_or_address(conn, vip_port_id, vip_address, fip_cache),
             "vip_port_id": vip_port_id,
-            "project_id": project_id,
+            "project_id": lb_project_id,
             "listener_count": len(listener_ids),
             "pool_count": len(pool_ids),
             "amphora_count": amphora_count,

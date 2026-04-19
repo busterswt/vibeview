@@ -377,7 +377,7 @@ def test_projects_endpoints_return_inventory(monkeypatch):
     monkeypatch.setattr(
         resource_api,
         "get_project_inventory",
-        lambda project_id, auth=None, section="overview": {
+        lambda project_id, auth=None, section="overview", family="": {
             "summary": {"project_id": project_id, "project_name": "production"},
             "instances": [{"id": "vm-1", "name": "api-01"}] if section == "instances" else [],
             "quotas": {"compute": {"instances": {"used": 4, "limit": 20}}} if section == "quota" else {},
@@ -812,7 +812,7 @@ def test_project_inventory_endpoint_forwards_section(monkeypatch):
     monkeypatch.setattr(
         resource_api,
         "get_project_inventory",
-        lambda project_id, auth=None, section="overview": captured.update({"project_id": project_id, "section": section}) or {"summary": {"project_id": project_id}},
+        lambda project_id, auth=None, section="overview", family="": captured.update({"project_id": project_id, "section": section, "family": family}) or {"summary": {"project_id": project_id}},
     )
 
     payload = {
@@ -830,10 +830,10 @@ def test_project_inventory_endpoint_forwards_section(monkeypatch):
     with TestClient(web_server.fastapi_app) as client:
         login = client.post("/api/session", json=payload)
         assert login.status_code == 200
-        resp = client.get("/api/projects/proj-1/inventory?section=networking")
+        resp = client.get("/api/projects/proj-1/inventory?section=networking&family=ports")
 
     assert resp.status_code == 200
-    assert captured == {"project_id": "proj-1", "section": "networking"}
+    assert captured == {"project_id": "proj-1", "section": "networking", "family": "ports"}
 
 
 def test_project_quota_update_endpoint_requires_admin(monkeypatch):
