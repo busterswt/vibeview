@@ -184,6 +184,106 @@ def test_load_balancers_endpoint_returns_items(monkeypatch):
     assert body["load_balancers"][0]["amphora_count"] == 2
 
 
+def test_volume_snapshot_and_backup_endpoints_return_items(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(resource_api, "get_volume_snapshots", lambda auth=None: [{
+        "id": "snap-1",
+        "name": "snap-db",
+        "status": "available",
+        "size_gb": 120,
+        "volume_id": "vol-1",
+        "project_id": "proj-1",
+        "created_at": "2026-04-18T02:00:00Z",
+    }])
+    monkeypatch.setattr(resource_api, "get_volume_backups", lambda auth=None: [{
+        "id": "backup-1",
+        "name": "backup-db",
+        "status": "available",
+        "size_gb": 120,
+        "volume_id": "vol-1",
+        "project_id": "proj-1",
+        "created_at": "2026-04-18T03:00:00Z",
+        "is_incremental": False,
+        "container": "",
+    }])
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        snapshot_resp = client.get("/api/volume-snapshots")
+        backup_resp = client.get("/api/volume-backups")
+
+    assert snapshot_resp.status_code == 200
+    assert snapshot_resp.json()["snapshots"][0]["id"] == "snap-1"
+    assert backup_resp.status_code == 200
+    assert backup_resp.json()["backups"][0]["id"] == "backup-1"
+
+
+def test_volume_retype_endpoint_requests_action(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "retype_volume",
+        lambda volume_id, target_type, migration_policy="on-demand", auth=None: {
+            "volume_id": volume_id,
+            "target_type": target_type,
+            "migration_policy": migration_policy,
+            "status": "requested",
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.post("/api/volumes/vol-1/retype", json={"target_type": "gold-backend-b", "migration_policy": "on-demand"})
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["error"] is None
+    assert body["result"]["volume_id"] == "vol-1"
+    assert body["result"]["target_type"] == "gold-backend-b"
+
+
 def test_load_balancer_detail_endpoint_returns_detail(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])

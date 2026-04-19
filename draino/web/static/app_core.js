@@ -192,9 +192,11 @@ let selectedSecurityGroup = null;
 const sgDetailState = { loading: false, data: null };
 
 // Storage view state
-const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false };
+const volState = { data: null, loading: false, page: 1, pageSize: 25, filter: '', allProjects: false, retypeMeta: {} };
 let selectedVolume = null;
-const volumeDetailState = { loading: false, data: null };
+const volumeDetailState = { loading: false, data: null, targetType: '', actionMessage: '', actionTone: 'info', submitting: false };
+const volumeSnapshotState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+const volumeBackupState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 
 // Reports view state

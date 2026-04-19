@@ -1312,6 +1312,9 @@ def get_volumes(auth: openstack_ops.OpenStackAuth | None) -> tuple[list[dict], b
     result = []
     for volume in volumes:
         attachments = getattr(volume, "attachments", []) or []
+        volume_data = volume.to_dict() if hasattr(volume, "to_dict") else {}
+        host_value = volume_data.get("os-vol-host-attr:host") or ""
+        host_detail = _volume_host_detail(host_value)
         project_id = (
             getattr(volume, "os-vol-tenant-attr:tenant_id", None)
             or getattr(volume, "project_id", None)
@@ -1327,6 +1330,10 @@ def get_volumes(auth: openstack_ops.OpenStackAuth | None) -> tuple[list[dict], b
             "attached_to": [attachment.get("server_id", "") for attachment in attachments],
             "bootable": bool(getattr(volume, "is_bootable", False)),
             "encrypted": bool(getattr(volume, "encrypted", False)),
+            "multiattach": coerce_bool(getattr(volume, "is_multiattach", volume_data.get("multiattach", False))),
+            "backend_host": host_detail["service_host"],
+            "backend_name": host_detail["backend"],
+            "backend_pool": host_detail["pool"],
         })
     return result, all_projects
 
@@ -1426,6 +1433,87 @@ def _attachment_detail(conn, attachment: dict) -> dict:
     }
 
 
+def _volume_host_detail(host_value: str) -> dict[str, str]:
+    text = str(host_value or "").strip()
+    if not text:
+        return {"raw": "", "service_host": "", "backend": "", "pool": ""}
+    service_host, backend_pool = text, ""
+    if "@" in text:
+        service_host, backend_pool = text.split("@", 1)
+    backend, pool = backend_pool, ""
+    if "#" in backend_pool:
+        backend, pool = backend_pool.split("#", 1)
+    return {
+        "raw": text,
+        "service_host": service_host,
+        "backend": backend,
+        "pool": pool,
+    }
+
+
+def _volume_type_backend_name(type_detail: dict) -> str:
+    specs = type_detail.get("extra_specs") or {}
+    if not isinstance(specs, dict):
+        return ""
+    return str(
+        specs.get("volume_backend_name")
+        or specs.get("capabilities:volume_backend_name")
+        or ""
+    ).strip()
+
+
+def _list_volume_types(conn) -> list[dict]:
+    items = []
+    try:
+        for item in conn.volume.types():
+            detail = _volume_type_detail(conn, getattr(item, "id", None) or getattr(item, "name", None) or "")
+            if not detail:
+                continue
+            detail["backend_name"] = _volume_type_backend_name(detail)
+            items.append(detail)
+    except Exception:
+        return []
+    items.sort(key=lambda item: (item.get("name", ""), item.get("id", "")))
+    return items
+
+
+def _volume_snapshot_row(snapshot) -> dict:
+    data = snapshot.to_dict() if hasattr(snapshot, "to_dict") else {}
+    project_id = (
+        getattr(snapshot, "project_id", None)
+        or getattr(snapshot, "os-extended-snapshot-attributes:project_id", None)
+        or data.get("project_id")
+        or data.get("os-extended-snapshot-attributes:project_id")
+        or ""
+    )
+    return {
+        "id": getattr(snapshot, "id", None) or data.get("id") or "",
+        "name": getattr(snapshot, "name", None) or data.get("name") or "(no name)",
+        "status": getattr(snapshot, "status", None) or data.get("status") or "UNKNOWN",
+        "size_gb": getattr(snapshot, "size", None) or data.get("size") or 0,
+        "volume_id": getattr(snapshot, "volume_id", None) or data.get("volume_id") or "",
+        "project_id": project_id,
+        "created_at": getattr(snapshot, "created_at", None) or data.get("created_at") or "",
+        "description": getattr(snapshot, "description", None) or data.get("description") or "",
+    }
+
+
+def _volume_backup_row(backup) -> dict:
+    data = backup.to_dict() if hasattr(backup, "to_dict") else {}
+    return {
+        "id": getattr(backup, "id", None) or data.get("id") or "",
+        "name": getattr(backup, "name", None) or data.get("name") or "(no name)",
+        "status": getattr(backup, "status", None) or data.get("status") or "UNKNOWN",
+        "size_gb": getattr(backup, "size", None) or data.get("size") or 0,
+        "volume_id": getattr(backup, "volume_id", None) or data.get("volume_id") or "",
+        "project_id": getattr(backup, "project_id", None) or data.get("project_id") or "",
+        "created_at": getattr(backup, "created_at", None) or data.get("created_at") or "",
+        "is_incremental": coerce_bool(getattr(backup, "is_incremental", data.get("is_incremental", False))),
+        "container": getattr(backup, "container", None) or data.get("container") or "",
+        "description": getattr(backup, "description", None) or data.get("description") or "",
+    }
+
+
 def get_volume_detail(volume_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
     """Return detailed Cinder volume information for the drawer view."""
     conn = openstack_ops._conn(auth=auth)
@@ -1440,23 +1528,30 @@ def get_volume_detail(volume_id: str, auth: openstack_ops.OpenStackAuth | None) 
     if not isinstance(metadata, dict):
         metadata = {}
     type_detail = _volume_type_detail(conn, getattr(volume, "volume_type", None) or volume_data.get("volume_type") or "")
+    type_detail["backend_name"] = _volume_type_backend_name(type_detail)
+    host_detail = _volume_host_detail(volume_data.get("os-vol-host-attr:host") or "")
+    volume_types = _list_volume_types(conn)
 
-    snapshot_count = 0
-    backup_count = 0
+    snapshots: list[dict] = []
+    backups: list[dict] = []
     try:
-        snapshot_count = sum(
-            1 for item in conn.volume.snapshots(details=False)
+        snapshots = [
+            _volume_snapshot_row(item)
+            for item in conn.volume.snapshots(details=False)
             if getattr(item, "volume_id", None) == volume_id
-        )
+        ]
     except Exception:
-        snapshot_count = 0
+        snapshots = []
     try:
-        backup_count = sum(
-            1 for item in conn.volume.backups(details=False)
+        backups = [
+            _volume_backup_row(item)
+            for item in conn.volume.backups(details=False)
             if getattr(item, "volume_id", None) == volume_id
-        )
+        ]
     except Exception:
-        backup_count = 0
+        backups = []
+    snapshots.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    backups.sort(key=lambda item: item.get("created_at", ""), reverse=True)
 
     return {
         "id": getattr(volume, "id", None) or volume_data.get("id") or volume_id,
@@ -1477,12 +1572,109 @@ def get_volume_detail(volume_id: str, auth: openstack_ops.OpenStackAuth | None) 
         "replication_status": volume_data.get("replication_status") or getattr(volume, "replication_status", None) or "",
         "consistencygroup_id": volume_data.get("consistencygroup_id") or getattr(volume, "consistencygroup_id", None) or "",
         "os-vol-host-attr:host": volume_data.get("os-vol-host-attr:host") or "",
+        "backend_host": host_detail["service_host"],
+        "backend_name": host_detail["backend"],
+        "backend_pool": host_detail["pool"],
         "attachments": attachments,
         "metadata": {str(key): value for key, value in metadata.items()},
         "volume_type_detail": type_detail,
-        "snapshot_count": snapshot_count,
-        "backup_count": backup_count,
+        "available_volume_types": volume_types,
+        "snapshot_count": len(snapshots),
+        "backup_count": len(backups),
+        "snapshots": snapshots,
+        "backups": backups,
     }
+
+
+def get_volume_snapshots(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    """Return Cinder volume snapshots."""
+    conn = openstack_ops._conn(auth=auth)
+    items: list[dict] = []
+    try:
+        for snapshot in conn.volume.snapshots(details=False):
+            items.append(_volume_snapshot_row(snapshot))
+    except Exception:
+        return []
+    items.sort(key=lambda item: (item.get("status", ""), item.get("name", ""), item.get("id", "")))
+    return items
+
+
+def get_volume_backups(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    """Return Cinder volume backups."""
+    conn = openstack_ops._conn(auth=auth)
+    items: list[dict] = []
+    try:
+        for backup in conn.volume.backups(details=False):
+            items.append(_volume_backup_row(backup))
+    except Exception:
+        return []
+    items.sort(key=lambda item: (item.get("status", ""), item.get("name", ""), item.get("id", "")))
+    return items
+
+
+def retype_volume(
+    volume_id: str,
+    target_type: str,
+    migration_policy: str = "on-demand",
+    auth: openstack_ops.OpenStackAuth | None = None,
+) -> dict:
+    """Request a Cinder volume retype."""
+    conn = openstack_ops._conn(auth=auth)
+    target = str(target_type or "").strip()
+    if not target:
+        raise ValueError("target_type is required")
+    policy = str(migration_policy or "on-demand").strip().lower()
+    if policy not in {"on-demand", "never"}:
+        raise ValueError("migration_policy must be 'on-demand' or 'never'")
+
+    volume_proxy = getattr(conn, "volume", None)
+    block_proxy = getattr(conn, "block_storage", None)
+
+    for proxy in [volume_proxy, block_proxy]:
+        if proxy is None:
+            continue
+        fn = getattr(proxy, "retype_volume", None)
+        if callable(fn):
+            fn(volume_id, target, migration_policy=policy)
+            return {
+                "volume_id": volume_id,
+                "target_type": target,
+                "migration_policy": policy,
+                "status": "requested",
+            }
+
+    action_body = {"os-retype": {"new_type": target, "migration_policy": policy}}
+    if block_proxy is not None:
+        post = getattr(block_proxy, "post", None)
+        if callable(post):
+            post(f"/volumes/{volume_id}/action", json=action_body)
+            return {
+                "volume_id": volume_id,
+                "target_type": target,
+                "migration_policy": policy,
+                "status": "requested",
+            }
+
+    session = getattr(conn, "session", None)
+    endpoint_for = getattr(conn, "endpoint_for", None)
+    if session is not None and callable(endpoint_for):
+        endpoint = str(endpoint_for("block-storage") or "").rstrip("/")
+        if endpoint:
+            response = session.post(
+                f"{endpoint}/volumes/{volume_id}/action",
+                json=action_body,
+                microversion=None,
+            )
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+            return {
+                "volume_id": volume_id,
+                "target_type": target,
+                "migration_policy": policy,
+                "status": "requested",
+            }
+
+    raise RuntimeError("Cinder retype is not available from the current SDK connection")
 
 
 def get_swift_containers(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:

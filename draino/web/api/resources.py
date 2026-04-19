@@ -14,12 +14,15 @@ from ..resource_helpers import (
     get_load_balancers,
     get_network_detail,
     get_networks,
+    retype_volume,
     get_security_group_detail,
     get_security_groups,
     get_router_detail,
     get_routers,
     get_swift_containers,
+    get_volume_backups,
     get_volume_detail,
+    get_volume_snapshots,
     get_volumes,
     repair_subnet_metadata_port,
 )
@@ -85,6 +88,53 @@ async def api_volume_detail(volume_id: str, request: Request):
         }
     except Exception as exc:
         return {"volume": None, "error": str(exc), "api_issue": build_api_issue("Cinder", f"GET /v3/volumes/{volume_id}", exc)}
+
+
+@router.post("/api/volumes/{volume_id}/retype")
+async def api_volume_retype(volume_id: str, request: Request):
+    session = _require_session_record()(request)
+    payload = await request.json()
+    target_type = str(payload.get("target_type") or "").strip()
+    migration_policy = str(payload.get("migration_policy") or "on-demand").strip().lower()
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            retype_volume,
+            volume_id,
+            target_type,
+            migration_policy,
+            session.server.openstack_auth,
+        )
+        return {"result": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {
+            "result": None,
+            "error": str(exc),
+            "api_issue": build_api_issue("Cinder", f"POST /v3/volumes/{volume_id}/action os-retype", exc),
+        }
+
+
+@router.get("/api/volume-snapshots")
+async def api_volume_snapshots(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_volume_snapshots, session.server.openstack_auth)
+        return {"snapshots": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"snapshots": [], "error": str(exc), "api_issue": build_api_issue("Cinder", "GET /v3/snapshots", exc)}
+
+
+@router.get("/api/volume-backups")
+async def api_volume_backups(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_volume_backups, session.server.openstack_auth)
+        return {"backups": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"backups": [], "error": str(exc), "api_issue": build_api_issue("Cinder", "GET /v3/backups", exc)}
 
 
 @router.get("/api/swift-containers")

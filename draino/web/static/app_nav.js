@@ -17,7 +17,7 @@ function topLevelView(name) {
 }
 
 function switchStorageSection(name) {
-  const valid = ['openstack-volumes', 'openstack-swift', 'k8s-csi', 'k8s-pvcs', 'k8s-pvs'];
+  const valid = ['openstack-volumes', 'openstack-snapshots', 'openstack-backups', 'openstack-swift', 'k8s-csi', 'k8s-pvcs', 'k8s-pvs'];
   if (!valid.includes(name)) return;
   activeStorageView = name;
   switchView('storage');
@@ -37,6 +37,8 @@ function storageK8sType(name = activeStorageView) {
 
 function storageViewLabel(name = activeStorageView) {
   if (name === 'openstack-volumes') return 'Cinder Volumes';
+  if (name === 'openstack-snapshots') return 'Volume Snapshots';
+  if (name === 'openstack-backups') return 'Volume Backups';
   if (name === 'openstack-swift') return 'Swift Containers';
   const k8sType = storageK8sType(name);
   return k8sType ? (K8S_RES_META[k8sType]?.label || 'Kubernetes Storage') : 'Storage';
@@ -49,7 +51,7 @@ function openStackServiceFlags() {
 function storageAvailableOpenStackViews() {
   const services = openStackServiceFlags();
   const views = [];
-  if (services.block_storage) views.push('openstack-volumes');
+  if (services.block_storage) views.push('openstack-volumes', 'openstack-snapshots', 'openstack-backups');
   if (services.object_store) views.push('openstack-swift');
   return views;
 }
@@ -166,14 +168,18 @@ function renderStorageWorkspace() {
   });
 
   const panes = {
-    openstack: document.getElementById('storage-openstack-wrap') || document.getElementById('vol-wrap'),
+    volumes: document.getElementById('storage-openstack-wrap') || document.getElementById('vol-wrap'),
+    snapshots: document.getElementById('storage-snapshot-wrap'),
+    backups: document.getElementById('storage-backup-wrap'),
     swift: document.getElementById('storage-swift-wrap'),
     k8s: document.getElementById('storage-k8s-content'),
   };
   Object.values(panes).forEach(pane => pane?.classList.remove('active'));
   if (isStorageK8sView()) panes.k8s?.classList.add('active');
   else if (activeStorageView === 'openstack-swift') panes.swift?.classList.add('active');
-  else panes.openstack?.classList.add('active');
+  else if (activeStorageView === 'openstack-snapshots') panes.snapshots?.classList.add('active');
+  else if (activeStorageView === 'openstack-backups') panes.backups?.classList.add('active');
+  else panes.volumes?.classList.add('active');
 
   document.getElementById('storage-volume-detail-wrap')?.classList.toggle(
     'open',
@@ -283,6 +289,20 @@ function switchView(name) {
           return;
         }
         if (!volState.data && !volState.loading) loadVolumes();
+      }
+      if (activeStorageView === 'openstack-snapshots') {
+        if (!hasOpenStackAuth()) {
+          document.getElementById('storage-snapshot-wrap').innerHTML = renderOpenStackUnavailablePanel('Volume Snapshots', 'This view relies on Cinder snapshot inventory. Provide OpenStack credentials to enable it.');
+          return;
+        }
+        if (!volumeSnapshotState.data && !volumeSnapshotState.loading && typeof loadVolumeSnapshots === 'function') loadVolumeSnapshots();
+      }
+      if (activeStorageView === 'openstack-backups') {
+        if (!hasOpenStackAuth()) {
+          document.getElementById('storage-backup-wrap').innerHTML = renderOpenStackUnavailablePanel('Volume Backups', 'This view relies on Cinder backup inventory. Provide OpenStack credentials to enable it.');
+          return;
+        }
+        if (!volumeBackupState.data && !volumeBackupState.loading && typeof loadVolumeBackups === 'function') loadVolumeBackups();
       }
       if (activeStorageView === 'openstack-swift') {
         if (!hasOpenStackAuth()) {

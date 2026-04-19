@@ -375,6 +375,12 @@
         <div class="storage-nav-item selected" data-storage-view="openstack-volumes" data-requires-service="block-storage" onclick="switchStorageSection('openstack-volumes')">
           <span>💿</span> Cinder Volumes
         </div>
+        <div class="storage-nav-item" data-storage-view="openstack-snapshots" data-requires-service="block-storage" onclick="switchStorageSection('openstack-snapshots')">
+          <span>📸</span> Volume Snapshots
+        </div>
+        <div class="storage-nav-item" data-storage-view="openstack-backups" data-requires-service="block-storage" onclick="switchStorageSection('openstack-backups')">
+          <span>🛟</span> Volume Backups
+        </div>
         <div class="storage-nav-item" data-storage-view="openstack-swift" data-requires-service="object-store" onclick="switchStorageSection('openstack-swift')">
           <span>🪣</span> Swift Containers
         </div>
@@ -398,6 +404,12 @@
       <div id="storage-content-inner">
         <div class="storage-pane active" id="vol-wrap">
           <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Cinder volumes…</div>
+        </div>
+        <div class="storage-pane" id="storage-snapshot-wrap">
+          <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Cinder snapshots…</div>
+        </div>
+        <div class="storage-pane" id="storage-backup-wrap">
+          <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Cinder backups…</div>
         </div>
         <div class="storage-pane" id="storage-swift-wrap">
           <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading Swift containers…</div>

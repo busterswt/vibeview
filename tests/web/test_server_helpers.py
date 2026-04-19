@@ -238,6 +238,31 @@ def test_get_router_detail_includes_connected_subnets_and_gateway(monkeypatch):
     assert item["joins"]["routed_instance_count"] == 1
 
 
+def test_retype_volume_uses_volume_proxy_when_available(monkeypatch):
+    calls = []
+
+    class FakeVolumeProxy:
+        @staticmethod
+        def retype_volume(volume_id, target_type, migration_policy="on-demand"):
+            calls.append((volume_id, target_type, migration_policy))
+
+    class FakeConn:
+        volume = FakeVolumeProxy()
+        block_storage = None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    result = web_server._retype_volume("vol-1", "gold-backend-b", auth=None)
+
+    assert result == {
+        "volume_id": "vol-1",
+        "target_type": "gold-backend-b",
+        "migration_policy": "on-demand",
+        "status": "requested",
+    }
+    assert calls == [("vol-1", "gold-backend-b", "on-demand")]
+
+
 def test_get_network_detail_includes_metadata_port_for_matching_subnet(monkeypatch):
     class FakeSubnet:
         def __init__(self, subnet_id, name, cidr):
@@ -1002,4 +1027,133 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
     assert item["remote_group_fanout"]["direct_group_count"] == 1
     assert item["reference_graph_depth"] == 2
     assert item["referenced_by"][0]["id"] == "sg-4"
+
+
+def test_get_volume_detail_includes_retype_targets_and_recovery_lists(monkeypatch):
+    class FakeVolume:
+        id = "vol-1"
+        name = "db-prod-01-root"
+        status = "in-use"
+        size = 120
+        description = "database root disk"
+        volume_type = "gold-rbd-a"
+        project_id = "proj-1"
+        is_bootable = True
+        encrypted = False
+        is_multiattach = False
+        availability_zone = "storage-a"
+        created_at = "2026-04-18T00:00:00Z"
+        updated_at = "2026-04-18T01:00:00Z"
+        attachments = [{
+            "server_id": "server-1",
+            "host_name": "compute-a.example",
+            "device": "/dev/vda",
+            "attached_at": "2026-04-18T00:05:00Z",
+        }]
+
+        def to_dict(self):
+            return {
+                "os-vol-host-attr:host": "cinder-a@rbd-a#pool1",
+                "metadata": {"owner": "db-team"},
+            }
+
+    class FakeType:
+        def __init__(self, type_id, name, backend):
+            self.id = type_id
+            self.name = name
+            self.description = f"{name} desc"
+            self.is_public = True
+            self.extra_specs = {"volume_backend_name": backend}
+
+        def to_dict(self):
+            return {
+                "id": self.id,
+                "name": self.name,
+                "description": self.description,
+                "is_public": True,
+                "extra_specs": self.extra_specs,
+            }
+
+    class FakeSnapshot:
+        id = "snap-1"
+        name = "snap-db"
+        status = "available"
+        size = 120
+        volume_id = "vol-1"
+        created_at = "2026-04-18T02:00:00Z"
+
+        def to_dict(self):
+            return {"project_id": "proj-1"}
+
+    class FakeBackup:
+        id = "backup-1"
+        name = "backup-db"
+        status = "available"
+        size = 120
+        volume_id = "vol-1"
+        project_id = "proj-1"
+        created_at = "2026-04-18T03:00:00Z"
+        is_incremental = False
+
+        def to_dict(self):
+            return {}
+
+    class FakeServer:
+        name = "vm-db-01"
+
+        def to_dict(self):
+            return {}
+
+    class FakeVolumeAPI:
+        @staticmethod
+        def get_volume(volume_id):
+            assert volume_id == "vol-1"
+            return FakeVolume()
+
+        @staticmethod
+        def get_type(ref):
+            mapping = {
+                "gold-rbd-a": FakeType("type-a", "gold-rbd-a", "rbd-a"),
+                "type-a": FakeType("type-a", "gold-rbd-a", "rbd-a"),
+                "type-b": FakeType("type-b", "gold-rbd-b", "rbd-b"),
+            }
+            return mapping.get(ref)
+
+        @staticmethod
+        def types():
+            return [FakeType("type-a", "gold-rbd-a", "rbd-a"), FakeType("type-b", "gold-rbd-b", "rbd-b")]
+
+        @staticmethod
+        def snapshots(details=False):
+            assert details is False
+            return [FakeSnapshot()]
+
+        @staticmethod
+        def backups(details=False):
+            assert details is False
+            return [FakeBackup()]
+
+    class FakeComputeAPI:
+        @staticmethod
+        def get_server(server_id):
+            assert server_id == "server-1"
+            return FakeServer()
+
+    class FakeConn:
+        volume = FakeVolumeAPI()
+        compute = FakeComputeAPI()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    item = web_server._get_volume_detail("vol-1", auth=None)
+
+    assert item["backend_name"] == "rbd-a"
+    assert item["backend_pool"] == "pool1"
+    assert item["volume_type_detail"]["backend_name"] == "rbd-a"
+    assert item["available_volume_types"][1]["backend_name"] == "rbd-b"
+    assert item["attachments"][0]["server_name"] == "vm-db-01"
+    assert item["snapshot_count"] == 1
+    assert item["backup_count"] == 1
+    assert item["snapshots"][0]["id"] == "snap-1"
+    assert item["backups"][0]["id"] == "backup-1"
     assert item["control_plane_complexity"]["level"] == "elevated"

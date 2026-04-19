@@ -78,7 +78,11 @@ from .resource_helpers import (
     repair_subnet_metadata_port as _repair_subnet_metadata_port,
     get_router_detail as _get_router_detail,
     get_routers as _get_routers,
+    get_volume_backups as _get_volume_backups,
+    get_volume_detail as _get_volume_detail,
+    get_volume_snapshots as _get_volume_snapshots,
     get_volumes as _get_volumes,
+    retype_volume as _retype_volume,
 )
 from .report_helpers import (
     build_capacity_headroom_report as _build_capacity_headroom_report,
