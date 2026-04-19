@@ -927,7 +927,7 @@ async function bootstrapSession() {
     const resp = await fetch('/api/session');
     const json = await resp.json();
     if (json.authenticated) {
-      window.location = '/app';
+      window.location.replace('/app');
       return;
     }
   } catch (e) {
@@ -954,7 +954,7 @@ async function submitAuth() {
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(json.detail || 'Login failed');
-    window.location = '/app';
+    window.location.replace('/app');
   } catch (e) {
     if (e && e.name === 'AbortError') setAuthMessage(`Login timed out after ${Math.round(LOGIN_TIMEOUT_MS / 1000)}s`, 'error');
     else setAuthMessage(String(e), 'error');
