@@ -43,6 +43,15 @@ function saveGlobalSearchHistory(items) {
   }
 }
 
+function clearGlobalSearchHistory() {
+  try {
+    localStorage.removeItem(GLOBAL_SEARCH_HISTORY_KEY);
+  } catch (_) {
+    // ignore storage failures
+  }
+  renderGlobalSearch();
+}
+
 function rememberGlobalSearchQuery(query) {
   const normalized = String(query || '').trim();
   if (!normalized) return;
@@ -606,7 +615,7 @@ function renderGlobalSearch() {
       return;
     }
     dropdown.innerHTML = `<div class="global-search-section">
-      <div class="global-search-section-title">Recent Searches</div>
+      <div class="global-search-section-title">Recent Searches <button class="global-search-clear" onclick="event.stopPropagation();clearGlobalSearchHistory()">Clear</button></div>
       ${history.map((item) => `<button class="global-search-item" onclick="setGlobalSearchQuery('${escAttr(item)}')">
         <span class="global-search-item-icon">⏱️</span>
         <span class="global-search-item-copy">

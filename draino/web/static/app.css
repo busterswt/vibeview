@@ -100,6 +100,24 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.global-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  padding: 0;
+}
+.global-search-clear:hover {
+  text-decoration: underline;
 }
 .global-search-item {
   display: flex;
