@@ -22,6 +22,7 @@
     <a data-view="kubernetes"                    onclick="switchView('kubernetes')">Kubernetes</a>
     <a data-view="networking"                    onclick="switchView('networking')">Networking</a>
     <a data-view="storage"                       onclick="switchView('storage')">Storage</a>
+    <a data-view="projects"                      onclick="switchView('projects')">Projects</a>
     <a data-view="stress"                        onclick="switchView('stress')">Stress</a>
     <a data-view="reports"                       onclick="switchView('reports')">Reports</a>
   </nav>
@@ -81,6 +82,9 @@
   </div>
   <div class="bc-actions" id="bc-vol-actions" style="display:none">
     <button class="btn" onclick="refreshActiveStorageView()">⟳ Refresh Storage</button>
+  </div>
+  <div class="bc-actions" id="bc-project-actions" style="display:none">
+    <button class="btn" onclick="refreshActiveProjectView()">⟳ Refresh Projects</button>
   </div>
   <div class="bc-actions" id="bc-report-actions" style="display:none">
     <button class="btn" onclick="refreshActiveReport()">⟳ Refresh Report</button>
@@ -428,6 +432,18 @@
     </div>
   </div>
 
+  <!-- ── Projects view ── -->
+  <div class="view" id="view-projects">
+    <div id="projects-sidebar"></div>
+    <div id="projects-content">
+      <div id="projects-content-inner">
+        <div style="color:var(--dim);text-align:center;padding:40px 16px">Loading projects…</div>
+      </div>
+    </div>
+    <div id="projects-detail-resizer"></div>
+    <div id="projects-detail-wrap"></div>
+  </div>
+
   <!-- ── Reports view ── -->
   <div class="view" id="view-reports">
     <div id="reports-wrap"></div>
@@ -562,6 +578,7 @@
     <script src="/static/app_k8s_resources_detail.js"></script>
     <script src="/static/app_k8s_resources_table.js"></script>
     <script src="/static/app_resources.js"></script>
+<script src="/static/app_projects.js"></script>
 <script src="/static/app_reports_openstack.js"></script>
 <script src="/static/app_reports_k8s.js"></script>
 <script src="/static/app_reports.js"></script>

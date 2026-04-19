@@ -132,6 +132,14 @@ function applyStorageDetailWidth(width) {
   localStorage.setItem('vibeviewStorageDetailWidth', String(px));
 }
 
+function applyProjectsDetailWidth(width) {
+  const panel = document.getElementById('projects-detail-wrap');
+  if (!panel) return;
+  const px = Math.max(560, Math.min(1120, Math.round(width)));
+  panel.style.width = `${px}px`;
+  localStorage.setItem('vibeviewProjectsDetailWidth', String(px));
+}
+
 function initSidebarResizer() {
   const sidebar = document.getElementById('sidebar');
   const resizer = document.getElementById('sidebar-resizer');
@@ -308,6 +316,43 @@ function initStorageDetailResizer() {
   });
 }
 
+function initProjectsDetailResizer() {
+  const panel = document.getElementById('projects-detail-wrap');
+  const resizer = document.getElementById('projects-detail-resizer');
+  if (!panel || !resizer) return;
+
+  const saved = Number(localStorage.getItem('vibeviewProjectsDetailWidth'));
+  if (Number.isFinite(saved) && saved >= 560) applyProjectsDetailWidth(saved);
+
+  resizer.addEventListener('mousedown', (event) => {
+    tasksDragging = false;
+    sidebarDragging = false;
+    resizer.classList.add('dragging');
+    document.body.dataset.projectsDetailDragging = 'true';
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (document.body.dataset.projectsDetailDragging !== 'true') return;
+    const view = document.getElementById('view-projects');
+    const rect = view?.getBoundingClientRect();
+    if (!rect) return;
+    const width = rect.right - event.clientX;
+    const maxWidth = Math.max(560, rect.width - 320);
+    applyProjectsDetailWidth(Math.max(560, Math.min(maxWidth, width)));
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (document.body.dataset.projectsDetailDragging !== 'true') return;
+    delete document.body.dataset.projectsDetailDragging;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // § INIT
 // ════════════════════════════════════════════════════════════════════════════
@@ -317,5 +362,6 @@ initTasksResizer();
 initK8sDetailResizer();
 initNetworkingDetailResizer();
 initStorageDetailResizer();
+initProjectsDetailResizer();
 initPollingInterval();
 bootstrapSession();

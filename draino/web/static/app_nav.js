@@ -16,6 +16,10 @@ function topLevelView(name) {
   return name;
 }
 
+function projectViewLabelBreadcrumb() {
+  return selectedProjectId ? `Projects / ${projectViewLabel()}` : 'Projects';
+}
+
 function switchStorageSection(name) {
   const valid = ['openstack-volumes', 'openstack-snapshots', 'openstack-backups', 'openstack-swift', 'k8s-csi', 'k8s-pvcs', 'k8s-pvs'];
   if (!valid.includes(name)) return;
@@ -218,6 +222,7 @@ function switchView(name) {
   document.getElementById('bc-report-actions').style.display = name === 'reports' ? '' : 'none';
   document.getElementById('bc-stress-actions').style.display = name === 'stress' ? '' : 'none';
   document.getElementById('bc-vol-actions').style.display = name === 'storage' ? '' : 'none';
+  document.getElementById('bc-project-actions').style.display = name === 'projects' ? '' : 'none';
   document.getElementById('tasks-panel').style.display = name === 'infrastructure' ? '' : 'none';
 
   if (name === 'infrastructure') {
@@ -237,13 +242,15 @@ function switchView(name) {
         ? networkingViewLabel()
         : name === 'stress'
           ? 'Stress'
-          : name === 'reports'
-            ? 'Reports'
-            : name === 'storage'
-              ? storageViewLabel()
-              : name === 'kubernetes'
-                ? 'Kubernetes'
-                : name;
+            : name === 'reports'
+              ? 'Reports'
+              : name === 'storage'
+                ? storageViewLabel()
+                : name === 'projects'
+                  ? projectViewLabelBreadcrumb()
+                : name === 'kubernetes'
+                  ? 'Kubernetes'
+                  : name;
     bcRoot.textContent = 'VibeView';
     bcSep.style.display = '';
     bcNode.textContent = label;
@@ -322,6 +329,15 @@ function switchView(name) {
         if (k8sType) selectK8sResource(k8sType);
       }
     }
+    if (name === 'projects') {
+      renderProjectsWorkspace();
+      if (!hasOpenStackAuth()) {
+        document.getElementById('projects-content-inner').innerHTML = renderOpenStackUnavailablePanel('Projects', 'This view relies on OpenStack project-scoped inventory. Provide OpenStack credentials to enable it.');
+        return;
+      }
+      if (!projectsState.data && !projectsState.loading) loadProjects();
+      else if (selectedProjectId && (!projectInventoryState.data || projectInventoryState.projectId !== selectedProjectId) && !projectInventoryState.loading) loadProjectInventory(selectedProjectId);
+    }
     if (name === 'stress') {
       if (!hasOpenStackAuth()) {
         renderStressView();
@@ -388,6 +404,10 @@ async function navigateToInstanceDetail(instanceId, computeHost) {
 }
 
 function handleBcRoot() {
+  if (activeView === 'projects') {
+    switchView('projects');
+    return;
+  }
   if (activeView !== 'infrastructure') switchView('infrastructure');
   else { selectedNode = null; renderInfraDetail(); }
 }

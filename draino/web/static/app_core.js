@@ -13,6 +13,7 @@ let activeTab    = 'summary';
 let activeView   = 'infrastructure';
 let activeNetworkingView = 'networking';
 let activeStorageView = 'openstack-volumes';
+let activeProjectView = 'instances';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
@@ -199,6 +200,12 @@ const volumeSnapshotState = { data: null, loading: false, page: 1, pageSize: 25,
 const volumeBackupState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 
+// Projects view state
+const projectsState = { data: null, loading: false, filter: '' };
+let selectedProjectId = '';
+const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '' };
+const projectDetailState = { kind: '', item: null, loading: false, data: null, error: null };
+
 // Reports view state
 const reportState = {
   active: 'maintenance-readiness',
@@ -333,6 +340,7 @@ function retryApiIssuesNow() {
   }
   if (activeView === 'routers') return loadRouters(true);
   if (activeView === 'storage' && typeof refreshActiveStorageView === 'function') return refreshActiveStorageView();
+  if (activeView === 'projects' && typeof refreshActiveProjectView === 'function') return refreshActiveProjectView();
   if (activeView === 'infrastructure' && selectedNode) {
     if (activeTab === 'summary' || activeTab === 'placement') return loadNodeDetail(selectedNode, true);
     if (activeTab === 'instances') {

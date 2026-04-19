@@ -7,9 +7,12 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Request
 
-from ...operations import k8s_ops
+from ...operations import k8s_ops, openstack_ops
 from .api_issues import build_api_issue
 from ..resource_helpers import (
+    get_floating_ips,
+    get_project_inventory,
+    get_projects,
     get_load_balancer_detail,
     get_load_balancers,
     get_network_detail,
@@ -72,6 +75,83 @@ async def api_volumes(request: Request):
         return {"volumes": data, "all_projects": all_projects, "error": None, "api_issue": None}
     except Exception as exc:
         return {"volumes": [], "all_projects": False, "error": str(exc), "api_issue": None}
+
+
+@router.get("/api/projects")
+async def api_projects(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    search = str(request.query_params.get("search") or "")
+    try:
+        data = await loop.run_in_executor(None, get_projects, session.server.openstack_auth, search)
+        return {"projects": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"projects": [], "error": str(exc), "api_issue": build_api_issue("OpenStack", "GET aggregated project inventory", exc)}
+
+
+@router.get("/api/projects/{project_id}/inventory")
+async def api_project_inventory(project_id: str, request: Request):
+    session = _require_session_record()(request)
+    section = str(request.query_params.get("section") or "instances")
+    try:
+        data = await _run_with_timeout(get_project_inventory, project_id, session.server.openstack_auth, section)
+        return {"inventory": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "inventory": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading project inventory",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"inventory": None, "error": str(exc), "api_issue": build_api_issue("OpenStack", f"GET aggregated inventory for project {project_id}", exc)}
+
+
+@router.get("/api/instances/{instance_id}")
+async def api_instance_detail(instance_id: str, request: Request):
+    session = _require_session_record()(request)
+    try:
+        data = await _run_with_timeout(openstack_ops.get_instance_network_detail, instance_id, session.server.openstack_auth)
+        loop = asyncio.get_running_loop()
+        enriched_ports = []
+        for port in data.get("ports", []):
+            payload = dict(port)
+            ovn = None
+            ovn_error = None
+            if session.server.k8s_auth and port.get("id") and port.get("network_id"):
+                try:
+                    ovn = await loop.run_in_executor(
+                        None,
+                        k8s_ops.get_ovn_port_logical_switch,
+                        port["id"],
+                        port["network_id"],
+                        session.server.k8s_auth,
+                    )
+                except Exception as exc:
+                    ovn_error = str(exc)
+            payload["ovn"] = ovn
+            payload["ovn_error"] = ovn_error
+            enriched_ports.append(payload)
+        data["ports"] = enriched_ports
+        return {"instance": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "instance": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading instance details",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"instance": None, "error": str(exc), "api_issue": build_api_issue("Nova", f"GET /servers/{instance_id}", exc)}
+
+
+@router.get("/api/floating-ips")
+async def api_floating_ips(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_floating_ips, session.server.openstack_auth)
+        return {"floating_ips": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"floating_ips": [], "error": str(exc), "api_issue": build_api_issue("Neutron", "GET /v2.0/floatingips", exc)}
 
 
 @router.get("/api/volumes/{volume_id}")

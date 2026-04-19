@@ -34,6 +34,533 @@ def _project_names(conn) -> dict[str, str]:
     return names
 
 
+def _current_membership_project_ids(conn) -> set[str]:
+    project_ids: set[str] = set()
+    current_project_id = getattr(conn, "current_project_id", None)
+    if current_project_id:
+        project_ids.add(current_project_id)
+    user_id = getattr(conn, "current_user_id", None)
+    if not user_id:
+        return project_ids
+    try:
+        assignments = conn.list_role_assignments(filters={"user": user_id})
+    except Exception:
+        return project_ids
+    for assignment in assignments:
+        scope = getattr(assignment, "scope", None)
+        project = None
+        if isinstance(scope, dict):
+            project = scope.get("project")
+        elif scope is not None:
+            project = getattr(scope, "project", None)
+        if isinstance(project, dict):
+            project_id = project.get("id")
+        else:
+            project_id = getattr(project, "id", None) if project is not None else None
+        if project_id:
+            project_ids.add(project_id)
+    return project_ids
+
+
+def _obj_dict(obj) -> dict:
+    if hasattr(obj, "to_dict"):
+        try:
+            return obj.to_dict()
+        except Exception:
+            return {}
+    if isinstance(obj, dict):
+        return obj
+    return {}
+
+
+def _project_entry(project, names: dict[str, str]) -> dict:
+    data = _obj_dict(project)
+    project_id = getattr(project, "id", None) or data.get("id") or ""
+    name = getattr(project, "name", None) or data.get("name") or names.get(project_id) or project_id or "unknown"
+    return {
+        "project_id": project_id,
+        "project_name": name,
+        "description": getattr(project, "description", None) or data.get("description") or "",
+        "domain_id": getattr(project, "domain_id", None) or data.get("domain_id") or "",
+        "enabled": coerce_bool(getattr(project, "is_enabled", None) if getattr(project, "is_enabled", None) is not None else data.get("enabled", True)),
+    }
+
+
+def _safe_quota_limit(entry: object) -> int | None:
+    if isinstance(entry, dict):
+        value = entry.get("limit", entry.get("quota", entry.get("max")))
+    else:
+        value = getattr(entry, "limit", None)
+        if value is None:
+            value = getattr(entry, "quota", None)
+        if value is None:
+            value = getattr(entry, "max", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_quota_usage(entry: object) -> int | None:
+    if isinstance(entry, dict):
+        value = entry.get("in_use", entry.get("used", entry.get("usage")))
+    else:
+        value = getattr(entry, "in_use", None)
+        if value is None:
+            value = getattr(entry, "used", None)
+        if value is None:
+            value = getattr(entry, "usage", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_quota_section(raw: object, keys: list[str]) -> dict[str, dict[str, int | None]]:
+    data = _obj_dict(raw)
+    normalized: dict[str, dict[str, int | None]] = {}
+    for key in keys:
+        entry = data.get(key)
+        if entry is None:
+            continue
+        if isinstance(entry, dict):
+            normalized[key] = {
+                "limit": _safe_quota_limit(entry),
+                "used": _safe_quota_usage(entry),
+            }
+        else:
+            normalized[key] = {
+                "limit": _safe_quota_limit(entry),
+                "used": _safe_quota_usage(entry),
+            }
+    return normalized
+
+
+def get_project_quota_summary(project_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    conn = openstack_ops._conn(auth=auth)
+    summary = {
+        "compute": {},
+        "network": {},
+        "block_storage": {},
+    }
+    try:
+        quota = conn.compute.get_quota_set(project_id, usage=True)
+        summary["compute"] = _normalize_quota_section(
+            quota,
+            ["instances", "cores", "ram", "server_groups", "server_group_members"],
+        )
+    except Exception:
+        pass
+    try:
+        quota = conn.network.get_quota(project_id)
+        summary["network"] = _normalize_quota_section(
+            quota,
+            ["network", "subnet", "port", "router", "floatingip", "security_group", "security_group_rule", "load_balancer", "listener", "pool", "member", "health_monitor"],
+        )
+    except Exception:
+        pass
+    try:
+        quota = conn.block_storage.get_quota_set(project_id, usage=True)
+        summary["block_storage"] = _normalize_quota_section(
+            quota,
+            ["volumes", "gigabytes", "snapshots", "backups", "backup_gigabytes"],
+        )
+    except Exception:
+        pass
+    return summary
+
+
+def get_project_instances(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    conn = openstack_ops._conn(auth=auth)
+    project_names = _project_names(conn)
+    result: list[dict] = []
+    for server in openstack_ops._iter_servers(conn, all_projects=True, details=True):
+        if openstack_ops._server_deleted(server):
+            continue
+        data = _obj_dict(server)
+        project_id = openstack_ops._server_project_id(server) or "unknown"
+        flavor_ref = getattr(server, "flavor", None) or data.get("flavor") or {}
+        flavor = openstack_ops._resolve_flavor_data(conn, flavor_ref)
+        addresses = data.get("addresses") or {}
+        networks: list[dict] = []
+        floating_ips: list[str] = []
+        fixed_ips: list[str] = []
+        for network_name, entries in addresses.items():
+            ip_list: list[str] = []
+            for item in entries or []:
+                address = item.get("addr") or ""
+                if not address:
+                    continue
+                if str(item.get("OS-EXT-IPS:type") or "").lower() == "floating":
+                    floating_ips.append(address)
+                else:
+                    fixed_ips.append(address)
+                    ip_list.append(address)
+            networks.append({
+                "name": network_name,
+                "addresses": ip_list,
+            })
+        result.append({
+            "id": getattr(server, "id", None) or data.get("id") or "",
+            "name": getattr(server, "name", None) or data.get("name") or "",
+            "status": str(getattr(server, "status", None) or data.get("status") or "").upper() or "UNKNOWN",
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id,
+            "compute_host": openstack_ops._server_host(server) or "",
+            "availability_zone": getattr(server, "availability_zone", None) or data.get("OS-EXT-AZ:availability_zone") or "",
+            "created_at": getattr(server, "created_at", None) or data.get("created_at") or "",
+            "updated_at": getattr(server, "updated_at", None) or data.get("updated_at") or "",
+            "is_volume_backed": not bool(getattr(server, "image", None) or data.get("image")),
+            "flavor": flavor,
+            "vcpus": flavor.get("vcpus"),
+            "ram_mb": flavor.get("ram_mb"),
+            "disk_gb": flavor.get("disk_gb"),
+            "networks": networks,
+            "fixed_ips": sorted(dict.fromkeys(fixed_ips)),
+            "floating_ips": sorted(dict.fromkeys(floating_ips)),
+        })
+    result.sort(key=lambda item: (item["project_name"], item["name"], item["id"]))
+    return result
+
+
+def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    conn = openstack_ops._conn(auth=auth)
+    project_names = _project_names(conn)
+    network_name_cache: dict[str, str] = {}
+    result: list[dict] = []
+    try:
+        ips = conn.network.ips()
+    except Exception:
+        return result
+    for ip in ips:
+        data = _obj_dict(ip)
+        project_id = getattr(ip, "project_id", None) or data.get("project_id") or data.get("tenant_id") or ""
+        floating_network_id = getattr(ip, "floating_network_id", None) or data.get("floating_network_id") or ""
+        result.append({
+            "id": getattr(ip, "id", None) or data.get("id") or "",
+            "floating_ip_address": getattr(ip, "floating_ip_address", None) or data.get("floating_ip_address") or "",
+            "fixed_ip_address": getattr(ip, "fixed_ip_address", None) or data.get("fixed_ip_address") or "",
+            "status": getattr(ip, "status", None) or data.get("status") or "",
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id or "unknown",
+            "floating_network_id": floating_network_id,
+            "floating_network_name": _lookup_network_name(conn, floating_network_id, network_name_cache),
+            "port_id": getattr(ip, "port_id", None) or data.get("port_id") or "",
+            "router_id": getattr(ip, "router_id", None) or data.get("router_id") or "",
+            "description": getattr(ip, "description", None) or data.get("description") or "",
+        })
+    result.sort(key=lambda item: (item["project_name"], item["floating_ip_address"], item["id"]))
+    return result
+
+
+def get_projects(auth: openstack_ops.OpenStackAuth | None, search: str = "") -> list[dict]:
+    conn = openstack_ops._conn(auth=auth)
+    project_names = _project_names(conn)
+    membership_project_ids = _current_membership_project_ids(conn)
+    search_text = str(search or "").strip().lower()
+    summaries: dict[str, dict] = {}
+
+    try:
+        for project in conn.identity.projects():
+            entry = _project_entry(project, project_names)
+            project_id = entry["project_id"]
+            if search_text:
+                haystack = f'{entry["project_name"]} {project_id} {entry["description"]}'.lower()
+                if search_text not in haystack:
+                    continue
+            elif membership_project_ids and project_id not in membership_project_ids:
+                continue
+            summaries[entry["project_id"]] = {
+                **entry,
+                "instance_count": 0,
+                "active_instance_count": 0,
+                "error_instance_count": 0,
+                "clone_candidate_count": 0,
+                "vcpu_count": 0,
+                "ram_mb": 0,
+                "network_count": 0,
+                "volume_count": 0,
+                "security_group_count": 0,
+                "floating_ip_count": 0,
+                "load_balancer_count": 0,
+                "host_count": 0,
+                "top_host": "",
+                "top_host_pct": 0.0,
+            }
+    except Exception:
+        pass
+
+    for instance in get_project_instances(auth):
+        project_id = instance["project_id"]
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        entry = summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": instance["project_name"],
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })
+        entry["instance_count"] += 1
+        if instance["status"] == "ACTIVE":
+            entry["active_instance_count"] += 1
+        if instance["status"] == "ERROR":
+            entry["error_instance_count"] += 1
+        if instance["status"] == "ACTIVE" and not str(instance["name"]).startswith("amphora-"):
+            entry["clone_candidate_count"] += 1
+        entry["vcpu_count"] += int(instance.get("vcpus") or 0)
+        entry["ram_mb"] += int(instance.get("ram_mb") or 0)
+
+    for network in get_networks(auth):
+        project_id = network.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })["network_count"] += 1
+
+    volumes, _all_projects = get_volumes(auth)
+    for volume in volumes:
+        project_id = volume.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })["volume_count"] += 1
+
+    for group in get_security_groups(auth):
+        project_id = group.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": group.get("project_name") or project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })["security_group_count"] += 1
+
+    for ip in get_floating_ips(auth):
+        project_id = ip.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": ip.get("project_name") or project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })["floating_ip_count"] += 1
+
+    for lb in get_load_balancers(auth):
+        project_id = lb.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })["load_balancer_count"] += 1
+
+    for item in openstack_ops.get_project_vm_distribution(auth):
+        project_id = item.get("project_id") or "unknown"
+        if search_text:
+            if project_id not in summaries:
+                continue
+        elif membership_project_ids and project_id not in membership_project_ids:
+            continue
+        entry = summaries.setdefault(project_id, {
+            "project_id": project_id,
+            "project_name": item.get("project_name") or project_names.get(project_id) or project_id,
+            "description": "",
+            "domain_id": "",
+            "enabled": True,
+            "instance_count": 0,
+            "active_instance_count": 0,
+            "error_instance_count": 0,
+            "clone_candidate_count": 0,
+            "vcpu_count": 0,
+            "ram_mb": 0,
+            "network_count": 0,
+            "volume_count": 0,
+            "security_group_count": 0,
+            "floating_ip_count": 0,
+            "load_balancer_count": 0,
+            "host_count": 0,
+            "top_host": "",
+            "top_host_pct": 0.0,
+        })
+        entry["host_count"] = item.get("host_count", 0)
+        entry["top_host"] = item.get("top_host", "")
+        entry["top_host_pct"] = item.get("top_host_pct", 0.0)
+
+    items = list(summaries.values())
+    items.sort(key=lambda item: (-int(item.get("instance_count") or 0), item.get("project_name") or item.get("project_id") or ""))
+    return items
+
+
+def _project_summary_header(conn, project_id: str, project_names: dict[str, str]) -> dict:
+    try:
+        raw_project = conn.identity.get_project(project_id)
+    except Exception:
+        raw_project = None
+    return _project_entry(raw_project, project_names) if raw_project is not None else {
+        "project_id": project_id,
+        "project_name": project_names.get(project_id) or project_id,
+        "description": "",
+        "domain_id": "",
+        "enabled": True,
+    }
+
+
+def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | None, section: str = "instances") -> dict:
+    conn = openstack_ops._conn(auth=auth)
+    project_names = _project_names(conn)
+    membership_project_ids = _current_membership_project_ids(conn)
+    summary = _project_summary_header(conn, project_id, project_names)
+    summary["member_visible"] = (not membership_project_ids or project_id in membership_project_ids)
+    payload = {"summary": summary}
+    normalized = str(section or "instances").strip().lower()
+    if normalized == "instances":
+        payload["instances"] = [item for item in get_project_instances(auth) if item.get("project_id") == project_id]
+        return payload
+    if normalized == "networks":
+        payload["networks"] = [item for item in get_networks(auth) if item.get("project_id") == project_id]
+        return payload
+    if normalized == "volumes":
+        volumes, all_projects = get_volumes(auth)
+        payload["volumes"] = [item for item in volumes if item.get("project_id") == project_id]
+        payload["all_projects"] = all_projects
+        return payload
+    if normalized == "securitygroups":
+        payload["security_groups"] = [item for item in get_security_groups(auth) if item.get("project_id") == project_id]
+        return payload
+    if normalized == "floatingips":
+        payload["floating_ips"] = [item for item in get_floating_ips(auth) if item.get("project_id") == project_id]
+        return payload
+    if normalized == "loadbalancers":
+        payload["load_balancers"] = [item for item in get_load_balancers(auth) if item.get("project_id") == project_id]
+        return payload
+    if normalized == "quota":
+        payload["quotas"] = get_project_quota_summary(project_id, auth)
+        placement = next((item for item in openstack_ops.get_project_vm_distribution(auth) if item.get("project_id") == project_id), None)
+        payload["placement"] = placement or None
+        return payload
+    return payload
+
+
 def get_networks(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     """Return all Neutron networks visible to the configured credential."""
     conn = openstack_ops._conn(auth=auth)

@@ -154,20 +154,26 @@ function renderPodsTab(nd) {
   document.getElementById('pods-content').innerHTML = h;
 }
 
-function renderInstanceDetailPanel(nodeName, instanceId) {
-  const cached = instanceDetailCache[instanceId];
-  if (!cached || cached.loading) {
-    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body" style="color:var(--dim)"><span class="spinner">⟳</span> Loading instance detail…</div></div>`;
-  }
-  if (cached.error || !cached.data) {
-    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body"><div class="err-block">${esc(cached.error || 'Unknown error')}</div></div></div>`;
-  }
+function instancePortStatsCacheFor(nodeName, instanceId) {
+  const key = `${nodeName}:${instanceId}`;
+  return nodeInstancePortStatsCache[key] || {
+    loading: false,
+    portsById: {},
+    error: null,
+    unsupported: false,
+    message: '',
+    fetchedAt: null,
+  };
+}
 
-  const inst = cached.data;
+function renderInstanceDetailContent(inst, options = {}) {
+  const nodeName = options.nodeName || '';
+  const instanceId = options.instanceId || inst.id || '';
+  const expandedPortId = options.expandedPortId || '';
+  const portToggleJs = options.portToggleJs || ((portId) => `togglePortDetail('${escAttr(instanceId)}','${escAttr(portId)}')`);
+  const expandedPort = (inst.ports || []).find((port) => port.id === expandedPortId) || null;
   const flavor = inst.flavor || {};
   const ports = inst.ports || [];
-  const expandedPortId = expandedPortIdByInstance[instanceId] || '';
-  const expandedPort = ports.find((port) => port.id === expandedPortId) || null;
   const firstPort = ports[0] || null;
   const firstSubnet = firstPort?.subnets?.[0] || {};
   const firstRouter = firstSubnet?.router || {};
@@ -273,28 +279,37 @@ function renderInstanceDetailPanel(nodeName, instanceId) {
         <td>${esc(dhcpEnabled)}</td>
         <td>${esc(firstFloatingIp)}</td>
         <td>${esc(gatewayTarget)}</td>
-        <td><button class="btn" style="font-size:11px" onclick="togglePortDetail('${escAttr(instanceId)}','${escAttr(port.id)}')">${detailsLabel}</button></td>
+        <td><button class="btn" style="font-size:11px" onclick="${portToggleJs(port.id)}">${detailsLabel}</button></td>
       </tr>`;
     }
     h += `</tbody></table>`;
-    if (expandedPort) h += renderPortDetailPanel(expandedPort);
+    if (expandedPort) h += renderPortDetailPanel(expandedPort, { nodeName, instanceId });
   }
   h += `</div></div>`;
   return h;
 }
 
-function renderPortDetailPanel(port) {
+function renderInstanceDetailPanel(nodeName, instanceId) {
+  const cached = instanceDetailCache[instanceId];
+  if (!cached || cached.loading) {
+    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body" style="color:var(--dim)"><span class="spinner">⟳</span> Loading instance detail…</div></div>`;
+  }
+  if (cached.error || !cached.data) {
+    return `<div class="card" style="margin-top:10px"><div class="card-title">Instance Detail</div><div class="card-body"><div class="err-block">${esc(cached.error || 'Unknown error')}</div></div></div>`;
+  }
+  return renderInstanceDetailContent(cached.data, {
+    nodeName,
+    instanceId,
+    expandedPortId: expandedPortIdByInstance[instanceId] || '',
+  });
+}
+
+function renderPortDetailPanel(port, context = {}) {
   const ovn = port.ovn || {};
   const ovnPort = ovn.port || {};
-  const expandedInstanceId = expandedInstanceIdByNode[selectedNode];
-  const portStatsCache = nodeInstancePortStatsCache[`${selectedNode}:${expandedInstanceId}`] || {
-    loading: false,
-    portsById: {},
-    error: null,
-    unsupported: false,
-    message: '',
-    fetchedAt: null,
-  };
+  const nodeName = context.nodeName || selectedNode || '';
+  const instanceId = context.instanceId || expandedInstanceIdByNode[selectedNode] || '';
+  const portStatsCache = instancePortStatsCacheFor(nodeName, instanceId);
   const portStats = (port.id && portStatsCache.portsById && portStatsCache.portsById[port.id]) || null;
   const allowedAddressPairs = (port.allowed_address_pairs || [])
     .map((pair) => [pair.ip_address, pair.mac_address].filter(Boolean).join(' '))
