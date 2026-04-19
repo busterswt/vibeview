@@ -119,6 +119,30 @@ function globalSearchGroupLabel(kind) {
   })[kind] || 'Results';
 }
 
+function globalSearchKindBadge(kind) {
+  return ({
+    node: 'Node',
+    instance: 'VM',
+    project: 'Project',
+    network: 'Network',
+    router: 'Router',
+    port: 'Port',
+    floatingip: 'FIP',
+    loadbalancer: 'LB',
+    securitygroup: 'SecGroup',
+    volume: 'Volume',
+    kubernetes: 'K8s',
+  })[kind] || kind;
+}
+
+function globalSearchSourceBadge(item) {
+  if (item.kind === 'kubernetes') return 'Kubernetes';
+  if (item.project_id) return 'Project';
+  if (['network', 'router', 'port', 'floatingip', 'loadbalancer', 'securitygroup', 'volume'].includes(item.kind)) return 'OpenStack';
+  if (item.kind === 'node') return 'Infra';
+  return '';
+}
+
 function globalSearchKindRank(kind) {
   return ({
     node: 0,
@@ -695,7 +719,7 @@ function renderGlobalSearch() {
         return `<button class="global-search-item ${index === globalSearchState.activeIndex ? 'active' : ''}" data-result-index="${index}" onclick="activateGlobalSearchResult(${index})">
           <span class="global-search-item-icon">${esc(globalSearchIcon(item.kind))}</span>
           <span class="global-search-item-copy">
-            <div class="global-search-item-label">${highlightGlobalSearchText(item.label, query)}</div>
+            <div class="global-search-item-label">${highlightGlobalSearchText(item.label, query)} <span class="global-search-kind-badge">${esc(globalSearchKindBadge(item.kind))}</span>${globalSearchSourceBadge(item) ? ` <span class="global-search-source-badge">${esc(globalSearchSourceBadge(item))}</span>` : ''}</div>
             <div class="global-search-item-subtext">${highlightGlobalSearchText(item.subtext || '', query)}</div>
           </span>
         </button>`;

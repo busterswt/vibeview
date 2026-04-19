@@ -153,6 +153,25 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.global-search-kind-badge,
+.global-search-source-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.global-search-kind-badge {
+  background: #e8f1fb;
+  color: #215f9a;
+}
+.global-search-source-badge {
+  background: #f0f2f5;
+  color: #546574;
+}
 .global-search-item-subtext {
   margin-top: 2px;
   font-size: 11px;
