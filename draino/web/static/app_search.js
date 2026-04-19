@@ -4,7 +4,13 @@ const globalSearchState = {
   query: '',
   open: false,
   activeIndex: 0,
+  localResults: [],
+  remoteResults: [],
   results: [],
+  remoteLoading: false,
+  remoteError: '',
+  remoteSeq: 0,
+  debounceTimer: null,
 };
 
 const GLOBAL_SEARCH_LIMIT = 18;
@@ -87,6 +93,20 @@ function globalSearchAddResult(results, seen, query, entry) {
   if (seen.has(key)) return;
   seen.add(key);
   results.push({ ...entry, score, key });
+}
+
+function mergeGlobalSearchResults(localResults, remoteResults) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [...(localResults || []), ...(remoteResults || [])]) {
+    const key = item.key || `${item.kind}:${item.id || item.label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...item, key });
+  }
+  return merged
+    .sort((a, b) => (b.score - a.score) || (globalSearchKindRank(a.kind) - globalSearchKindRank(b.kind)) || String(a.label).localeCompare(String(b.label)))
+    .slice(0, GLOBAL_SEARCH_LIMIT);
 }
 
 function globalSearchNodeResults(query, results, seen) {
@@ -330,10 +350,146 @@ function computeGlobalSearchResults(query) {
     .slice(0, GLOBAL_SEARCH_LIMIT);
 }
 
+async function navigateToProjectScopedSearchResult(projectId, section, kind, id, options = {}) {
+  if (!projectId) return false;
+  const projectSection = section || 'overview';
+  closeGlobalSearch();
+  switchView('projects');
+  selectProject(projectId);
+  switchProjectSection(projectSection);
+  if (projectSection === 'networking' && options.networkingView) {
+    switchProjectNetworkingView(options.networkingView);
+  }
+  if (projectSection === 'storage' && options.storageView) {
+    switchProjectStorageView(options.storageView);
+  }
+  await loadProjectInventory(projectId, projectSectionKey(projectSection), false);
+  if (kind && id) selectProjectDetailById(kind, id);
+  return true;
+}
+
+function globalSearchActionForResult(item) {
+  if (typeof item.action === 'function') return item.action;
+  if (item.kind === 'project') {
+    return async () => {
+      closeGlobalSearch();
+      switchView('projects');
+      selectProject(item.project_id || item.id);
+    };
+  }
+  if (item.kind === 'instance') {
+    return async () => {
+      if (item.project_id && (!item.compute_host || activeView === 'projects')) {
+        if (await navigateToProjectScopedSearchResult(item.project_id, 'instances', 'instances', item.id)) return;
+      }
+      closeGlobalSearch();
+      if (item.id && item.compute_host) {
+        await navigateToInstanceDetail(item.id, item.compute_host);
+        return;
+      }
+      if (item.project_id) await navigateToProjectScopedSearchResult(item.project_id, 'instances', 'instances', item.id);
+    };
+  }
+  if (item.kind === 'network') return async () => {
+    if (await navigateToProjectScopedSearchResult(item.project_id, 'networking', 'networks', item.id, { networkingView: 'networks' })) return;
+    closeGlobalSearch();
+    await navigateToNetworkDetail(item.id);
+  };
+  if (item.kind === 'router') return async () => {
+    if (await navigateToProjectScopedSearchResult(item.project_id, 'networking', 'routers', item.id, { networkingView: 'routers' })) return;
+    closeGlobalSearch();
+    await navigateToRouterDetail(item.id);
+  };
+  if (item.kind === 'port') return async () => {
+    if (await navigateToProjectScopedSearchResult(item.project_id, 'networking', 'ports', item.id, { networkingView: 'ports' })) return;
+    closeGlobalSearch();
+    await navigateToPortDetail(item.id);
+  };
+  if (item.kind === 'loadbalancer') return async () => {
+    if (await navigateToProjectScopedSearchResult(item.project_id, 'networking', 'loadbalancers', item.id, { networkingView: 'loadbalancers' })) return;
+    closeGlobalSearch();
+    await navigateToLoadBalancerDetail(item.id);
+  };
+  if (item.kind === 'securitygroup') {
+    return async () => {
+      if (await navigateToProjectScopedSearchResult(item.project_id, 'security', 'securitygroups', item.id)) return;
+      closeGlobalSearch();
+      switchNetworkingSection('securitygroups');
+      await loadSecurityGroups();
+      await selectSecurityGroup(item.id);
+    };
+  }
+  if (item.kind === 'volume') {
+    return async () => {
+      if (await navigateToProjectScopedSearchResult(item.project_id, 'storage', 'volumes', item.id, { storageView: 'volumes' })) return;
+      closeGlobalSearch();
+      switchView('storage');
+      switchStorageSection('openstack-volumes');
+      await loadVolumes();
+      await selectVolume(item.id);
+    };
+  }
+  if (item.kind === 'floatingip') {
+    return async () => {
+      if (item.instance_id && item.compute_host) {
+        closeGlobalSearch();
+        await navigateToInstanceDetail(item.instance_id, item.compute_host);
+        return;
+      }
+      if (await navigateToProjectScopedSearchResult(item.project_id, 'networking', 'floatingips', item.id, { networkingView: 'floatingips' })) return;
+      closeGlobalSearch();
+      if (item.port_id) await navigateToPortDetail(item.port_id);
+    };
+  }
+  return async () => {};
+}
+
+async function fetchRemoteGlobalSearch(query) {
+  if (!hasOpenStackAuth() || String(query || '').trim().length < 2) {
+    globalSearchState.remoteLoading = false;
+    globalSearchState.remoteResults = [];
+    globalSearchState.remoteError = '';
+    globalSearchState.results = mergeGlobalSearchResults(globalSearchState.localResults, []);
+    renderGlobalSearch();
+    return;
+  }
+  const seq = ++globalSearchState.remoteSeq;
+  globalSearchState.remoteLoading = true;
+  globalSearchState.remoteError = '';
+  renderGlobalSearch();
+  try {
+    const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=${GLOBAL_SEARCH_LIMIT}`);
+    const json = await resp.json();
+    if (seq !== globalSearchState.remoteSeq) return;
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else recordApiSuccess('OpenStack');
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+    globalSearchState.remoteResults = (json.results || []).map((item) => ({
+      ...item,
+      key: `${item.kind}:${item.id || item.label}`,
+      action: globalSearchActionForResult(item),
+    }));
+    globalSearchState.remoteError = '';
+  } catch (err) {
+    if (seq !== globalSearchState.remoteSeq) return;
+    globalSearchState.remoteResults = [];
+    globalSearchState.remoteError = String(err);
+  } finally {
+    if (seq !== globalSearchState.remoteSeq) return;
+    globalSearchState.remoteLoading = false;
+    globalSearchState.results = mergeGlobalSearchResults(globalSearchState.localResults, globalSearchState.remoteResults);
+    renderGlobalSearch();
+  }
+}
+
 function closeGlobalSearch(clearQuery = false) {
   globalSearchState.open = false;
   globalSearchState.activeIndex = 0;
+  globalSearchState.localResults = [];
+  globalSearchState.remoteResults = [];
   globalSearchState.results = [];
+  globalSearchState.remoteLoading = false;
+  globalSearchState.remoteError = '';
   const dropdown = globalSearchDropdown();
   if (dropdown) {
     dropdown.style.display = 'none';
@@ -361,7 +517,7 @@ function renderGlobalSearch() {
     sections[item.kind].push(item);
   }
   if (!globalSearchState.results.length) {
-    dropdown.innerHTML = `<div class="global-search-empty">No loaded resources match <strong>${esc(query)}</strong>.</div><div class="global-search-meta">This first pass only searches data already loaded in the browser.</div>`;
+    dropdown.innerHTML = `<div class="global-search-empty">No results match <strong>${esc(query)}</strong>.</div><div class="global-search-meta">${globalSearchState.remoteLoading ? 'Searching more resources…' : globalSearchState.remoteError ? `Backend search failed: ${esc(globalSearchState.remoteError)}` : 'No local or backend results matched.'}</div>`;
     dropdown.style.display = 'block';
     return;
   }
@@ -380,7 +536,7 @@ function renderGlobalSearch() {
         </button>`;
       }).join('')}
     </div>`;
-  }).join('') + `<div class="global-search-meta">Loaded data only. Server-side search comes next.</div>`;
+  }).join('') + `<div class="global-search-meta">${globalSearchState.remoteLoading ? 'Searching more resources…' : globalSearchState.remoteError ? `Backend search failed: ${esc(globalSearchState.remoteError)}` : hasOpenStackAuth() ? 'Showing local and server search results.' : 'Showing local results only.'}</div>`;
   dropdown.style.display = 'block';
 }
 
@@ -391,10 +547,17 @@ function updateGlobalSearch(query) {
     closeGlobalSearch(false);
     return;
   }
-  globalSearchState.results = computeGlobalSearchResults(trimmed);
+  globalSearchState.remoteResults = [];
+  globalSearchState.remoteError = '';
+  globalSearchState.localResults = computeGlobalSearchResults(trimmed);
+  globalSearchState.results = mergeGlobalSearchResults(globalSearchState.localResults, []);
   globalSearchState.activeIndex = 0;
   globalSearchState.open = true;
   renderGlobalSearch();
+  if (globalSearchState.debounceTimer) clearTimeout(globalSearchState.debounceTimer);
+  globalSearchState.debounceTimer = setTimeout(() => {
+    fetchRemoteGlobalSearch(trimmed);
+  }, 180);
 }
 
 async function activateGlobalSearchResult(index) {

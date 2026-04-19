@@ -411,6 +411,64 @@ def test_projects_endpoints_return_inventory(monkeypatch):
     assert quota_resp.json()["inventory"]["quotas"]["compute"]["instances"]["limit"] == 20
 
 
+def test_search_endpoint_returns_normalized_results(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "search_resources",
+        lambda auth, query, limit=20: [
+            {
+                "kind": "instance",
+                "id": "vm-1",
+                "label": "prod-api-01",
+                "subtext": "production • cmp-01",
+                "score": 120,
+                "project_id": "proj-1",
+                "compute_host": "cmp-01",
+            },
+            {
+                "kind": "network",
+                "id": "net-1",
+                "label": "prod-net",
+                "subtext": "vxlan • ACTIVE",
+                "score": 95,
+                "project_id": "proj-1",
+            },
+        ],
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.get("/api/search?q=prod&limit=5")
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["error"] is None
+    assert body["results"][0]["kind"] == "instance"
+    assert body["results"][0]["compute_host"] == "cmp-01"
+
+
 def test_get_project_quota_summary_reads_usage_from_openstack_quota_set_shape(monkeypatch):
     class FakeCompute:
         def get_quota_set(self, project_id, usage=True):

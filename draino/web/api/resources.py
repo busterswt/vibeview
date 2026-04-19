@@ -14,6 +14,7 @@ from ..resource_helpers import (
     get_floating_ips,
     get_port_detail,
     get_ports,
+    get_project_instances,
     get_project_inventory,
     get_projects,
     get_load_balancer_detail,
@@ -31,6 +32,7 @@ from ..resource_helpers import (
     get_volume_snapshots,
     get_volumes,
     repair_subnet_metadata_port,
+    search_resources,
     update_project_quota_limit,
 )
 
@@ -91,6 +93,29 @@ async def api_projects(request: Request):
         return {"projects": data, "error": None, "api_issue": None}
     except Exception as exc:
         return {"projects": [], "error": str(exc), "api_issue": build_api_issue("OpenStack", "GET aggregated project inventory", exc)}
+
+
+@router.get("/api/search")
+async def api_search(request: Request):
+    session = _require_session_record()(request)
+    query = str(request.query_params.get("q") or "").strip()
+    try:
+        limit = int(request.query_params.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    if not query:
+        return {"results": [], "error": None, "api_issue": None}
+    try:
+        data = await _run_with_timeout(search_resources, session.server.openstack_auth, query, max(1, min(limit, 50)))
+        return {"results": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "results": [],
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while searching resources",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"results": [], "error": str(exc), "api_issue": build_api_issue("OpenStack", f"GET aggregated search for query {query}", exc)}
 
 
 @router.get("/api/projects/{project_id}/inventory")

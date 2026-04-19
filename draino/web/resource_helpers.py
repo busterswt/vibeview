@@ -532,6 +532,194 @@ def get_project_instances(auth: openstack_ops.OpenStackAuth | None) -> list[dict
     return result
 
 
+def _search_score(query: str, fields: list[object]) -> int:
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return 0
+    best = 0
+    for raw in fields:
+        value = str(raw or "").strip().lower()
+        if not value:
+            continue
+        if value == needle:
+            best = max(best, 120)
+        elif value.startswith(needle):
+            best = max(best, 95)
+        elif any(part.startswith(needle) for part in value.replace("/", " ").replace(":", " ").replace(".", " ").replace("-", " ").replace("_", " ").split()):
+            best = max(best, 82)
+        elif needle in value:
+            best = max(best, 70)
+    return best
+
+
+def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit: int = 20) -> list[dict]:
+    needle = str(query or "").strip()
+    if not needle:
+        return []
+    results: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(kind: str, item_id: str, label: str, subtext: str, match: list[object], **extra) -> None:
+        score = _search_score(needle, match)
+        if score <= 0:
+            return
+        key = (kind, item_id or label)
+        if key in seen:
+            return
+        seen.add(key)
+        results.append({
+            "kind": kind,
+            "id": item_id,
+            "label": label,
+            "subtext": subtext,
+            "score": score,
+            **extra,
+        })
+
+    for item in get_projects(auth, search=needle):
+        add(
+            "project",
+            item.get("project_id", ""),
+            item.get("project_name") or item.get("project_id") or "Project",
+            item.get("project_id", ""),
+            [item.get("project_name"), item.get("project_id"), item.get("description")],
+            project_id=item.get("project_id", ""),
+        )
+
+    for item in get_project_instances(auth):
+        add(
+            "instance",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Instance",
+            f"{item.get('project_name') or item.get('project_id') or 'Project'} • {item.get('compute_host') or item.get('status') or 'UNKNOWN'}",
+            [
+                item.get("name"),
+                item.get("id"),
+                item.get("project_name"),
+                item.get("project_id"),
+                item.get("compute_host"),
+                item.get("status"),
+                *list(item.get("fixed_ips") or []),
+                *list(item.get("floating_ips") or []),
+            ],
+            project_id=item.get("project_id", ""),
+            compute_host=item.get("compute_host", ""),
+        )
+
+    for item in get_networks(auth):
+        add(
+            "network",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Network",
+            f"{item.get('network_type') or 'Network'} • {item.get('status') or 'UNKNOWN'}",
+            [item.get("name"), item.get("id"), item.get("network_type"), item.get("status"), item.get("project_id")],
+            project_id=item.get("project_id", ""),
+        )
+
+    for item in get_routers(auth):
+        add(
+            "router",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Router",
+            f"{item.get('status') or 'UNKNOWN'} • {item.get('external_network_name') or item.get('external_network_id') or 'no external network'}",
+            [item.get("name"), item.get("id"), item.get("status"), item.get("external_network_name"), item.get("external_network_id"), item.get("project_id")],
+            project_id=item.get("project_id", ""),
+        )
+
+    for item in get_ports(auth):
+        add(
+            "port",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Port",
+            f"{item.get('network_name') or item.get('network_id') or 'Port'} • {item.get('attached_name') or item.get('device_owner') or item.get('status') or 'UNKNOWN'}",
+            [
+                item.get("name"),
+                item.get("id"),
+                item.get("network_name"),
+                item.get("network_id"),
+                item.get("attached_name"),
+                item.get("attached_id"),
+                item.get("device_owner"),
+                item.get("project_id"),
+                item.get("mac_address"),
+                *list(item.get("fixed_ip_addresses") or []),
+                *[ip.get("address") for ip in list(item.get("floating_ips") or [])],
+            ],
+            project_id=item.get("project_id", ""),
+            attached_kind=item.get("attached_kind", ""),
+            attached_id=item.get("attached_id", ""),
+            compute_host=item.get("compute_host", ""),
+        )
+
+    for item in get_floating_ips(auth):
+        add(
+            "floatingip",
+            item.get("id", ""),
+            item.get("floating_ip_address") or item.get("id") or "Floating IP",
+            f"{item.get('project_name') or item.get('project_id') or 'Project'} • {item.get('instance_name') or item.get('fixed_ip_address') or item.get('status') or 'Floating IP'}",
+            [
+                item.get("id"),
+                item.get("floating_ip_address"),
+                item.get("fixed_ip_address"),
+                item.get("instance_name"),
+                item.get("instance_id"),
+                item.get("port_id"),
+                item.get("status"),
+                item.get("project_id"),
+            ],
+            project_id=item.get("project_id", ""),
+            instance_id=item.get("instance_id", ""),
+            compute_host=item.get("compute_host", ""),
+            port_id=item.get("port_id", ""),
+        )
+
+    for item in get_load_balancers(auth):
+        add(
+            "loadbalancer",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Load Balancer",
+            f"{item.get('vip_address') or 'no VIP'} • {item.get('operating_status') or 'UNKNOWN'}",
+            [item.get("name"), item.get("id"), item.get("vip_address"), item.get("floating_ip"), item.get("project_id"), item.get("operating_status"), item.get("provisioning_status")],
+            project_id=item.get("project_id", ""),
+        )
+
+    for item in get_security_groups(auth):
+        add(
+            "securitygroup",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Security Group",
+            f"{item.get('project_name') or item.get('project_id') or 'Security Group'} • {item.get('audit', {}).get('severity') or 'unknown'}",
+            [item.get("name"), item.get("id"), item.get("project_name"), item.get("project_id"), item.get("description"), item.get("audit", {}).get("severity")],
+            project_id=item.get("project_id", ""),
+        )
+
+    volumes, _all_projects = get_volumes(auth)
+    for item in volumes:
+        add(
+            "volume",
+            item.get("id", ""),
+            item.get("name") or item.get("id") or "Volume",
+            f"{item.get('volume_type') or 'Volume'} • {item.get('status') or 'UNKNOWN'} • {item.get('size_gb') or 0} GB",
+            [item.get("name"), item.get("id"), item.get("volume_type"), item.get("status"), item.get("backend_name"), item.get("project_id")],
+            project_id=item.get("project_id", ""),
+        )
+
+    kind_rank = {
+        "node": 0,
+        "instance": 1,
+        "project": 2,
+        "network": 3,
+        "router": 4,
+        "port": 5,
+        "floatingip": 6,
+        "loadbalancer": 7,
+        "securitygroup": 8,
+        "volume": 9,
+    }
+    results.sort(key=lambda item: (-int(item.get("score", 0)), kind_rank.get(str(item.get("kind")), 50), str(item.get("label") or "")))
+    return results[: max(1, int(limit or 20))]
+
+
 def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     conn = openstack_ops._conn(auth=auth)
     project_names = _project_names(conn)
