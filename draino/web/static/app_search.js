@@ -16,6 +16,8 @@ const globalSearchState = {
 const GLOBAL_SEARCH_LIMIT = 18;
 const GLOBAL_SEARCH_HISTORY_KEY = 'vibeviewGlobalSearchHistory';
 const GLOBAL_SEARCH_HISTORY_LIMIT = 6;
+const GLOBAL_SEARCH_RESULT_HISTORY_KEY = 'vibeviewGlobalSearchResultHistory';
+const GLOBAL_SEARCH_RESULT_HISTORY_LIMIT = 24;
 
 function globalSearchInput() {
   return document.getElementById('global-search-input');
@@ -58,6 +60,31 @@ function rememberGlobalSearchQuery(query) {
   const history = loadGlobalSearchHistory().filter((item) => item.toLowerCase() !== normalized.toLowerCase());
   history.unshift(normalized);
   saveGlobalSearchHistory(history);
+}
+
+function loadGlobalSearchResultHistory() {
+  try {
+    const raw = localStorage.getItem(GLOBAL_SEARCH_RESULT_HISTORY_KEY);
+    const items = raw ? JSON.parse(raw) : [];
+    return Array.isArray(items) ? items.filter((item) => item && typeof item.key === 'string').slice(0, GLOBAL_SEARCH_RESULT_HISTORY_LIMIT) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveGlobalSearchResultHistory(items) {
+  try {
+    localStorage.setItem(GLOBAL_SEARCH_RESULT_HISTORY_KEY, JSON.stringify((items || []).slice(0, GLOBAL_SEARCH_RESULT_HISTORY_LIMIT)));
+  } catch (_) {
+    // ignore storage failures
+  }
+}
+
+function rememberGlobalSearchResult(item) {
+  if (!item?.key) return;
+  const next = loadGlobalSearchResultHistory().filter((entry) => entry.key !== item.key);
+  next.unshift({ key: item.key, at: Date.now() });
+  saveGlobalSearchResultHistory(next);
 }
 
 function globalSearchIcon(kind) {
@@ -147,6 +174,27 @@ function globalSearchAddResult(results, seen, query, entry) {
   results.push({ ...entry, score, key });
 }
 
+function globalSearchContextBoost(item) {
+  let boost = 0;
+  if (!item) return boost;
+  if (item.kind === 'node' && activeView === 'infrastructure') boost += 10;
+  if (item.kind === 'project' && activeView === 'projects') boost += 10;
+  if (item.kind === 'instance' && activeView === 'projects' && item.project_id && item.project_id === selectedProjectId) boost += 14;
+  if (item.kind === 'project' && item.project_id && item.project_id === selectedProjectId) boost += 14;
+  if (activeView === 'networking' && ['network', 'router', 'port', 'floatingip', 'loadbalancer', 'securitygroup', 'kubernetes'].includes(item.kind)) boost += 10;
+  if (activeView === 'storage' && ['volume', 'kubernetes'].includes(item.kind)) boost += 10;
+  if (activeView === 'projects' && ['network', 'router', 'port', 'floatingip', 'loadbalancer', 'securitygroup', 'volume'].includes(item.kind) && item.project_id && item.project_id === selectedProjectId) boost += 12;
+  if (item.kind === 'node' && item.id && item.id === selectedNode) boost += 18;
+  return boost;
+}
+
+function globalSearchRecentBoost(item) {
+  if (!item?.key) return 0;
+  const index = loadGlobalSearchResultHistory().findIndex((entry) => entry.key === item.key);
+  if (index < 0) return 0;
+  return Math.max(0, 20 - (index * 3));
+}
+
 function mergeGlobalSearchResults(localResults, remoteResults) {
   const merged = [];
   const seen = new Set();
@@ -154,7 +202,8 @@ function mergeGlobalSearchResults(localResults, remoteResults) {
     const key = item.key || `${item.kind}:${item.id || item.label}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    merged.push({ ...item, key });
+    const score = Number(item.score || 0) + globalSearchContextBoost(item) + globalSearchRecentBoost(item);
+    merged.push({ ...item, key, score });
   }
   return merged
     .sort((a, b) => (b.score - a.score) || (globalSearchKindRank(a.kind) - globalSearchKindRank(b.kind)) || String(a.label).localeCompare(String(b.label)))
@@ -683,6 +732,7 @@ async function activateGlobalSearchResult(index) {
   const item = globalSearchState.results[index];
   if (!item) return;
   rememberGlobalSearchQuery(globalSearchState.query);
+  rememberGlobalSearchResult(item);
   globalSearchState.activeIndex = index;
   renderGlobalSearch();
   await item.action();
