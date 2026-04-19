@@ -424,7 +424,7 @@ def test_search_endpoint_returns_normalized_results(monkeypatch):
     monkeypatch.setattr(
         resource_api,
         "search_resources",
-        lambda auth, query, limit=20: [
+        lambda auth, query, limit=20, k8s_auth=None: [
             {
                 "kind": "instance",
                 "id": "vm-1",

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from ..operations import openstack_ops
+from ..operations import k8s_ops, openstack_ops
 
 _OPEN_WORLD_CIDRS = {"0.0.0.0/0", "::/0"}
 _ADMIN_PORTS = {22, 3389, 5900, 6443}
@@ -537,12 +537,17 @@ def _search_score(query: str, fields: list[object]) -> int:
     if not needle:
         return 0
     best = 0
+    needle_is_ip = any(ch.isdigit() for ch in needle) and ("." in needle or ":" in needle)
     for raw in fields:
         value = str(raw or "").strip().lower()
         if not value:
             continue
         if value == needle:
-            best = max(best, 120)
+            best = max(best, 130 if needle_is_ip else 120)
+        elif needle_is_ip and value.startswith(needle):
+            best = max(best, 110)
+        elif len(needle) >= 6 and (value.startswith(needle) or needle in value):
+            best = max(best, 100 if value.startswith(needle) else 78)
         elif value.startswith(needle):
             best = max(best, 95)
         elif any(part.startswith(needle) for part in value.replace("/", " ").replace(":", " ").replace(".", " ").replace("-", " ").replace("_", " ").split()):
@@ -552,7 +557,7 @@ def _search_score(query: str, fields: list[object]) -> int:
     return best
 
 
-def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit: int = 20) -> list[dict]:
+def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit: int = 20, k8s_auth=None) -> list[dict]:
     needle = str(query or "").strip()
     if not needle:
         return []
@@ -704,6 +709,54 @@ def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit
             project_id=item.get("project_id", ""),
         )
 
+    k8s_catalog: list[tuple[str, str, callable]] = [
+        ("namespaces", "Namespace", lambda: k8s_ops.list_k8s_namespaces(k8s_auth)),
+        ("pods", "Pod", lambda: k8s_ops.list_k8s_pods(None, k8s_auth)),
+        ("services", "Service", lambda: k8s_ops.list_k8s_services(None, k8s_auth)),
+        ("deployments", "Deployment", lambda: k8s_ops.list_k8s_deployments(k8s_auth)),
+        ("statefulsets", "StatefulSet", lambda: k8s_ops.list_k8s_statefulsets(k8s_auth)),
+        ("daemonsets", "DaemonSet", lambda: k8s_ops.list_k8s_daemonsets(k8s_auth)),
+        ("vpcs", "VPC", lambda: k8s_ops.list_k8s_kubeovn_vpcs(k8s_auth)),
+        ("subnets", "Subnet", lambda: k8s_ops.list_k8s_kubeovn_subnets(k8s_auth)),
+        ("ips", "IP", lambda: k8s_ops.list_k8s_kubeovn_ips(k8s_auth)),
+        ("pvcs", "PVC", lambda: k8s_ops.list_k8s_pvcs(None, k8s_auth)),
+        ("pvs", "PV", lambda: k8s_ops.list_k8s_pvs(k8s_auth)),
+        ("storagecsis", "CSI Backend", lambda: k8s_ops.summarize_k8s_storage_by_csi(k8s_auth)),
+    ]
+    if k8s_auth:
+        for k8s_type, default_label, loader in k8s_catalog:
+            try:
+                items = loader()
+            except Exception:
+                continue
+            for item in items or []:
+                name = item.get("name") or item.get("driver") or item.get("namespace") or default_label
+                namespace = item.get("namespace") or ""
+                key = item.get("name") or item.get("driver") or item.get("pod_name") or name
+                item_id = f"{k8s_type}:{namespace}:{key}"
+                subtext = f"{namespace} • {default_label}" if namespace else default_label
+                add(
+                    "kubernetes",
+                    item_id,
+                    name,
+                    subtext,
+                    [
+                        item.get("name"),
+                        item.get("namespace"),
+                        item.get("driver"),
+                        item.get("pod_name"),
+                        item.get("cluster_ip"),
+                        item.get("v4_ip"),
+                        item.get("v6_ip"),
+                        item.get("type"),
+                        k8s_type,
+                        default_label,
+                    ],
+                    k8s_type=k8s_type,
+                    namespace=namespace,
+                    k8s_key=key,
+                )
+
     kind_rank = {
         "node": 0,
         "instance": 1,
@@ -715,6 +768,7 @@ def search_resources(auth: openstack_ops.OpenStackAuth | None, query: str, limit
         "loadbalancer": 7,
         "securitygroup": 8,
         "volume": 9,
+        "kubernetes": 10,
     }
     results.sort(key=lambda item: (-int(item.get("score", 0)), kind_rank.get(str(item.get("kind")), 50), str(item.get("label") or "")))
     return results[: max(1, int(limit or 20))]

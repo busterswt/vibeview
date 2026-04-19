@@ -106,7 +106,7 @@ async def api_search(request: Request):
     if not query:
         return {"results": [], "error": None, "api_issue": None}
     try:
-        data = await _run_with_timeout(search_resources, session.server.openstack_auth, query, max(1, min(limit, 50)))
+        data = await _run_with_timeout(search_resources, session.server.openstack_auth, query, max(1, min(limit, 50)), session.server.k8s_auth)
         return {"results": data, "error": None, "api_issue": None}
     except TimeoutError:
         return {

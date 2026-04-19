@@ -75,15 +75,30 @@ function globalSearchScore(query, fields) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return 0;
   let best = 0;
+  const queryLooksLikeIp = /\d/.test(q) && (q.includes('.') || q.includes(':'));
   for (const raw of fields || []) {
     const value = String(raw || '').trim().toLowerCase();
     if (!value) continue;
-    if (value === q) best = Math.max(best, 120);
+    if (value === q) best = Math.max(best, queryLooksLikeIp ? 130 : 120);
+    else if (queryLooksLikeIp && value.startsWith(q)) best = Math.max(best, 110);
+    else if (q.length >= 6 && (value.startsWith(q) || value.includes(q))) best = Math.max(best, value.startsWith(q) ? 100 : 78);
     else if (value.startsWith(q)) best = Math.max(best, 95);
     else if (value.split(/[\s:/._-]+/).some((part) => part.startsWith(q))) best = Math.max(best, 82);
     else if (value.includes(q)) best = Math.max(best, 70);
   }
   return best;
+}
+
+function highlightGlobalSearchText(text, query) {
+  const source = String(text || '');
+  const needle = String(query || '').trim();
+  if (!needle) return esc(source);
+  const lowerSource = source.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const start = lowerSource.indexOf(lowerNeedle);
+  if (start < 0) return esc(source);
+  const end = start + needle.length;
+  return `${esc(source.slice(0, start))}<mark>${esc(source.slice(start, end))}</mark>${esc(source.slice(end))}`;
 }
 
 function globalSearchAddResult(results, seen, query, entry) {
@@ -107,6 +122,13 @@ function mergeGlobalSearchResults(localResults, remoteResults) {
   return merged
     .sort((a, b) => (b.score - a.score) || (globalSearchKindRank(a.kind) - globalSearchKindRank(b.kind)) || String(a.label).localeCompare(String(b.label)))
     .slice(0, GLOBAL_SEARCH_LIMIT);
+}
+
+function focusGlobalSearchInput(select = true) {
+  const input = globalSearchInput();
+  if (!input) return;
+  input.focus();
+  if (select) input.select();
 }
 
 function globalSearchNodeResults(query, results, seen) {
@@ -441,6 +463,37 @@ function globalSearchActionForResult(item) {
       if (item.port_id) await navigateToPortDetail(item.port_id);
     };
   }
+  if (item.kind === 'kubernetes') {
+    return async () => {
+      closeGlobalSearch();
+      const type = item.k8s_type;
+      const key = item.k8s_key;
+      if (!type || !key) return;
+      if (['services', 'lbs', 'vpcs', 'subnets', 'vlans', 'providernetworks', 'providersubnets', 'ips', 'clusternetworks', 'networkdomains', 'gatewayclasses', 'gateways', 'httproutes'].includes(type)) {
+        switchView('networking');
+        switchNetworkingSection(type === 'services' ? 'k8s-services'
+          : type === 'lbs' ? 'k8s-lbs'
+          : type === 'vpcs' ? 'k8s-vpcs'
+          : type === 'subnets' ? 'k8s-subnets'
+          : type === 'vlans' ? 'k8s-vlans'
+          : type === 'providernetworks' ? 'k8s-providernetworks'
+          : type === 'providersubnets' ? 'k8s-providersubnets'
+          : type === 'ips' ? 'k8s-ips'
+          : type === 'clusternetworks' ? 'k8s-clusternetworks'
+          : type === 'networkdomains' ? 'k8s-networkdomains'
+          : type === 'gatewayclasses' ? 'k8s-gatewayclasses'
+          : type === 'gateways' ? 'k8s-gateways'
+          : 'k8s-httproutes');
+      } else if (['pvcs', 'pvs', 'storagecsis'].includes(type)) {
+        switchView('storage');
+        switchStorageSection(type === 'pvcs' ? 'k8s-pvcs' : type === 'pvs' ? 'k8s-pvs' : 'k8s-csi');
+      } else {
+        switchView('kubernetes');
+      }
+      await selectK8sResource(type);
+      selectK8sObject(type, key);
+    };
+  }
   return async () => {};
 }
 
@@ -530,14 +583,17 @@ function renderGlobalSearch() {
         return `<button class="global-search-item ${index === globalSearchState.activeIndex ? 'active' : ''}" data-result-index="${index}" onclick="activateGlobalSearchResult(${index})">
           <span class="global-search-item-icon">${esc(globalSearchIcon(item.kind))}</span>
           <span class="global-search-item-copy">
-            <div class="global-search-item-label">${esc(item.label)}</div>
-            <div class="global-search-item-subtext">${esc(item.subtext || '')}</div>
+            <div class="global-search-item-label">${highlightGlobalSearchText(item.label, query)}</div>
+            <div class="global-search-item-subtext">${highlightGlobalSearchText(item.subtext || '', query)}</div>
           </span>
         </button>`;
       }).join('')}
     </div>`;
   }).join('') + `<div class="global-search-meta">${globalSearchState.remoteLoading ? 'Searching more resources…' : globalSearchState.remoteError ? `Backend search failed: ${esc(globalSearchState.remoteError)}` : hasOpenStackAuth() ? 'Showing local and server search results.' : 'Showing local results only.'}</div>`;
   dropdown.style.display = 'block';
+  requestAnimationFrame(() => {
+    dropdown.querySelector('.global-search-item.active')?.scrollIntoView({ block: 'nearest' });
+  });
 }
 
 function updateGlobalSearch(query) {
@@ -606,6 +662,23 @@ function initGlobalSearch() {
     if (event.key === 'Escape') {
       event.preventDefault();
       closeGlobalSearch(true);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && String(event.key || '').toLowerCase() === 'k') {
+      event.preventDefault();
+      focusGlobalSearchInput(true);
+      return;
+    }
+    if (event.key === '/' && document.activeElement !== input) {
+      const target = event.target;
+      const tag = target?.tagName;
+      const isEditable = target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (!isEditable) {
+        event.preventDefault();
+        focusGlobalSearchInput(false);
+      }
     }
   });
 

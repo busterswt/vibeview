@@ -143,6 +143,12 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.global-search-item mark {
+  background: #fff1a8;
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
 .global-search-empty,
 .global-search-meta {
   padding: 12px 14px;
