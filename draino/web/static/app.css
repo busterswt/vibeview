@@ -694,6 +694,38 @@ body.no-hints .vmware-ref-card { display: none !important; }
   font-weight: 500;
 }
 .obj-link:hover { text-decoration: underline; }
+.project-subnav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.project-subnav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.project-subnav-item span {
+  font-size: 10px;
+  color: var(--dim);
+}
+.project-subnav-item.active {
+  background: var(--blue-bg);
+  border-color: #b9d6fb;
+  color: var(--blue);
+  font-weight: 600;
+}
+.project-subnav-item.future {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .finding {
   display: flex;
   align-items: flex-start;

@@ -185,6 +185,68 @@ def test_load_balancers_endpoint_returns_items(monkeypatch):
     assert body["load_balancers"][0]["amphora_count"] == 2
 
 
+def test_ports_endpoints_return_items(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "get_ports",
+        lambda auth=None: [{
+            "id": "port-1",
+            "name": "api-port",
+            "status": "ACTIVE",
+            "network_id": "net-1",
+            "network_name": "tenant-net",
+            "attached_kind": "instance",
+            "attached_id": "vm-1",
+            "attached_name": "api-01",
+            "project_id": "proj-1",
+        }],
+    )
+    monkeypatch.setattr(
+        resource_api,
+        "get_port_detail",
+        lambda port_id, auth=None: {
+            "id": port_id,
+            "name": "api-port",
+            "status": "ACTIVE",
+            "network_id": "net-1",
+            "network_name": "tenant-net",
+            "security_groups": [{"id": "sg-1", "name": "default"}],
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        ports_resp = client.get("/api/ports")
+        port_resp = client.get("/api/ports/port-1")
+
+    assert ports_resp.status_code == 200
+    assert ports_resp.json()["ports"][0]["attached_name"] == "api-01"
+    assert port_resp.status_code == 200
+    assert port_resp.json()["port"]["security_groups"][0]["id"] == "sg-1"
+
+
 def test_volume_snapshot_and_backup_endpoints_return_items(monkeypatch):
     monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
     monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
@@ -509,6 +571,85 @@ def test_get_project_quota_summary_reads_network_quota_details_object_shape(monk
     assert "listener" not in quotas["network"]
     assert "l7_policy" not in quotas["network"]
     assert "pool" not in quotas["network"]
+
+
+def test_get_floating_ips_enriches_attached_instance(monkeypatch):
+    class FakeServer:
+        id = "server-1"
+        name = "api-01"
+
+        def to_dict(self):
+            return {"id": self.id, "name": self.name}
+
+    class FakeCompute:
+        def get_server(self, server_id):
+            assert server_id == "server-1"
+            return FakeServer()
+
+    class FakeIp:
+        id = "fip-1"
+        floating_ip_address = "198.51.100.10"
+        fixed_ip_address = "10.0.0.7"
+        status = "ACTIVE"
+        project_id = "proj-1"
+        floating_network_id = "ext-net"
+        port_id = "port-1"
+        router_id = "router-1"
+        description = "public"
+
+        def to_dict(self):
+            return {
+                "id": self.id,
+                "floating_ip_address": self.floating_ip_address,
+                "fixed_ip_address": self.fixed_ip_address,
+                "status": self.status,
+                "project_id": self.project_id,
+                "floating_network_id": self.floating_network_id,
+                "port_id": self.port_id,
+                "router_id": self.router_id,
+                "description": self.description,
+            }
+
+    class FakePort:
+        def to_dict(self):
+            return {"id": "port-1", "device_owner": "compute:nova", "device_id": "server-1"}
+
+    class FakeNetwork:
+        def ips(self):
+            return [FakeIp()]
+
+        def get_port(self, port_id):
+            assert port_id == "port-1"
+            return FakePort()
+
+        def get_network(self, network_id):
+            class Network:
+                name = "public-net"
+
+                def to_dict(self):
+                    return {"id": network_id, "name": "public-net"}
+            return Network()
+
+    class FakeIdentity:
+        def projects(self):
+            class Project:
+                id = "proj-1"
+                name = "production"
+            return [Project()]
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        identity = FakeIdentity()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "_server_host", lambda server: "cmp-01")
+
+    items = resource_helpers.get_floating_ips(auth=None)
+
+    assert items[0]["instance_id"] == "server-1"
+    assert items[0]["instance_name"] == "api-01"
+    assert items[0]["compute_host"] == "cmp-01"
 
 
 def test_get_project_quota_summary_reads_network_quota_cli_list_shape(monkeypatch):

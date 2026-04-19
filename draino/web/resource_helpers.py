@@ -536,6 +536,8 @@ def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
     conn = openstack_ops._conn(auth=auth)
     project_names = _project_names(conn)
     network_name_cache: dict[str, str] = {}
+    port_cache: dict[str, dict] = {}
+    server_cache: dict[str, dict[str, str]] = {}
     result: list[dict] = []
     try:
         ips = conn.network.ips()
@@ -545,6 +547,25 @@ def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
         data = _obj_dict(ip)
         project_id = getattr(ip, "project_id", None) or data.get("project_id") or data.get("tenant_id") or ""
         floating_network_id = getattr(ip, "floating_network_id", None) or data.get("floating_network_id") or ""
+        port_id = getattr(ip, "port_id", None) or data.get("port_id") or ""
+        instance_id = ""
+        instance_name = ""
+        compute_host = ""
+        if port_id:
+            if port_id not in port_cache:
+                try:
+                    port = conn.network.get_port(port_id)
+                    port_cache[port_id] = _obj_dict(port)
+                except Exception:
+                    port_cache[port_id] = {}
+            port_data = port_cache.get(port_id, {})
+            device_owner = str(port_data.get("device_owner") or "")
+            device_id = str(port_data.get("device_id") or "")
+            if device_owner.startswith("compute:") and device_id:
+                server_brief = _lookup_server_brief(conn, device_id, server_cache)
+                instance_id = device_id
+                instance_name = server_brief.get("name", "") or device_id
+                compute_host = server_brief.get("compute_host", "")
         result.append({
             "id": getattr(ip, "id", None) or data.get("id") or "",
             "floating_ip_address": getattr(ip, "floating_ip_address", None) or data.get("floating_ip_address") or "",
@@ -554,12 +575,165 @@ def get_floating_ips(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
             "project_name": project_names.get(project_id) or project_id or "unknown",
             "floating_network_id": floating_network_id,
             "floating_network_name": _lookup_network_name(conn, floating_network_id, network_name_cache),
-            "port_id": getattr(ip, "port_id", None) or data.get("port_id") or "",
+            "port_id": port_id,
             "router_id": getattr(ip, "router_id", None) or data.get("router_id") or "",
+            "instance_id": instance_id,
+            "instance_name": instance_name,
+            "compute_host": compute_host,
             "description": getattr(ip, "description", None) or data.get("description") or "",
         })
     result.sort(key=lambda item: (item["project_name"], item["floating_ip_address"], item["id"]))
     return result
+
+
+def _floating_ip_map_by_port(conn) -> dict[str, list[dict[str, str]]]:
+    result: dict[str, list[dict[str, str]]] = defaultdict(list)
+    try:
+        for ip in conn.network.ips():
+            data = _obj_dict(ip)
+            port_id = getattr(ip, "port_id", None) or data.get("port_id") or ""
+            if not port_id:
+                continue
+            result[port_id].append({
+                "id": getattr(ip, "id", None) or data.get("id") or "",
+                "address": getattr(ip, "floating_ip_address", None) or data.get("floating_ip_address") or "",
+                "status": getattr(ip, "status", None) or data.get("status") or "",
+            })
+    except Exception:
+        return {}
+    return dict(result)
+
+
+def _port_attached_resource(conn, device_owner: str, device_id: str, server_cache: dict[str, dict[str, str]], router_name_cache: dict[str, str]) -> dict[str, str]:
+    owner = str(device_owner or "")
+    if owner.startswith("compute:") and device_id:
+        server = _lookup_server_brief(conn, device_id, server_cache)
+        return {
+            "kind": "instance",
+            "id": device_id,
+            "name": server.get("name", "") or device_id,
+            "compute_host": server.get("compute_host", ""),
+        }
+    if "router" in owner and device_id:
+        return {
+            "kind": "router",
+            "id": device_id,
+            "name": _router_name(conn, device_id, router_name_cache) or device_id,
+            "compute_host": "",
+        }
+    if owner.startswith("network:") and device_id:
+        return {
+            "kind": "network-service",
+            "id": device_id,
+            "name": device_id,
+            "compute_host": "",
+        }
+    if owner.startswith("loadbalancer:") and device_id:
+        return {
+            "kind": "load-balancer",
+            "id": device_id,
+            "name": device_id,
+            "compute_host": "",
+        }
+    return {
+        "kind": "",
+        "id": device_id or "",
+        "name": device_id or "",
+        "compute_host": "",
+    }
+
+
+def _port_record(conn, port, network_name_cache: dict[str, str], subnet_cache: dict[str, dict], router_cache: dict[str, dict], router_name_cache: dict[str, str], server_cache: dict[str, dict[str, str]], floating_ip_map: dict[str, list[dict[str, str]]]) -> dict:
+    port_data = port.to_dict() if hasattr(port, "to_dict") else {}
+    port_id = getattr(port, "id", None) or port_data.get("id") or ""
+    network_id = getattr(port, "network_id", None) or port_data.get("network_id") or ""
+    project_id = getattr(port, "project_id", None) or port_data.get("project_id") or ""
+    device_owner = getattr(port, "device_owner", None) or port_data.get("device_owner") or ""
+    device_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
+    fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+    subnets = []
+    fixed_ip_addresses = []
+    for item in fixed_ips:
+        subnet_id = item.get("subnet_id", "") or ""
+        subnet_detail = _lookup_subnet_detail(conn, subnet_id, subnet_cache) if subnet_id else {}
+        ip_address = item.get("ip_address", "") or ""
+        if ip_address:
+            fixed_ip_addresses.append(ip_address)
+        subnets.append({
+            "id": subnet_id,
+            "name": subnet_detail.get("name", ""),
+            "cidr": subnet_detail.get("cidr", ""),
+            "ip_address": ip_address,
+        })
+    attached = _port_attached_resource(conn, device_owner, device_id, server_cache, router_name_cache)
+    router_meta = router_cache.get(network_id, {}) if isinstance(router_cache.get(network_id, {}), dict) else {}
+    connected_router_id = router_meta.get("id", "") or ""
+    return {
+        "id": port_id,
+        "name": getattr(port, "name", None) or port_data.get("name") or "",
+        "status": getattr(port, "status", None) or port_data.get("status") or "UNKNOWN",
+        "admin_state": "up" if bool(getattr(port, "is_admin_state_up", port_data.get("admin_state_up", False))) else "down",
+        "project_id": project_id,
+        "network_id": network_id,
+        "network_name": _lookup_network_name(conn, network_id, network_name_cache),
+        "device_owner": device_owner,
+        "device_id": device_id,
+        "mac_address": getattr(port, "mac_address", None) or port_data.get("mac_address") or "",
+        "fixed_ips": fixed_ips,
+        "fixed_ip_addresses": fixed_ip_addresses,
+        "subnets": subnets,
+        "security_group_ids": _port_security_groups(port),
+        "floating_ips": floating_ip_map.get(port_id, []),
+        "attached_kind": attached.get("kind", ""),
+        "attached_id": attached.get("id", ""),
+        "attached_name": attached.get("name", ""),
+        "compute_host": attached.get("compute_host", ""),
+        "connected_router_id": connected_router_id,
+        "connected_router_name": _router_name(conn, connected_router_id, router_name_cache) if connected_router_id else "",
+    }
+
+
+def get_ports(auth: openstack_ops.OpenStackAuth | None) -> list[dict]:
+    conn = openstack_ops._conn(auth=auth)
+    network_name_cache: dict[str, str] = {}
+    subnet_cache: dict[str, dict] = {}
+    router_cache = _network_router_map(conn)
+    router_name_cache: dict[str, str] = {}
+    server_cache: dict[str, dict[str, str]] = {}
+    floating_ip_map = _floating_ip_map_by_port(conn)
+    result: list[dict] = []
+    try:
+        for port in conn.network.ports():
+            result.append(_port_record(conn, port, network_name_cache, subnet_cache, router_cache, router_name_cache, server_cache, floating_ip_map))
+    except Exception:
+        return result
+    result.sort(key=lambda item: (item.get("network_name", ""), item.get("attached_name", ""), item.get("name", ""), item.get("id", "")))
+    return result
+
+
+def get_port_detail(port_id: str, auth: openstack_ops.OpenStackAuth | None) -> dict:
+    conn = openstack_ops._conn(auth=auth)
+    network_name_cache: dict[str, str] = {}
+    subnet_cache: dict[str, dict] = {}
+    router_cache = _network_router_map(conn)
+    router_name_cache: dict[str, str] = {}
+    server_cache: dict[str, dict[str, str]] = {}
+    floating_ip_map = _floating_ip_map_by_port(conn)
+    port = conn.network.get_port(port_id)
+    item = _port_record(conn, port, network_name_cache, subnet_cache, router_cache, router_name_cache, server_cache, floating_ip_map)
+    security_groups = []
+    for group_id in item.get("security_group_ids", []):
+        try:
+            group = conn.network.get_security_group(group_id)
+            group_data = group.to_dict() if hasattr(group, "to_dict") else {}
+            security_groups.append({
+                "id": getattr(group, "id", None) or group_data.get("id") or group_id,
+                "name": getattr(group, "name", None) or group_data.get("name") or group_id,
+            })
+        except Exception:
+            security_groups.append({"id": group_id, "name": group_id})
+    item["security_groups"] = security_groups
+    return item
 
 
 def get_projects(auth: openstack_ops.OpenStackAuth | None, search: str = "") -> list[dict]:
@@ -623,6 +797,7 @@ def get_project_inventory(project_id: str, auth: openstack_ops.OpenStackAuth | N
     if normalized == "networking":
         payload["networks"] = [item for item in get_networks(auth) if item.get("project_id") == project_id]
         payload["routers"] = [item for item in get_routers(auth) if item.get("project_id") == project_id]
+        payload["ports"] = [item for item in get_ports(auth) if item.get("project_id") == project_id]
         payload["floating_ips"] = [item for item in get_floating_ips(auth) if item.get("project_id") == project_id]
         payload["load_balancers"] = [item for item in get_load_balancers(auth) if item.get("project_id") == project_id]
         return payload

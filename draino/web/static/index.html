@@ -74,6 +74,9 @@
   <div class="bc-actions" id="bc-router-actions" style="display:none">
     <button class="btn" onclick="loadRouters(true)">⟳ Refresh Routers</button>
   </div>
+  <div class="bc-actions" id="bc-port-actions" style="display:none">
+    <button class="btn" onclick="loadPorts(true)">⟳ Refresh Ports</button>
+  </div>
   <div class="bc-actions" id="bc-lb-actions" style="display:none">
     <button class="btn" onclick="loadLoadBalancers(true)">⟳ Refresh Load Balancers</button>
   </div>
@@ -274,6 +277,9 @@
         <div class="networking-nav-item" data-networking-view="routers" onclick="switchNetworkingSection('routers')">
           <span>🛣️</span> Routers
         </div>
+        <div class="networking-nav-item" data-networking-view="ports" onclick="switchNetworkingSection('ports')">
+          <span>🔌</span> Ports
+        </div>
         <div class="networking-nav-item" data-networking-view="loadbalancers" onclick="switchNetworkingSection('loadbalancers')">
           <span>⚖️</span> Load Balancers
         </div>
@@ -343,6 +349,7 @@
           <div style="text-align:center;padding:40px 0;color:var(--dim)">Loading networks…</div>
         </div>
         <div class="networking-pane" id="router-wrap"></div>
+        <div class="networking-pane" id="port-wrap"></div>
         <div class="networking-pane" id="lb-wrap"></div>
         <div class="networking-pane" id="sg-wrap"></div>
         <div class="networking-pane" id="networking-k8s-content">
@@ -356,6 +363,7 @@
     <div id="networking-detail-wrap">
       <div class="networking-detail-pane" id="net-detail-wrap"></div>
       <div class="networking-detail-pane" id="router-detail-wrap"></div>
+      <div class="networking-detail-pane" id="port-detail-wrap"></div>
       <div class="networking-detail-pane" id="lb-detail-wrap"></div>
       <div class="networking-detail-pane" id="sg-detail-wrap"></div>
       <div class="networking-detail-pane" id="networking-k8s-detail-wrap"></div>
@@ -572,6 +580,7 @@
     <script src="/static/app_node_configure.js"></script>
     <script src="/static/app_networking_openstack.js"></script>
     <script src="/static/app_networking_openstack_loadbalancers.js"></script>
+    <script src="/static/app_networking_openstack_ports.js"></script>
     <script src="/static/app_networking_openstack_routers.js"></script>
     <script src="/static/app_networking_openstack_securitygroups.js?v=20260418-sg5"></script>
     <script src="/static/app_k8s_resources.js"></script>

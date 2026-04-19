@@ -14,6 +14,8 @@ let activeView   = 'infrastructure';
 let activeNetworkingView = 'networking';
 let activeStorageView = 'openstack-volumes';
 let activeProjectView = 'overview';
+let activeProjectNetworkingView = 'networks';
+let activeProjectStorageView = 'volumes';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
@@ -169,6 +171,11 @@ const netDetailState   = {
 const routerState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
 let   selectedRouter = null;
 const routerDetailState = { loading: false, data: null, ovn: { loading: false, data: null, error: null } };
+
+// Port view state
+const portState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
+let   selectedPort = null;
+const portDetailState = { loading: false, data: null };
 
 // Load balancer view state
 const lbState = { data: null, loading: false, page: 1, pageSize: 25, filter: '' };
@@ -334,6 +341,7 @@ function retryApiIssuesNow() {
   renderApiIssuesOverlay();
   if (activeView === 'reports') return refreshActiveReport();
   if (activeView === 'networking') {
+    if (activeNetworkingView === 'ports') return loadPorts(true);
     if (activeNetworkingView === 'routers') return loadRouters(true);
     if (activeNetworkingView === 'loadbalancers') return loadLoadBalancers(true);
     if (activeNetworkingView === 'securitygroups') return loadSecurityGroups(true);

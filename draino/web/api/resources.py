@@ -12,6 +12,8 @@ from ...operations import k8s_ops, openstack_ops
 from .api_issues import build_api_issue
 from ..resource_helpers import (
     get_floating_ips,
+    get_port_detail,
+    get_ports,
     get_project_inventory,
     get_projects,
     get_load_balancer_detail,
@@ -199,6 +201,33 @@ async def api_floating_ips(request: Request):
         return {"floating_ips": data, "error": None, "api_issue": None}
     except Exception as exc:
         return {"floating_ips": [], "error": str(exc), "api_issue": build_api_issue("Neutron", "GET /v2.0/floatingips", exc)}
+
+
+@router.get("/api/ports")
+async def api_ports(request: Request):
+    session = _require_session_record()(request)
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, get_ports, session.server.openstack_auth)
+        return {"ports": data, "error": None, "api_issue": None}
+    except Exception as exc:
+        return {"ports": [], "error": str(exc), "api_issue": build_api_issue("Neutron", "GET /v2.0/ports", exc)}
+
+
+@router.get("/api/ports/{port_id}")
+async def api_port_detail(port_id: str, request: Request):
+    session = _require_session_record()(request)
+    try:
+        data = await _run_with_timeout(get_port_detail, port_id, session.server.openstack_auth)
+        return {"port": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "port": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while loading port details",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {"port": None, "error": str(exc), "api_issue": build_api_issue("Neutron", f"GET /v2.0/ports/{port_id}", exc)}
 
 
 @router.get("/api/volumes/{volume_id}")

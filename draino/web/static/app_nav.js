@@ -69,7 +69,7 @@ function preferredStorageView() {
 }
 
 function switchNetworkingSection(name) {
-  const valid = ['networking', 'routers', 'loadbalancers', 'securitygroups', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
+  const valid = ['networking', 'routers', 'ports', 'loadbalancers', 'securitygroups', 'k8s-vpcs', 'k8s-subnets', 'k8s-vlans', 'k8s-providernetworks', 'k8s-providersubnets', 'k8s-ips', 'k8s-clusternetworks', 'k8s-networkdomains', 'k8s-services', 'k8s-lbs', 'k8s-gatewayclasses', 'k8s-gateways', 'k8s-httproutes'];
   if (!valid.includes(name)) return;
   activeNetworkingView = name;
   switchView('networking');
@@ -100,6 +100,7 @@ function networkingK8sType(name = activeNetworkingView) {
 function networkingViewLabel(name = activeNetworkingView) {
   if (name === 'networking') return 'Networks';
   if (name === 'routers') return 'Routers';
+  if (name === 'ports') return 'Ports';
   if (name === 'loadbalancers') return 'Load Balancers';
   if (name === 'securitygroups') return 'Security Groups';
   const k8sType = networkingK8sType(name);
@@ -114,6 +115,7 @@ function renderNetworkingWorkspace() {
   const panes = {
     networking: document.getElementById('net-wrap'),
     routers: document.getElementById('router-wrap'),
+    ports: document.getElementById('port-wrap'),
     loadbalancers: document.getElementById('lb-wrap'),
     securitygroups: document.getElementById('sg-wrap'),
     k8s: document.getElementById('networking-k8s-content'),
@@ -122,7 +124,7 @@ function renderNetworkingWorkspace() {
   if (isNetworkingK8sView()) panes.k8s?.classList.add('active');
   else panes[activeNetworkingView]?.classList.add('active');
 
-  const detailPanes = ['net-detail-wrap', 'router-detail-wrap', 'lb-detail-wrap', 'sg-detail-wrap', 'networking-k8s-detail-wrap'];
+  const detailPanes = ['net-detail-wrap', 'router-detail-wrap', 'port-detail-wrap', 'lb-detail-wrap', 'sg-detail-wrap', 'networking-k8s-detail-wrap'];
   detailPanes.forEach(id => document.getElementById(id)?.classList.remove('open'));
 
   if (activeNetworkingView === 'networking' && selectedNetwork && netDetailState.data) {
@@ -130,6 +132,9 @@ function renderNetworkingWorkspace() {
   }
   if (activeNetworkingView === 'routers' && selectedRouter && routerDetailState.data) {
     document.getElementById('router-detail-wrap')?.classList.add('open');
+  }
+  if (activeNetworkingView === 'ports' && selectedPort && portDetailState.data) {
+    document.getElementById('port-detail-wrap')?.classList.add('open');
   }
   if (activeNetworkingView === 'loadbalancers' && selectedLoadBalancer && lbDetailState.data) {
     document.getElementById('lb-detail-wrap')?.classList.add('open');
@@ -217,6 +222,7 @@ function switchView(name) {
   document.getElementById('bc-k8s-actions').style.display = (name === 'kubernetes' || (name === 'networking' && isNetworkingK8sView())) ? '' : 'none';
   document.getElementById('bc-net-actions').style.display = (name === 'networking' && activeNetworkingView === 'networking') ? '' : 'none';
   document.getElementById('bc-router-actions').style.display = (name === 'networking' && activeNetworkingView === 'routers') ? '' : 'none';
+  document.getElementById('bc-port-actions').style.display = (name === 'networking' && activeNetworkingView === 'ports') ? '' : 'none';
   document.getElementById('bc-lb-actions').style.display = (name === 'networking' && activeNetworkingView === 'loadbalancers') ? '' : 'none';
   document.getElementById('bc-sg-actions').style.display = (name === 'networking' && activeNetworkingView === 'securitygroups') ? '' : 'none';
   document.getElementById('bc-report-actions').style.display = name === 'reports' ? '' : 'none';
@@ -269,6 +275,9 @@ function switchView(name) {
         if (activeNetworkingView === 'routers') {
           document.getElementById('router-wrap').innerHTML = renderOpenStackUnavailablePanel('Routers', 'This view currently relies on OpenStack router inventory. Provide OpenStack credentials to enable it.');
         }
+        if (activeNetworkingView === 'ports') {
+          document.getElementById('port-wrap').innerHTML = renderOpenStackUnavailablePanel('Ports', 'This view currently relies on OpenStack port inventory. Provide OpenStack credentials to enable it.');
+        }
         if (activeNetworkingView === 'loadbalancers') {
           document.getElementById('lb-wrap').innerHTML = renderOpenStackUnavailablePanel('Load Balancers', 'This view currently relies on Octavia inventory. Provide OpenStack credentials to enable it.');
         }
@@ -280,6 +289,7 @@ function switchView(name) {
       }
       if (activeNetworkingView === 'networking' && !netState.data && !netState.loading) loadNetworks();
       if (activeNetworkingView === 'routers' && !routerState.data && !routerState.loading) loadRouters();
+      if (activeNetworkingView === 'ports' && !portState.data && !portState.loading) loadPorts();
       if (activeNetworkingView === 'loadbalancers') loadLoadBalancers();
       if (activeNetworkingView === 'securitygroups' && !sgState.data && !sgState.loading) loadSecurityGroups();
       if (isNetworkingK8sView()) {
@@ -373,6 +383,13 @@ async function navigateToRouterDetail(routerId) {
   switchNetworkingSection('routers');
   await loadRouters();
   await selectRouter(routerId);
+}
+
+async function navigateToPortDetail(portId) {
+  if (!portId) return;
+  switchNetworkingSection('ports');
+  await loadPorts();
+  await selectPort(portId);
 }
 
 async function navigateToLoadBalancerDetail(lbId) {

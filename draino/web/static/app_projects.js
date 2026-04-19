@@ -53,6 +53,32 @@ function switchProjectSection(name) {
   }
 }
 
+function switchProjectNetworkingView(name) {
+  const valid = ['networks', 'routers', 'ports', 'floatingips', 'loadbalancers'];
+  if (!valid.includes(name)) return;
+  activeProjectNetworkingView = name;
+  projectInventoryState.filter = '';
+  projectDetailState.kind = '';
+  projectDetailState.item = null;
+  projectDetailState.loading = false;
+  projectDetailState.data = null;
+  projectDetailState.error = null;
+  renderProjectsWorkspace();
+}
+
+function switchProjectStorageView(name) {
+  const valid = ['volumes'];
+  if (!valid.includes(name)) return;
+  activeProjectStorageView = name;
+  projectInventoryState.filter = '';
+  projectDetailState.kind = '';
+  projectDetailState.item = null;
+  projectDetailState.loading = false;
+  projectDetailState.data = null;
+  projectDetailState.error = null;
+  renderProjectsWorkspace();
+}
+
 function projectFilterRows(items, fields, filter) {
   const q = String(filter || '').trim().toLowerCase();
   if (!q) return items || [];
@@ -125,6 +151,7 @@ function projectOverviewStats(projectId = selectedProjectId) {
     ramMb: instances.reduce((sum, item) => sum + Number(item.ram_mb || 0), 0),
     networkCount: (networking.networks || []).length,
     routerCount: (networking.routers || []).length,
+    portCount: (networking.ports || []).length,
     floatingIpCount: (networking.floating_ips || []).length,
     loadBalancerCount: (networking.load_balancers || []).length,
     volumeCount: (storage.volumes || []).length,
@@ -151,6 +178,7 @@ function projectSummary(summary, inv = null) {
     ...(stats.networkingLoaded ? {
       network_count: stats.networkCount,
       router_count: stats.routerCount,
+      port_count: stats.portCount,
       floating_ip_count: stats.floatingIpCount,
       load_balancer_count: stats.loadBalancerCount,
     } : {}),
@@ -395,6 +423,8 @@ function findProjectItem(kind, id) {
   if (!inv) return null;
   if (kind === 'instances') return (inv.instances || []).find((item) => item.id === id) || null;
   if (kind === 'networks') return (inv.networks || []).find((item) => item.id === id) || null;
+  if (kind === 'routers') return (inv.routers || []).find((item) => item.id === id) || null;
+  if (kind === 'ports') return (inv.ports || []).find((item) => item.id === id) || null;
   if (kind === 'volumes') return (inv.volumes || []).find((item) => item.id === id) || null;
   if (kind === 'securitygroups') return (inv.security_groups || []).find((item) => item.id === id) || null;
   if (kind === 'floatingips') return (inv.floating_ips || []).find((item) => item.id === id) || null;
@@ -418,6 +448,8 @@ async function selectProjectDetail(kind, item) {
     loadbalancers: id ? `/api/load-balancers/${encodeURIComponent(id)}` : '',
     securitygroups: id ? `/api/security-groups/${encodeURIComponent(id)}` : '',
     networks: id ? `/api/networks/${encodeURIComponent(id)}` : '',
+    routers: id ? `/api/routers/${encodeURIComponent(id)}` : '',
+    ports: id ? `/api/ports/${encodeURIComponent(id)}` : '',
   })[kind] || '';
   if (!detailUrl) return;
 
@@ -429,7 +461,7 @@ async function selectProjectDetail(kind, item) {
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('OpenStack');
     if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
-    projectDetailState.data = json.instance || json.volume || json.load_balancer || json.security_group || json.network || null;
+    projectDetailState.data = json.instance || json.volume || json.load_balancer || json.security_group || json.network || json.router || json.port || null;
     if (kind === 'instances' && projectDetailState.data?.compute_host) {
       const nodeName = findNodeNameForHypervisor(projectDetailState.data.compute_host);
       if (nodeName && projectDetailState.data.id) loadNodeInstancePortStats(nodeName, projectDetailState.data.id, true);
@@ -503,8 +535,9 @@ function renderProjectOverview(inv) {
       ${renderOverviewCard('Networking', [
         { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
         { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
+        { label: 'Ports', value: projectValue(summary.port_count || 0, stats.networkingLoaded) },
         { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
-        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) },
+        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) }
       ])}
       ${renderOverviewCard('Capacity', [
         { label: 'vCPU', value: projectValue(summary.vcpu_count || 0, stats.instancesLoaded) },
@@ -576,67 +609,123 @@ function renderProjectInstances(inv) {
 function renderProjectNetworking(inv) {
   const networks = projectFilterRows(inv.networks || [], ['name', 'status', 'network_type'], projectInventoryState.filter);
   const routers = projectFilterRows(inv.routers || [], ['name', 'status', 'external_network_name', 'admin_state'], projectInventoryState.filter);
-  const floatingIps = projectFilterRows(inv.floating_ips || [], ['floating_ip_address', 'fixed_ip_address', 'status', 'description'], projectInventoryState.filter);
+  const ports = projectFilterRows(inv.ports || [], ['name', 'status', 'network_name', 'device_owner', 'attached_name', 'attached_id', 'connected_router_name', 'mac_address'], projectInventoryState.filter);
+  const floatingIps = projectFilterRows(inv.floating_ips || [], ['floating_ip_address', 'fixed_ip_address', 'status', 'description', 'instance_name', 'instance_id'], projectInventoryState.filter);
   const loadBalancers = projectFilterRows(inv.load_balancers || [], ['name', 'vip_address', 'floating_ip', 'operating_status'], projectInventoryState.filter);
+  const counts = {
+    networks: networks.length,
+    routers: routers.length,
+    ports: ports.length,
+    floatingips: floatingIps.length,
+    loadbalancers: loadBalancers.length,
+  };
+  const activeCount = counts[activeProjectNetworkingView] || 0;
+  const familyNav = `
+    <div class="project-subnav">
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'networks' ? 'active' : ''}" onclick="switchProjectNetworkingView('networks')">🌐 Networks <span>${counts.networks}</span></button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'routers' ? 'active' : ''}" onclick="switchProjectNetworkingView('routers')">🛣️ Routers <span>${counts.routers}</span></button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'ports' ? 'active' : ''}" onclick="switchProjectNetworkingView('ports')">🔌 Ports <span>${counts.ports}</span></button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'floatingips' ? 'active' : ''}" onclick="switchProjectNetworkingView('floatingips')">📡 Floating IPs <span>${counts.floatingips}</span></button>
+      <button class="project-subnav-item ${activeProjectNetworkingView === 'loadbalancers' ? 'active' : ''}" onclick="switchProjectNetworkingView('loadbalancers')">⚖️ Load Balancers <span>${counts.loadbalancers}</span></button>
+    </div>`;
+  let table = '';
+  if (activeProjectNetworkingView === 'networks') {
+    table = `
+      <div class="card">
+        <div class="card-title">Networks</div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" style="border:none;margin-bottom:0">
+            <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Subnets</th><th>Router</th></tr></thead>
+            <tbody>
+              ${networks.map((item) => `<tr class="${projectDetailState.kind === 'networks' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('networks','${escAttr(item.id)}')">
+                <td>${esc(item.name || item.id)}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.network_type || '—')}</td><td>${esc(String(item.subnet_count ?? 0))}</td><td>${item.router_id ? renderObjectLink(item.router_id, `navigateToRouterDetail('${escAttr(item.router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
+              </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No networks match the current filter.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (activeProjectNetworkingView === 'routers') {
+    table = `
+      <div class="card">
+        <div class="card-title">Routers</div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" style="border:none;margin-bottom:0">
+            <thead><tr><th>Name</th><th>Status</th><th>Admin</th><th>External Network</th><th>Interfaces</th><th>Routes</th></tr></thead>
+            <tbody>
+              ${routers.map((item) => `<tr class="${projectDetailState.kind === 'routers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('routers','${escAttr(item.id)}')">
+                <td>${renderObjectLink(item.name || item.id, `selectProjectDetailById('routers','${escAttr(item.id)}')`)}</td>
+                <td>${esc(item.status || 'UNKNOWN')}</td>
+                <td>${esc(item.admin_state || '—')}</td>
+                <td>${esc(item.external_network_name || item.external_network_id || '—')}</td>
+                <td>${esc(String(item.interface_count || 0))}</td>
+                <td>${esc(String(item.route_count || 0))}</td>
+              </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No routers match the current filter.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (activeProjectNetworkingView === 'ports') {
+    table = `
+      <div class="card">
+        <div class="card-title">Ports</div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" style="border:none;margin-bottom:0">
+            <thead><tr><th>Name</th><th>Status</th><th>Network</th><th>Fixed IPs</th><th>Attached</th><th>Router</th><th>Floating IPs</th></tr></thead>
+            <tbody>
+              ${ports.map((item) => `<tr class="${projectDetailState.kind === 'ports' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('ports','${escAttr(item.id)}')">
+                <td><div>${esc(item.name || item.id)}</div><div class="uuid-short">${esc(item.id || '')}</div></td>
+                <td>${esc(item.status || 'UNKNOWN')}</td>
+                <td>${item.network_id ? renderObjectLink(item.network_name || item.network_id, `navigateToNetworkDetail('${escAttr(item.network_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
+                <td style="font-family:monospace;font-size:10px">${esc((item.fixed_ip_addresses || []).join(', ') || '—')}</td>
+                <td>${item.attached_kind === 'instance' && item.attached_id && item.compute_host
+                  ? renderObjectLink(item.attached_name || item.attached_id, `navigateToInstanceDetail('${escAttr(item.attached_id)}','${escAttr(item.compute_host)}')`)
+                  : item.attached_kind === 'router' && item.attached_id
+                    ? renderObjectLink(item.attached_name || item.attached_id, `navigateToRouterDetail('${escAttr(item.attached_id)}')`)
+                    : item.attached_kind === 'load-balancer' && item.attached_id
+                      ? renderObjectLink(item.attached_name || item.attached_id, `navigateToLoadBalancerDetail('${escAttr(item.attached_id)}')`)
+                      : esc(item.attached_name || item.attached_id || '—')}</td>
+                <td>${item.connected_router_id ? renderObjectLink(item.connected_router_name || item.connected_router_id, `navigateToRouterDetail('${escAttr(item.connected_router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
+                <td style="font-family:monospace;font-size:10px">${esc((item.floating_ips || []).map((ip) => ip.address).join(', ') || '—')}</td>
+              </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:16px">No ports match the current filter.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (activeProjectNetworkingView === 'floatingips') {
+    table = `
+      <div class="card">
+        <div class="card-title">Floating IPs</div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" style="border:none;margin-bottom:0">
+            <thead><tr><th>Floating IP</th><th>Fixed IP</th><th>Status</th><th>Network</th><th>Instance</th><th>Port</th></tr></thead>
+            <tbody>
+              ${floatingIps.map((item) => `<tr class="${projectDetailState.kind === 'floatingips' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('floatingips','${escAttr(item.id)}')">
+                <td>${esc(item.floating_ip_address || '—')}</td><td>${esc(item.fixed_ip_address || '—')}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.floating_network_name || item.floating_network_id || '—')}</td><td>${item.instance_id && item.compute_host ? renderObjectLink(item.instance_name || item.instance_id, `navigateToInstanceDetail('${escAttr(item.instance_id)}','${escAttr(item.compute_host)}')`) : esc(item.instance_name || '—')}</td><td>${item.port_id ? renderObjectLink((item.port_id || '').slice(0, 12), `navigateToPortDetail('${escAttr(item.port_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
+              </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No floating IPs match the current filter.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else {
+    table = `
+      <div class="card">
+        <div class="card-title">Load Balancers</div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" style="border:none;margin-bottom:0">
+            <thead><tr><th>Name</th><th>VIP</th><th>Floating IP</th><th>Status</th><th>Pools</th></tr></thead>
+            <tbody>
+              ${loadBalancers.map((item) => `<tr class="${projectDetailState.kind === 'loadbalancers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('loadbalancers','${escAttr(item.id)}')">
+                <td>${esc(item.name || item.id)}</td><td>${esc(item.vip_address || '—')}</td><td>${esc(item.floating_ip || '—')}</td><td>${esc(item.operating_status || 'UNKNOWN')} / ${esc(item.provisioning_status || 'UNKNOWN')}</td><td>${esc(String(item.pool_count || 0))}</td>
+              </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No load balancers match the current filter.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
   return `
-    ${renderProjectToolbar('Networking', networks.length + routers.length + floatingIps.length + loadBalancers.length, 'Filter networking…')}
-    <div class="card" style="margin-bottom:10px">
-      <div class="card-title">Networks</div>
-      <div class="card-body" style="padding:0">
-        <table class="data-table" style="border:none;margin-bottom:0">
-          <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Subnets</th><th>Router</th></tr></thead>
-          <tbody>
-            ${networks.map((item) => `<tr class="${projectDetailState.kind === 'networks' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('networks','${escAttr(item.id)}')">
-              <td>${esc(item.name || item.id)}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.network_type || '—')}</td><td>${esc(String(item.subnet_count ?? 0))}</td><td>${item.router_id ? renderObjectLink(item.router_id, `navigateToRouterDetail('${escAttr(item.router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
-            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No networks match the current filter.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:10px">
-      <div class="card-title">Routers</div>
-      <div class="card-body" style="padding:0">
-        <table class="data-table" style="border:none;margin-bottom:0">
-          <thead><tr><th>Name</th><th>Status</th><th>Admin</th><th>External Network</th><th>Interfaces</th><th>Routes</th></tr></thead>
-          <tbody>
-            ${routers.map((item) => `<tr style="cursor:pointer" onclick="navigateToRouterDetail('${escAttr(item.id)}')">
-              <td>${renderObjectLink(item.name || item.id, `navigateToRouterDetail('${escAttr(item.id)}')`)}</td>
-              <td>${esc(item.status || 'UNKNOWN')}</td>
-              <td>${esc(item.admin_state || '—')}</td>
-              <td>${esc(item.external_network_name || item.external_network_id || '—')}</td>
-              <td>${esc(String(item.interface_count || 0))}</td>
-              <td>${esc(String(item.route_count || 0))}</td>
-            </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No routers match the current filter.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:10px">
-      <div class="card-title">Floating IPs</div>
-      <div class="card-body" style="padding:0">
-        <table class="data-table" style="border:none;margin-bottom:0">
-          <thead><tr><th>Floating IP</th><th>Fixed IP</th><th>Status</th><th>Network</th><th>Port</th></tr></thead>
-          <tbody>
-            ${floatingIps.map((item) => `<tr class="${projectDetailState.kind === 'floatingips' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('floatingips','${escAttr(item.id)}')">
-              <td>${esc(item.floating_ip_address || '—')}</td><td>${esc(item.fixed_ip_address || '—')}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.floating_network_name || item.floating_network_id || '—')}</td><td><span class="uuid-short" title="${esc(item.port_id || '')}">${esc((item.port_id || '').slice(0, 12) || '—')}</span></td>
-            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No floating IPs match the current filter.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Load Balancers</div>
-      <div class="card-body" style="padding:0">
-        <table class="data-table" style="border:none;margin-bottom:0">
-          <thead><tr><th>Name</th><th>VIP</th><th>Floating IP</th><th>Status</th><th>Pools</th></tr></thead>
-          <tbody>
-            ${loadBalancers.map((item) => `<tr class="${projectDetailState.kind === 'loadbalancers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('loadbalancers','${escAttr(item.id)}')">
-              <td>${esc(item.name || item.id)}</td><td>${esc(item.vip_address || '—')}</td><td>${esc(item.floating_ip || '—')}</td><td>${esc(item.operating_status || 'UNKNOWN')} / ${esc(item.provisioning_status || 'UNKNOWN')}</td><td>${esc(String(item.pool_count || 0))}</td>
-            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No load balancers match the current filter.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    ${renderProjectToolbar('Networking', activeCount, 'Filter networking…')}
+    ${familyNav}
+    ${table}
   `;
 }
 
@@ -644,6 +733,11 @@ function renderProjectStorage(inv) {
   const items = projectFilterRows(inv.volumes || [], ['name', 'status', 'volume_type', 'backend_name'], projectInventoryState.filter);
   return `
     ${renderProjectToolbar('Storage', items.length, 'Filter volumes…')}
+    <div class="project-subnav">
+      <button class="project-subnav-item ${activeProjectStorageView === 'volumes' ? 'active' : ''}" onclick="switchProjectStorageView('volumes')">💿 Volumes <span>${items.length}</span></button>
+      <button class="project-subnav-item future" disabled>📸 Snapshots <span>Later</span></button>
+      <button class="project-subnav-item future" disabled>🛟 Backups <span>Later</span></button>
+    </div>
     <table class="data-table">
       <thead><tr><th>Name</th><th>Status</th><th>Size</th><th>Type</th><th>Backend</th><th>Attached</th></tr></thead>
       <tbody>
@@ -722,8 +816,9 @@ function renderProjectQuota(inv) {
       ${renderOverviewCard('Project Networking', [
         { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
         { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
+        { label: 'Ports', value: projectValue(summary.port_count || 0, stats.networkingLoaded) },
         { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
-        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) },
+        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) }
       ])}
     </div>
     ${renderQuotaSection('Compute Quotas', quotas.compute || {})}
@@ -845,6 +940,32 @@ function renderProjectDetailDrawer() {
       <div class="mrow"><span class="ml">Type</span><span class="mv">${esc(item.network_type || '—')}</span></div>
       <div class="mrow"><span class="ml">Subnets</span><span class="mv">${esc(String((detail.subnets || []).length || item.subnet_count || 0))}</span></div>
     </div></div>`;
+  } else if (projectDetailState.kind === 'routers') {
+    body = `<div class="card"><div class="card-title">Router</div><div class="card-body">
+      <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(detail.name || detail.id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(detail.status || 'UNKNOWN')}</span></div>
+      <div class="mrow"><span class="ml">Admin</span><span class="mv">${esc(detail.admin_state || '—')}</span></div>
+      <div class="mrow"><span class="ml">External Network</span><span class="mv">${esc(detail.external_network_name || detail.external_network_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Interfaces</span><span class="mv">${esc(String(detail.interface_count || 0))}</span></div>
+      <div class="mrow"><span class="ml">Routes</span><span class="mv">${esc(String(detail.route_count || 0))}</span></div>
+    </div></div>`;
+  } else if (projectDetailState.kind === 'ports') {
+    body = `<div class="card"><div class="card-title">Port</div><div class="card-body">
+      <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(detail.name || detail.id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(detail.status || 'UNKNOWN')}</span></div>
+      <div class="mrow"><span class="ml">Network</span><span class="mv">${detail.network_id ? renderObjectLink(detail.network_name || detail.network_id, `navigateToNetworkDetail('${escAttr(detail.network_id)}')`) : '—'}</span></div>
+      <div class="mrow"><span class="ml">Attached</span><span class="mv">${detail.attached_kind === 'instance' && detail.attached_id && detail.compute_host
+        ? renderObjectLink(detail.attached_name || detail.attached_id, `navigateToInstanceDetail('${escAttr(detail.attached_id)}','${escAttr(detail.compute_host)}')`)
+        : detail.attached_kind === 'router' && detail.attached_id
+          ? renderObjectLink(detail.attached_name || detail.attached_id, `navigateToRouterDetail('${escAttr(detail.attached_id)}')`)
+          : detail.attached_kind === 'load-balancer' && detail.attached_id
+            ? renderObjectLink(detail.attached_name || detail.attached_id, `navigateToLoadBalancerDetail('${escAttr(detail.attached_id)}')`)
+            : esc(detail.attached_name || detail.attached_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Router</span><span class="mv">${detail.connected_router_id ? renderObjectLink(detail.connected_router_name || detail.connected_router_id, `navigateToRouterDetail('${escAttr(detail.connected_router_id)}')`) : '—'}</span></div>
+      <div class="mrow"><span class="ml">Fixed IPs</span><span class="mv mono">${esc((detail.fixed_ip_addresses || []).join(', ') || '—')}</span></div>
+      <div class="mrow"><span class="ml">Floating IPs</span><span class="mv mono">${esc((detail.floating_ips || []).map((ip) => ip.address).join(', ') || '—')}</span></div>
+      <div class="mrow"><span class="ml">Security Groups</span><span class="mv">${(detail.security_groups || []).length ? (detail.security_groups || []).map((group) => renderObjectLink(group.name || group.id, `switchNetworkingSection('securitygroups');selectSecurityGroup('${escAttr(group.id)}')`)).join(', ') : '—'}</span></div>
+    </div></div>`;
   } else if (projectDetailState.kind === 'securitygroups') {
     body = `<div class="card"><div class="card-title">Security Group</div><div class="card-body">
       <div class="mrow"><span class="ml">Name</span><span class="mv">${esc(detail.name || detail.id || '—')}</span></div>
@@ -858,7 +979,8 @@ function renderProjectDetailDrawer() {
       <div class="mrow"><span class="ml">Fixed IP</span><span class="mv">${esc(detail.fixed_ip_address || '—')}</span></div>
       <div class="mrow"><span class="ml">Status</span><span class="mv">${esc(detail.status || 'UNKNOWN')}</span></div>
       <div class="mrow"><span class="ml">Network</span><span class="mv">${esc(detail.floating_network_name || detail.floating_network_id || '—')}</span></div>
-      <div class="mrow"><span class="ml">Port</span><span class="mv mono">${esc(detail.port_id || '—')}</span></div>
+      <div class="mrow"><span class="ml">Instance</span><span class="mv">${detail.instance_id && detail.compute_host ? renderObjectLink(detail.instance_name || detail.instance_id, `navigateToInstanceDetail('${escAttr(detail.instance_id)}','${escAttr(detail.compute_host)}')`) : esc(detail.instance_name || '—')}</span></div>
+      <div class="mrow"><span class="ml">Port</span><span class="mv">${detail.port_id ? renderObjectLink(detail.port_id, `navigateToPortDetail('${escAttr(detail.port_id)}')`) : '—'}</span></div>
     </div></div>`;
   } else if (projectDetailState.kind === 'loadbalancers') {
     body = `<div class="card"><div class="card-title">Load Balancer</div><div class="card-body">
@@ -872,7 +994,7 @@ function renderProjectDetailDrawer() {
   wrap.innerHTML = `
     <div class="net-detail-inner">
       <div class="net-detail-head">
-        <strong style="font-size:13px">${esc(projectDetailState.kind === 'securitygroups' ? 'Security Group' : projectDetailState.kind === 'floatingips' ? 'Floating IP' : projectDetailState.kind === 'loadbalancers' ? 'Load Balancer' : projectDetailState.kind === 'networks' ? 'Network' : projectDetailState.kind === 'volumes' ? 'Volume' : 'Instance')} Detail</strong>
+        <strong style="font-size:13px">${esc(projectDetailState.kind === 'securitygroups' ? 'Security Group' : projectDetailState.kind === 'floatingips' ? 'Floating IP' : projectDetailState.kind === 'loadbalancers' ? 'Load Balancer' : projectDetailState.kind === 'networks' ? 'Network' : projectDetailState.kind === 'routers' ? 'Router' : projectDetailState.kind === 'ports' ? 'Port' : projectDetailState.kind === 'volumes' ? 'Volume' : 'Instance')} Detail</strong>
         <div style="display:flex;gap:6px;align-items:center">
           ${projectDetailState.kind === 'instances' && !isAmphoraInstance(detail || item) ? `<button class="btn" style="padding:1px 7px;font-size:11px" onclick="cloneProjectInstance('${escAttr(detail.id || item.id || '')}')">Clone</button>` : ''}
           <button class="btn" style="padding:1px 7px;font-size:11px" onclick="projectDetailState.kind='';projectDetailState.item=null;projectDetailState.data=null;projectDetailState.error=null;renderProjectsWorkspace()">✕</button>
