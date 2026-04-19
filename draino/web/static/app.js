@@ -364,4 +364,5 @@ initNetworkingDetailResizer();
 initStorageDetailResizer();
 initProjectsDetailResizer();
 initPollingInterval();
+if (typeof initGlobalSearch === 'function') initGlobalSearch();
 bootstrapSession();

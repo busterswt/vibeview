@@ -27,7 +27,10 @@
     <a data-view="monitor"                       onclick="switchView('monitor')">Monitor</a>
   </nav>
   <div class="top-right">
-    <input class="top-search" type="text" placeholder="🔍  Search nodes, instances…" tabindex="-1">
+    <div class="top-search-shell">
+      <input id="global-search-input" class="top-search" type="text" placeholder="🔍  Search nodes, instances…" autocomplete="off" aria-label="Global search">
+      <div id="global-search-dropdown" class="global-search-dropdown" style="display:none"></div>
+    </div>
     <label class="polling-control" for="polling-select" title="Background refresh cadence for node inventory and VM list">
       <span>Polling</span>
       <select id="polling-select" onchange="setPollingInterval(this.value)">
@@ -588,6 +591,7 @@
     <script src="/static/app_k8s_resources_table.js"></script>
     <script src="/static/app_resources.js"></script>
 <script src="/static/app_projects.js"></script>
+<script src="/static/app_search.js"></script>
 <script src="/static/app_reports_openstack.js"></script>
 <script src="/static/app_reports_k8s.js"></script>
 <script src="/static/app_reports.js"></script>

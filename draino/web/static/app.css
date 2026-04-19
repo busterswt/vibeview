@@ -65,6 +65,94 @@ body {
   width: 190px; font-family: inherit; outline: none;
 }
 .top-search::placeholder { color: #78909c; }
+.top-search-shell {
+  position: relative;
+}
+.top-search:focus {
+  border-color: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.14);
+}
+.global-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 430px;
+  max-width: min(78vw, 430px);
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid #c9d4df;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(17, 31, 45, 0.28);
+  color: var(--text);
+  z-index: 1000;
+}
+.global-search-section {
+  padding: 10px 0 4px;
+}
+.global-search-section + .global-search-section {
+  border-top: 1px solid #edf1f5;
+}
+.global-search-section-title {
+  padding: 0 14px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.global-search-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.global-search-item:hover,
+.global-search-item.active {
+  background: #eef6ff;
+}
+.global-search-item-icon {
+  width: 22px;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+.global-search-item-copy {
+  min-width: 0;
+  flex: 1;
+}
+.global-search-item-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-search-item-subtext {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-search-empty,
+.global-search-meta {
+  padding: 12px 14px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.global-search-meta {
+  border-top: 1px solid #edf1f5;
+  background: #f9fbfd;
+}
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
 #clock  { color: #90a4ae; font-size: 12px; }
 #ws-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #b0bec5; }
