@@ -6,6 +6,7 @@ import os
 from collections.abc import Callable
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from ...operations import k8s_ops, openstack_ops
 from .api_issues import build_api_issue
@@ -28,6 +29,7 @@ from ..resource_helpers import (
     get_volume_snapshots,
     get_volumes,
     repair_subnet_metadata_port,
+    update_project_quota_limit,
 )
 
 router = APIRouter()
@@ -104,6 +106,51 @@ async def api_project_inventory(project_id: str, request: Request):
         }
     except Exception as exc:
         return {"inventory": None, "error": str(exc), "api_issue": build_api_issue("OpenStack", f"GET aggregated inventory for project {project_id}", exc)}
+
+
+@router.post("/api/projects/{project_id}/quota")
+async def api_project_quota_update(project_id: str, request: Request):
+    session = _require_session_record()(request)
+    if not session.is_admin:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "inventory": None,
+                "error": "Quota modification requires the OpenStack 'admin' role.",
+                "api_issue": None,
+            },
+        )
+    payload = await request.json()
+    section = str(payload.get("section") or "").strip().lower()
+    resource = str(payload.get("resource") or "").strip().lower()
+    limit = payload.get("limit")
+    service = {
+        "compute": "Nova",
+        "network": "Neutron",
+        "block_storage": "Cinder",
+    }.get(section, "OpenStack")
+    try:
+        data = await _run_with_timeout(
+            update_project_quota_limit,
+            project_id,
+            section,
+            resource,
+            limit,
+            session.server.openstack_auth,
+        )
+        return {"inventory": data, "error": None, "api_issue": None}
+    except TimeoutError:
+        return {
+            "inventory": None,
+            "error": f"Timed out after {_RESOURCE_DETAIL_TIMEOUT_SECONDS:.0f}s while updating project quota",
+            "api_issue": None,
+        }
+    except Exception as exc:
+        return {
+            "inventory": None,
+            "error": str(exc),
+            "api_issue": build_api_issue(service, f"PUT quota {section}.{resource} for project {project_id}", exc),
+        }
 
 
 @router.get("/api/instances/{instance_id}")

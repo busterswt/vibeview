@@ -13,7 +13,7 @@ let activeTab    = 'summary';
 let activeView   = 'infrastructure';
 let activeNetworkingView = 'networking';
 let activeStorageView = 'openstack-volumes';
-let activeProjectView = 'instances';
+let activeProjectView = 'overview';
 let ws           = null;
 let authReady    = false;
 let authInfo     = null;
@@ -203,8 +203,9 @@ const swiftState = { data: null, loading: false, page: 1, pageSize: 25, filter: 
 // Projects view state
 const projectsState = { data: null, loading: false, filter: '' };
 let selectedProjectId = '';
-const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '' };
+const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '', pending: {}, prefetched: {} };
 const projectDetailState = { kind: '', item: null, loading: false, data: null, error: null };
+const projectQuotaEditState = { section: '', resource: '', value: '', saving: false, error: '' };
 
 // Reports view state
 const reportState = {

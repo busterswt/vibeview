@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from draino.web import server as web_server
 from draino.web.api import resources as resource_api
+from draino.web import resource_helpers
 
 
 def test_networks_endpoint_returns_api_issue_on_neutron_failure(monkeypatch):
@@ -314,16 +315,10 @@ def test_projects_endpoints_return_inventory(monkeypatch):
     monkeypatch.setattr(
         resource_api,
         "get_project_inventory",
-        lambda project_id, auth=None, section="instances": {
+        lambda project_id, auth=None, section="overview": {
             "summary": {"project_id": project_id, "project_name": "production"},
-            "instances": [{"id": "vm-1", "name": "api-01"}],
-            "networks": [{"id": "net-1", "name": "prod-api"}],
-            "volumes": [{"id": "vol-1", "name": "rootdisk"}],
-            "security_groups": [{"id": "sg-1", "name": "web"}],
-            "floating_ips": [{"id": "fip-1", "floating_ip_address": "198.51.100.10"}],
-            "load_balancers": [{"id": "lb-1", "name": "public-lb"}],
-            "quotas": {"compute": {"instances": {"used": 4, "limit": 20}}},
-            "all_projects": True,
+            "instances": [{"id": "vm-1", "name": "api-01"}] if section == "instances" else [],
+            "quotas": {"compute": {"instances": {"used": 4, "limit": 20}}} if section == "quota" else {},
         },
     )
 
@@ -343,13 +338,265 @@ def test_projects_endpoints_return_inventory(monkeypatch):
         login = client.post("/api/session", json=payload)
         assert login.status_code == 200
         projects_resp = client.get("/api/projects")
-        inventory_resp = client.get("/api/projects/proj-1/inventory")
+        inventory_resp = client.get("/api/projects/proj-1/inventory?section=instances")
+        quota_resp = client.get("/api/projects/proj-1/inventory?section=quota")
 
     assert projects_resp.status_code == 200
     assert projects_resp.json()["projects"][0]["project_name"] == "production"
     assert inventory_resp.status_code == 200
     assert inventory_resp.json()["inventory"]["instances"][0]["id"] == "vm-1"
-    assert inventory_resp.json()["inventory"]["quotas"]["compute"]["instances"]["limit"] == 20
+    assert quota_resp.status_code == 200
+    assert quota_resp.json()["inventory"]["quotas"]["compute"]["instances"]["limit"] == 20
+
+
+def test_get_project_quota_summary_reads_usage_from_openstack_quota_set_shape(monkeypatch):
+    class FakeCompute:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            assert usage is True
+            return {
+                "id": project_id,
+                "instances": 100,
+                "cores": 200,
+                "ram": 102400,
+                "server_groups": 50,
+                "server_group_members": 20,
+                "usage": {
+                    "instances": 14,
+                    "cores": 17,
+                    "ram": 34816,
+                    "server_groups": 7,
+                    "server_group_members": 0,
+                },
+            }
+
+    class FakeNetwork:
+        def get_quota(self, project_id):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeBlockStorage:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            assert usage is True
+            return {}
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        block_storage = FakeBlockStorage()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    quotas = resource_helpers.get_project_quota_summary("proj-1", auth=None)
+
+    assert quotas["compute"]["instances"] == {"used": 14, "limit": 100}
+    assert quotas["compute"]["cores"] == {"used": 17, "limit": 200}
+    assert quotas["compute"]["ram"] == {"used": 34816, "limit": 102400}
+
+
+def test_get_project_quota_summary_reads_network_quota_details_shape(monkeypatch):
+    class FakeCompute:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeNetwork:
+        def get_quota(self, project_id, details=True):
+            assert project_id == "proj-1"
+            assert details is True
+            return {
+                "networks": {"limit": 10, "used": 3, "reserved": 0},
+                "subnets": {"limit": 10, "used": 4, "reserved": 0},
+                "ports": {"limit": 50, "used": 18, "reserved": 0},
+                "routers": {"limit": 5, "used": 1, "reserved": 0},
+                "floating_ips": {"limit": 20, "used": 2, "reserved": 0},
+                "security_groups": {"limit": 10, "used": 3, "reserved": 0},
+                "security_group_rules": {"limit": 100, "used": 12, "reserved": 0},
+                "load_balancers": {"limit": 5, "used": 1, "reserved": 0},
+                "listeners": {"limit": 10, "used": 2, "reserved": 0},
+                "pools": {"limit": 10, "used": 1, "reserved": 0},
+                "members": {"limit": 50, "used": 4, "reserved": 0},
+                "health_monitors": {"limit": 10, "used": 1, "reserved": 0},
+            }
+
+    class FakeBlockStorage:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        block_storage = FakeBlockStorage()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    quotas = resource_helpers.get_project_quota_summary("proj-1", auth=None)
+
+    assert quotas["network"]["network"] == {"used": 3, "limit": 10}
+    assert quotas["network"]["subnet"] == {"used": 4, "limit": 10}
+    assert quotas["network"]["port"] == {"used": 18, "limit": 50}
+    assert quotas["network"]["floatingip"] == {"used": 2, "limit": 20}
+    assert quotas["network"]["health_monitor"] == {"used": 1, "limit": 10}
+
+
+def test_get_project_quota_summary_reads_network_quota_details_object_shape(monkeypatch):
+    class FakeQuotaDetails:
+        def to_dict(self):
+            return {
+                "trunk": {"limit": -1, "used": 0, "reserved": 0},
+                "endpoint_group": {"limit": -1, "used": 0, "reserved": 0},
+                "vpnservice": {"limit": -1, "used": 0, "reserved": 0},
+                "ipsec_site_connection": {"limit": -1, "used": 0, "reserved": 0},
+                "ipsecpolicy": {"limit": -1, "used": 0, "reserved": 0},
+                "ikepolicy": {"limit": -1, "used": 0, "reserved": 0},
+                "floating_ips": {"limit": 50, "used": 13, "reserved": 0},
+                "health_monitors": None,
+                "listeners": None,
+                "load_balancers": None,
+                "l7_policies": None,
+                "networks": {"limit": 100, "used": 7, "reserved": 0},
+                "pools": None,
+                "ports": {"limit": 500, "used": 30, "reserved": 0},
+                "project_id": None,
+                "rbac_policies": {"limit": 10, "used": 1, "reserved": 0},
+                "routers": {"limit": 10, "used": 1, "reserved": 0},
+                "subnets": {"limit": 100, "used": 6, "reserved": 0},
+                "subnet_pools": {"limit": -1, "used": 0, "reserved": 0},
+                "security_group_rules": {"limit": 500, "used": 56, "reserved": 0},
+                "security_groups": {"limit": 100, "used": 12, "reserved": 0},
+            }
+
+    class FakeCompute:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeNetwork:
+        def get_quota(self, project_id, details=True):
+            assert project_id == "proj-1"
+            assert details is True
+            return FakeQuotaDetails()
+
+    class FakeBlockStorage:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        block_storage = FakeBlockStorage()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    quotas = resource_helpers.get_project_quota_summary("proj-1", auth=None)
+
+    assert quotas["network"]["network"] == {"used": 7, "limit": 100}
+    assert quotas["network"]["port"] == {"used": 30, "limit": 500}
+    assert quotas["network"]["floatingip"] == {"used": 13, "limit": 50}
+    assert quotas["network"]["rbac_policy"] == {"used": 1, "limit": 10}
+    assert quotas["network"]["subnet_pool"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["trunk"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["endpoint_group"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["vpnservice"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["ipsec_site_connection"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["ipsecpolicy"] == {"used": 0, "limit": -1}
+    assert quotas["network"]["ikepolicy"] == {"used": 0, "limit": -1}
+    assert "health_monitor" not in quotas["network"]
+    assert "load_balancer" not in quotas["network"]
+    assert "listener" not in quotas["network"]
+    assert "l7_policy" not in quotas["network"]
+    assert "pool" not in quotas["network"]
+
+
+def test_get_project_quota_summary_reads_network_quota_cli_list_shape(monkeypatch):
+    class FakeCompute:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeNetwork:
+        def get_quota(self, project_id, details=True):
+            assert project_id == "proj-1"
+            return [{
+                "Project ID": project_id,
+                "Floating IPs": 50,
+                "Networks": 100,
+                "Ports": 500,
+                "RBAC Policies": 10,
+                "Routers": 10,
+                "Security Groups": 100,
+                "Security Group Rules": 500,
+                "Subnets": 100,
+                "Subnet Pools": -1,
+            }]
+
+    class FakeBlockStorage:
+        def get_quota_set(self, project_id, usage=True):
+            assert project_id == "proj-1"
+            return {}
+
+    class FakeConn:
+        compute = FakeCompute()
+        network = FakeNetwork()
+        block_storage = FakeBlockStorage()
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+
+    quotas = resource_helpers.get_project_quota_summary("proj-1", auth=None)
+
+    assert quotas["network"]["network"] == {"used": None, "limit": 100}
+    assert quotas["network"]["subnet"] == {"used": None, "limit": 100}
+    assert quotas["network"]["port"] == {"used": None, "limit": 500}
+    assert quotas["network"]["router"] == {"used": None, "limit": 10}
+    assert quotas["network"]["floatingip"] == {"used": None, "limit": 50}
+    assert quotas["network"]["security_group"] == {"used": None, "limit": 100}
+    assert quotas["network"]["security_group_rule"] == {"used": None, "limit": 500}
+
+
+def test_get_project_inventory_backfills_compute_quota_usage_from_instances(monkeypatch):
+    class FakeConn:
+        current_project_id = "proj-1"
+        current_user_id = None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(resource_helpers, "_project_names", lambda conn: {"proj-1": "production"})
+    monkeypatch.setattr(
+        resource_helpers,
+        "_project_summary_header",
+        lambda conn, project_id, project_names: {"project_id": project_id, "project_name": "production"},
+    )
+    monkeypatch.setattr(
+        resource_helpers,
+        "get_project_quota_summary",
+        lambda project_id, auth=None: {
+            "compute": {
+                "instances": {"limit": 20, "used": None},
+                "cores": {"limit": 80, "used": None},
+                "ram": {"limit": 262144, "used": None},
+            },
+            "network": {},
+            "block_storage": {},
+        },
+    )
+    monkeypatch.setattr(
+        resource_helpers,
+        "get_project_instances",
+        lambda auth=None: [
+            {"project_id": "proj-1", "id": "vm-1", "vcpus": 4, "ram_mb": 8192},
+            {"project_id": "proj-1", "id": "vm-2", "vcpus": 8, "ram_mb": 16384},
+            {"project_id": "proj-2", "id": "vm-3", "vcpus": 2, "ram_mb": 4096},
+        ],
+    )
+    monkeypatch.setattr(web_server.openstack_ops, "get_project_vm_distribution", lambda auth=None: [])
+
+    inventory = resource_helpers.get_project_inventory("proj-1", auth=None, section="quota")
+
+    assert inventory["quotas"]["compute"]["instances"] == {"limit": 20, "used": 2}
+    assert inventory["quotas"]["compute"]["cores"] == {"limit": 80, "used": 12}
+    assert inventory["quotas"]["compute"]["ram"] == {"limit": 262144, "used": 24576}
 
 
 def test_project_inventory_endpoint_forwards_section(monkeypatch):
@@ -366,7 +613,7 @@ def test_project_inventory_endpoint_forwards_section(monkeypatch):
     monkeypatch.setattr(
         resource_api,
         "get_project_inventory",
-        lambda project_id, auth=None, section="instances": captured.update({"project_id": project_id, "section": section}) or {"summary": {"project_id": project_id}},
+        lambda project_id, auth=None, section="overview": captured.update({"project_id": project_id, "section": section}) or {"summary": {"project_id": project_id}},
     )
 
     payload = {
@@ -384,10 +631,90 @@ def test_project_inventory_endpoint_forwards_section(monkeypatch):
     with TestClient(web_server.fastapi_app) as client:
         login = client.post("/api/session", json=payload)
         assert login.status_code == 200
-        resp = client.get("/api/projects/proj-1/inventory?section=networks")
+        resp = client.get("/api/projects/proj-1/inventory?section=networking")
 
     assert resp.status_code == 200
-    assert captured == {"project_id": "proj-1", "section": "networks"}
+    assert captured == {"project_id": "proj-1", "section": "networking"}
+
+
+def test_project_quota_update_endpoint_requires_admin(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["member"])
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.post("/api/projects/proj-1/quota", json={"section": "compute", "resource": "instances", "limit": "24"})
+
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "Quota modification requires the OpenStack 'admin' role."
+
+
+def test_project_quota_update_endpoint_returns_fresh_inventory(monkeypatch):
+    monkeypatch.setattr(web_server.DrainoServer, "start_refresh", lambda self, cached_nodes=None, silent=False: None)
+    monkeypatch.setattr(web_server.k8s_ops, "get_nodes", lambda auth=None: [])
+
+    class FakeConn:
+        def authorize(self):
+            return None
+
+    captured = {}
+    monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "get_current_role_names", lambda auth=None: ["admin"])
+    monkeypatch.setattr(
+        resource_api,
+        "update_project_quota_limit",
+        lambda project_id, section, resource, limit, auth=None: captured.update({
+            "project_id": project_id,
+            "section": section,
+            "resource": resource,
+            "limit": limit,
+        }) or {
+            "summary": {"project_id": project_id, "project_name": "production"},
+            "quotas": {"compute": {"instances": {"used": 4, "limit": 24}}},
+            "placement": None,
+        },
+    )
+
+    payload = {
+        "kubernetes": {"server": "https://cluster.example:6443", "token": "token-1", "skip_tls_verify": False},
+        "openstack": {
+            "auth_url": "https://keystone.example/v3",
+            "username": "ops-user",
+            "password": "secret",
+            "project_name": "admin",
+            "user_domain_name": "Default",
+            "project_domain_name": "Default",
+        },
+    }
+
+    with TestClient(web_server.fastapi_app) as client:
+        login = client.post("/api/session", json=payload)
+        assert login.status_code == 200
+        resp = client.post("/api/projects/proj-1/quota", json={"section": "compute", "resource": "instances", "limit": "24"})
+
+    assert resp.status_code == 200
+    assert captured == {"project_id": "proj-1", "section": "compute", "resource": "instances", "limit": "24"}
+    assert resp.json()["inventory"]["quotas"]["compute"]["instances"]["limit"] == 24
 
 
 def test_projects_endpoint_forwards_search(monkeypatch):

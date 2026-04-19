@@ -4,21 +4,40 @@ let projectSearchTimer = null;
 
 function projectViewLabel(name = activeProjectView) {
   return ({
+    overview: 'Overview',
     instances: 'Instances',
-    networks: 'Networks',
-    volumes: 'Volumes',
-    securitygroups: 'Security Groups',
-    floatingips: 'Floating IPs',
-    loadbalancers: 'Load Balancers',
+    networking: 'Networking',
+    storage: 'Storage',
+    security: 'Security',
     quota: 'Quota + Capacity',
   })[name] || 'Projects';
 }
 
+function projectSectionKey(name = activeProjectView) {
+  return ({
+    overview: 'overview',
+    instances: 'instances',
+    networking: 'networking',
+    storage: 'storage',
+    security: 'security',
+    quota: 'quota',
+  })[name] || 'overview';
+}
+
+function resetProjectQuotaEditor() {
+  projectQuotaEditState.section = '';
+  projectQuotaEditState.resource = '';
+  projectQuotaEditState.value = '';
+  projectQuotaEditState.saving = false;
+  projectQuotaEditState.error = '';
+}
+
 function switchProjectSection(name) {
-  const valid = ['instances', 'networks', 'volumes', 'securitygroups', 'floatingips', 'loadbalancers', 'quota'];
+  const valid = ['overview', 'instances', 'networking', 'storage', 'security', 'quota'];
   if (!valid.includes(name)) return;
   activeProjectView = name;
   projectInventoryState.filter = '';
+  resetProjectQuotaEditor();
   projectDetailState.kind = '';
   projectDetailState.item = null;
   projectDetailState.loading = false;
@@ -26,13 +45,13 @@ function switchProjectSection(name) {
   projectDetailState.error = null;
   if (activeView === 'projects') {
     renderProjectsWorkspace();
-    if (selectedProjectId) loadProjectInventory(selectedProjectId, name);
+    if (selectedProjectId) loadProjectInventory(selectedProjectId, projectSectionKey(name));
   }
 }
 
 function projectFilterRows(items, fields, filter) {
   const q = String(filter || '').trim().toLowerCase();
-  if (!q) return items;
+  if (!q) return items || [];
   return (items || []).filter((item) => fields.some((field) => String(item?.[field] || '').toLowerCase().includes(q)));
 }
 
@@ -40,31 +59,174 @@ function projectSelectedRecord() {
   return (projectsState.data || []).find((item) => item.project_id === selectedProjectId) || null;
 }
 
-function projectInventory() {
+function projectInventory(section = activeProjectView) {
   if (!selectedProjectId) return null;
   const cache = projectInventoryState.sections[selectedProjectId] || {};
-  const section = activeProjectView === 'quota' ? 'quota' : activeProjectView;
-  return cache[section] || null;
+  return cache[projectSectionKey(section)] || null;
 }
 
-function projectItemsForView(view = activeProjectView) {
-  const inv = projectInventory();
-  if (!inv) return [];
-  if (view === 'instances') return inv.instances || [];
-  if (view === 'networks') return inv.networks || [];
-  if (view === 'volumes') return inv.volumes || [];
-  if (view === 'securitygroups') return inv.security_groups || [];
-  if (view === 'floatingips') return inv.floating_ips || [];
-  if (view === 'loadbalancers') return inv.load_balancers || [];
-  return [];
+function projectInventoryForView(section = activeProjectView) {
+  const inv = projectInventory(section);
+  if (inv) return inv;
+  if (section === 'quota') {
+    const overview = projectInventory('overview');
+    if (overview?.overview) {
+      return {
+        summary: overview.summary || {},
+        quotas: overview.overview.quotas || {},
+        placement: overview.overview.placement || null,
+      };
+    }
+  }
+  return null;
 }
 
-function findProjectItem(kind, id) {
-  return projectItemsForView(kind).find((item) => item.id === id) || null;
+function projectSectionCache(projectId = selectedProjectId) {
+  return projectInventoryState.sections[projectId] || {};
 }
 
-function projectSummaryValue(summary, key) {
-  return Number(summary?.[key] || 0);
+function isProjectSectionLoading(projectId, section) {
+  const key = projectSectionKey(section);
+  return Boolean(projectInventoryState.pending?.[projectId]?.[key]);
+}
+
+function projectHasBackgroundLoading(projectId, activeSection = activeProjectView) {
+  const pending = projectInventoryState.pending?.[projectId] || {};
+  const activeKey = projectSectionKey(activeSection);
+  return Object.keys(pending).some((key) => key !== activeKey && pending[key]);
+}
+
+function projectOverviewStats(projectId = selectedProjectId) {
+  const cache = projectSectionCache(projectId);
+  const overview = cache.overview?.overview || {};
+  const instances = cache.instances?.instances || [];
+  const networking = cache.networking || {};
+  const storage = cache.storage || {};
+  const security = cache.security || {};
+  const quotas = cache.quota?.quotas || overview.quotas || {};
+  const placement = cache.quota?.placement || overview.placement || null;
+  const activeInstances = instances.filter((item) => item.status === 'ACTIVE');
+  const errorInstances = instances.filter((item) => item.status === 'ERROR');
+  return {
+    instancesLoaded: Boolean(cache.instances),
+    networkingLoaded: Boolean(cache.networking),
+    storageLoaded: Boolean(cache.storage),
+    securityLoaded: Boolean(cache.security),
+    quotaLoaded: Boolean(cache.quota || cache.overview),
+    instanceCount: instances.length,
+    activeInstanceCount: activeInstances.length,
+    errorInstanceCount: errorInstances.length,
+    cloneCandidateCount: activeInstances.filter((item) => !String(item.name || '').startsWith('amphora-')).length,
+    vcpuCount: instances.reduce((sum, item) => sum + Number(item.vcpus || 0), 0),
+    ramMb: instances.reduce((sum, item) => sum + Number(item.ram_mb || 0), 0),
+    networkCount: (networking.networks || []).length,
+    routerCount: (networking.routers || []).length,
+    floatingIpCount: (networking.floating_ips || []).length,
+    loadBalancerCount: (networking.load_balancers || []).length,
+    volumeCount: (storage.volumes || []).length,
+    securityGroupCount: (security.security_groups || []).length,
+    quotas,
+    placement,
+  };
+}
+
+function projectSummary(summary, inv = null) {
+  const stats = projectOverviewStats((inv?.summary?.project_id || summary?.project_id || selectedProjectId));
+  return {
+    ...(projectSelectedRecord() || {}),
+    ...(inv?.summary || {}),
+    ...(summary || {}),
+    ...(stats.instancesLoaded ? {
+      instance_count: stats.instanceCount,
+      active_instance_count: stats.activeInstanceCount,
+      error_instance_count: stats.errorInstanceCount,
+      clone_candidate_count: stats.cloneCandidateCount,
+      vcpu_count: stats.vcpuCount,
+      ram_mb: stats.ramMb,
+    } : {}),
+    ...(stats.networkingLoaded ? {
+      network_count: stats.networkCount,
+      router_count: stats.routerCount,
+      floating_ip_count: stats.floatingIpCount,
+      load_balancer_count: stats.loadBalancerCount,
+    } : {}),
+    ...(stats.storageLoaded ? {
+      volume_count: stats.volumeCount,
+    } : {}),
+    ...(stats.securityLoaded ? {
+      security_group_count: stats.securityGroupCount,
+    } : {}),
+    ...(stats.placement ? {
+      host_count: stats.placement.host_count,
+      top_host: stats.placement.top_host,
+      top_host_pct: stats.placement.top_host_pct,
+    } : {}),
+  };
+}
+
+function projectValue(value, loaded, suffix = '') {
+  if (!loaded) return '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>';
+  return esc(`${value}${suffix}`);
+}
+
+function openProjectQuotaEditor(section, resource, currentLimit) {
+  if (!authInfo?.is_admin) return;
+  projectQuotaEditState.section = section;
+  projectQuotaEditState.resource = resource;
+  projectQuotaEditState.value = currentLimit == null ? '' : String(currentLimit);
+  projectQuotaEditState.saving = false;
+  projectQuotaEditState.error = '';
+  renderProjectsWorkspace();
+}
+
+function updateProjectQuotaEditorValue(value) {
+  projectQuotaEditState.value = value;
+}
+
+async function saveProjectQuotaEdit() {
+  if (!authInfo?.is_admin || !selectedProjectId || projectQuotaEditState.saving) return;
+  const section = projectQuotaEditState.section;
+  const resource = projectQuotaEditState.resource;
+  if (!section || !resource) return;
+  projectQuotaEditState.saving = true;
+  projectQuotaEditState.error = '';
+  renderProjectsWorkspace();
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(selectedProjectId)}/quota`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        section,
+        resource,
+        limit: projectQuotaEditState.value,
+      }),
+    });
+    const json = await resp.json();
+    if (json.api_issue) recordApiIssue(json.api_issue);
+    else if (section === 'compute') recordApiSuccess('Nova');
+    else if (section === 'network') recordApiSuccess('Neutron');
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+    projectInventoryState.sections[selectedProjectId] = {
+      ...(projectInventoryState.sections[selectedProjectId] || {}),
+      quota: json.inventory || null,
+    };
+    resetProjectQuotaEditor();
+    renderProjectsWorkspace();
+    loadProjectInventory(selectedProjectId, 'overview', true);
+  } catch (err) {
+    projectQuotaEditState.error = String(err);
+    projectQuotaEditState.saving = false;
+    renderProjectsWorkspace();
+  }
+}
+
+function prefetchProjectDetails(projectId) {
+  if (!projectId) return;
+  if (projectInventoryState.prefetched?.[projectId]) return;
+  projectInventoryState.prefetched = { ...(projectInventoryState.prefetched || {}), [projectId]: true };
+  ['instances', 'networking', 'storage', 'security', 'quota'].forEach((section) => {
+    if (!projectSectionCache(projectId)[section]) loadProjectInventory(projectId, section);
+  });
 }
 
 function projectSearchChanged(value) {
@@ -101,51 +263,67 @@ async function loadProjects(force = false) {
   } finally {
     projectsState.loading = false;
     renderProjectsWorkspace();
-    if (selectedProjectId) loadProjectInventory(selectedProjectId, activeProjectView);
+    if (selectedProjectId) {
+      loadProjectInventory(selectedProjectId, projectSectionKey(activeProjectView));
+      prefetchProjectDetails(selectedProjectId);
+    }
   }
 }
 
-async function loadProjectInventory(projectId, section = activeProjectView, force = false) {
+async function loadProjectInventory(projectId, section = projectSectionKey(activeProjectView), force = false) {
   if (!projectId) return;
-  const normalizedSection = section === 'quota' ? 'quota' : section;
+  const key = projectSectionKey(section);
   const cache = projectInventoryState.sections[projectId] || {};
-  if (projectInventoryState.loading && projectInventoryState.projectId === projectId && projectInventoryState.activeSection === normalizedSection) return;
-  if (cache[normalizedSection] && !force) {
+  if (isProjectSectionLoading(projectId, key)) return;
+  if (cache[key] && !force) {
     renderProjectsWorkspace();
     return;
   }
-  projectInventoryState.loading = true;
   projectInventoryState.projectId = projectId;
-  projectInventoryState.activeSection = normalizedSection;
+  projectInventoryState.activeSection = key;
+  projectInventoryState.pending = {
+    ...(projectInventoryState.pending || {}),
+    [projectId]: {
+      ...(projectInventoryState.pending?.[projectId] || {}),
+      [key]: true,
+    },
+  };
+  projectInventoryState.loading = true;
   renderProjectsWorkspace();
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/inventory?section=${encodeURIComponent(normalizedSection)}`);
+    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/inventory?section=${encodeURIComponent(key)}`);
     const json = await resp.json();
     if (json.api_issue) recordApiIssue(json.api_issue);
     else recordApiSuccess('OpenStack');
     if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
-    const nextCache = projectInventoryState.sections[projectId] || {};
     projectInventoryState.sections[projectId] = {
-      ...nextCache,
-      [normalizedSection]: json.inventory || null,
+      ...(projectInventoryState.sections[projectId] || {}),
+      [key]: json.inventory || null,
     };
   } catch (err) {
-    const nextCache = projectInventoryState.sections[projectId] || {};
     projectInventoryState.sections[projectId] = {
-      ...nextCache,
-      [normalizedSection]: null,
+      ...(projectInventoryState.sections[projectId] || {}),
+      [key]: null,
     };
     onLog?.({ node: '-', message: `Project inventory API error: ${err}`, color: 'error' });
   } finally {
-    projectInventoryState.loading = false;
+    if (projectInventoryState.pending?.[projectId]) {
+      const nextPending = { ...(projectInventoryState.pending[projectId] || {}) };
+      delete nextPending[key];
+      projectInventoryState.pending = {
+        ...(projectInventoryState.pending || {}),
+        [projectId]: nextPending,
+      };
+    }
+    projectInventoryState.loading = Object.values(projectInventoryState.pending || {}).some((items) => Object.values(items || {}).some(Boolean));
     renderProjectsWorkspace();
   }
 }
 
 function refreshActiveProjectView() {
-  if (projectsState.loading || projectInventoryState.loading) return;
+  if (projectsState.loading) return;
   if (!projectsState.data) return loadProjects(true);
-  if (selectedProjectId) return loadProjectInventory(selectedProjectId, activeProjectView, true);
+  if (selectedProjectId) return loadProjectInventory(selectedProjectId, projectSectionKey(activeProjectView), true);
   return loadProjects(true);
 }
 
@@ -155,6 +333,7 @@ function selectProject(projectId) {
     return;
   }
   selectedProjectId = projectId;
+  resetProjectQuotaEditor();
   projectInventoryState.projectId = projectId;
   projectDetailState.kind = '';
   projectDetailState.item = null;
@@ -162,62 +341,37 @@ function selectProject(projectId) {
   projectDetailState.data = null;
   projectDetailState.error = null;
   renderProjectsWorkspace();
-  loadProjectInventory(projectId, activeProjectView, true);
-}
-
-function projectCounts(inv) {
-  const summary = inv?.summary || projectSelectedRecord() || {};
-  return {
-    instances: projectSummaryValue(summary, 'instance_count'),
-    networks: projectSummaryValue(summary, 'network_count'),
-    volumes: projectSummaryValue(summary, 'volume_count'),
-    securitygroups: projectSummaryValue(summary, 'security_group_count'),
-    floatingips: projectSummaryValue(summary, 'floating_ip_count'),
-    loadbalancers: projectSummaryValue(summary, 'load_balancer_count'),
-  };
+  loadProjectInventory(projectId, projectSectionKey(activeProjectView), true);
+  prefetchProjectDetails(projectId);
 }
 
 function renderProjectsSidebar() {
   const wrap = document.getElementById('projects-sidebar');
   if (!wrap) return;
-  const projects = projectFilterRows(projectsState.data || [], ['project_name', 'project_id', 'description'], projectsState.filter);
-  const inv = projectInventory();
-  const counts = projectCounts(inv);
+  const projects = projectsState.data || [];
   wrap.innerHTML = `
     <div class="sidebar-head">Navigator — Projects</div>
     <div class="project-sidebar-filter">
       <input class="dv-filter" type="text" placeholder="Filter projects…" value="${esc(projectsState.filter || '')}" oninput="projectSearchChanged(this.value)">
     </div>
-    <div class="networking-section-label">Project Views</div>
-    <div class="project-nav-item ${activeProjectView === 'instances' ? 'selected' : ''}" onclick="switchProjectSection('instances')"><span>🖥️</span> Instances <span class="tree-badge">${counts.instances || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'networks' ? 'selected' : ''}" onclick="switchProjectSection('networks')"><span>🌐</span> Networks <span class="tree-badge">${counts.networks || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'volumes' ? 'selected' : ''}" onclick="switchProjectSection('volumes')"><span>💿</span> Volumes <span class="tree-badge">${counts.volumes || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'securitygroups' ? 'selected' : ''}" onclick="switchProjectSection('securitygroups')"><span>🛡️</span> Security Groups <span class="tree-badge">${counts.securitygroups || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'floatingips' ? 'selected' : ''}" onclick="switchProjectSection('floatingips')"><span>📍</span> Floating IPs <span class="tree-badge">${counts.floatingips || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'loadbalancers' ? 'selected' : ''}" onclick="switchProjectSection('loadbalancers')"><span>⚖️</span> Load Balancers <span class="tree-badge">${counts.loadbalancers || ''}</span></div>
-    <div class="project-nav-item ${activeProjectView === 'quota' ? 'selected' : ''}" onclick="switchProjectSection('quota')"><span>📊</span> Quota + Capacity</div>
-    <div class="networking-section-label">Projects</div>
     <div class="project-sidebar-list">
-      ${(projectsState.loading && !projectsState.data) ? '<div class="project-sidebar-empty"><span class="spinner">⟳</span> Loading projects…</div>' : ''}
+      ${(projectsState.loading && !projects.length) ? '<div class="project-sidebar-empty"><span class="spinner">⟳</span> Loading projects…</div>' : ''}
       ${projects.map((item) => `
         <div class="project-record ${selectedProjectId === item.project_id ? 'selected' : ''}" onclick="selectProject('${escAttr(item.project_id)}')">
           <div class="project-record-name">${esc(item.project_name || item.project_id)}</div>
           <div class="project-record-meta">${esc(item.project_id || '')}</div>
-          <div class="project-record-pills">
-            <span class="tree-badge">${esc(String(item.instance_count || 0))} vm</span>
-            <span class="tree-badge">${esc(String(item.network_count || 0))} net</span>
-            <span class="tree-badge">${esc(String(item.volume_count || 0))} vol</span>
-          </div>
+          ${item.description ? `<div class="project-record-meta">${esc(item.description)}</div>` : ''}
         </div>
       `).join('') || (!projectsState.loading ? '<div class="project-sidebar-empty">No projects match the current filter.</div>' : '')}
     </div>
   `;
 }
 
-function renderProjectToolbar(title, count, placeholder) {
+function renderProjectToolbar(title, count, placeholder, extra = '') {
   return `
     <div class="data-view-toolbar">
       <h2>${esc(title)} <span class="hint">Project Scoped</span></h2>
+      ${extra}
       <input class="dv-filter" type="text" placeholder="${esc(placeholder)}" value="${esc(projectInventoryState.filter || '')}" oninput="projectInventoryState.filter=this.value;renderProjectsWorkspace()">
       <span style="font-size:11px;color:var(--dim)">${esc(String(count || 0))} item(s)</span>
     </div>
@@ -226,6 +380,18 @@ function renderProjectToolbar(title, count, placeholder) {
 
 function cloneProjectInstance(instanceId) {
   onLog?.({ node: '-', message: `Clone workflow is not implemented yet for instance ${instanceId}.`, color: 'warn' });
+}
+
+function findProjectItem(kind, id) {
+  const inv = projectInventoryForView(activeProjectView);
+  if (!inv) return null;
+  if (kind === 'instances') return (inv.instances || []).find((item) => item.id === id) || null;
+  if (kind === 'networks') return (inv.networks || []).find((item) => item.id === id) || null;
+  if (kind === 'volumes') return (inv.volumes || []).find((item) => item.id === id) || null;
+  if (kind === 'securitygroups') return (inv.security_groups || []).find((item) => item.id === id) || null;
+  if (kind === 'floatingips') return (inv.floating_ips || []).find((item) => item.id === id) || null;
+  if (kind === 'loadbalancers') return (inv.load_balancers || []).find((item) => item.id === id) || null;
+  return null;
 }
 
 async function selectProjectDetail(kind, item) {
@@ -277,137 +443,220 @@ function selectProjectDetailById(kind, id) {
 function toggleProjectPortDetail(instanceId, portId) {
   if (projectDetailState.kind !== 'instances' || projectDetailState.item?.id !== instanceId) return;
   const current = projectDetailState.item?.expandedPortId || '';
-  projectDetailState.item = {
-    ...projectDetailState.item,
-    expandedPortId: current === portId ? '' : portId,
-  };
+  projectDetailState.item = { ...projectDetailState.item, expandedPortId: current === portId ? '' : portId };
   renderProjectsWorkspace();
+}
+
+function renderOverviewCard(title, rows, extraClass = '') {
+  return `
+    <div class="card ${extraClass}">
+      <div class="card-title">${esc(title)}</div>
+      <div class="card-body">
+        ${rows.map((row) => `<div class="mrow"><span class="ml">${row.label}</span><span class="mv">${row.value}</span></div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function isAmphoraInstance(item) {
+  return String(item?.name || '').startsWith('amphora-');
+}
+
+function renderProjectInstanceRows(items, cloneable, emptyMessage) {
+  return items.map((item) => `
+    <tr class="${projectDetailState.kind === 'instances' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('instances','${escAttr(item.id)}')">
+      <td><div style="font-weight:600">${esc(item.name || item.id)}</div><div class="uuid-short" title="${esc(item.id)}">${esc((item.id || '').slice(0, 12))}</div></td>
+      <td>${esc(item.status || 'UNKNOWN')}</td>
+      <td>${esc(item.flavor?.name || item.flavor?.id || '—')}</td>
+      <td>${esc(item.compute_host || '—')}</td>
+      <td>${esc((item.networks || []).map((net) => net.name).join(', ') || '—')}</td>
+      <td>${item.is_volume_backed ? 'Volume' : 'Image / Ephemeral'}</td>
+      <td>${cloneable ? `<button class="btn" style="font-size:11px" onclick="event.stopPropagation();cloneProjectInstance('${escAttr(item.id)}')">Clone</button>` : '<span class="hint">Not cloneable</span>'}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:20px">${esc(emptyMessage)}</td></tr>`;
+}
+
+function renderProjectOverview(inv) {
+  const summary = projectSummary(inv.summary, inv);
+  const stats = projectOverviewStats(summary.project_id || selectedProjectId);
+  const placement = stats.placement || {};
+  const quotas = stats.quotas || {};
+  const computeQuota = quotas.compute || {};
+  const networkQuota = quotas.network || {};
+  const storageQuota = quotas.block_storage || {};
+  const hostPct = Number(placement.top_host_pct || summary.top_host_pct || 0);
+  return `
+    <div class="summary-grid" style="margin-bottom:10px">
+      ${renderOverviewCard('Workloads', [
+        { label: 'Instances', value: projectValue(summary.instance_count || 0, stats.instancesLoaded) },
+        { label: 'Clone Candidates', value: projectValue(summary.clone_candidate_count || 0, stats.instancesLoaded) },
+        { label: 'Active / Error', value: stats.instancesLoaded ? esc(`${summary.active_instance_count || 0} / ${summary.error_instance_count || 0}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
+      ])}
+      ${renderOverviewCard('Networking', [
+        { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
+        { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
+        { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
+        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) },
+      ])}
+      ${renderOverviewCard('Capacity', [
+        { label: 'vCPU', value: projectValue(summary.vcpu_count || 0, stats.instancesLoaded) },
+        { label: 'RAM', value: projectValue(Math.round((summary.ram_mb || 0) / 1024), stats.instancesLoaded, ' GB') },
+        { label: 'Volumes', value: projectValue(summary.volume_count || 0, stats.storageLoaded) },
+      ])}
+      ${renderOverviewCard('Placement', [
+        { label: 'Hosts', value: projectValue(placement.host_count || summary.host_count || 0, stats.quotaLoaded) },
+        { label: 'Top Host', value: stats.quotaLoaded ? esc(placement.top_host || summary.top_host || '—') : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
+        { label: 'Concentration', value: stats.quotaLoaded ? (hostPct ? esc(`${hostPct.toFixed(0)}%`) : '—') : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
+      ])}
+    </div>
+    <div class="summary-grid">
+      <div class="card">
+        <div class="card-title">Quota Snapshot</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">Instances</span><span class="mv">${stats.quotaLoaded ? esc(`${computeQuota.instances?.used ?? '—'} / ${computeQuota.instances?.limit ?? '—'}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>'}</span></div>
+          <div class="mrow"><span class="ml">Ports</span><span class="mv">${stats.quotaLoaded ? esc(`${networkQuota.port?.used ?? '—'} / ${networkQuota.port?.limit ?? '—'}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>'}</span></div>
+          <div class="mrow"><span class="ml">Volumes</span><span class="mv">${stats.quotaLoaded ? esc(`${storageQuota.volumes?.used ?? '—'} / ${storageQuota.volumes?.limit ?? '—'}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>'}</span></div>
+          <div class="mrow"><span class="ml">Gigabytes</span><span class="mv">${stats.quotaLoaded ? esc(`${storageQuota.gigabytes?.used ?? '—'} / ${storageQuota.gigabytes?.limit ?? '—'}`) : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>'}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Next Steps</div>
+        <div class="card-body">
+          <div class="mrow"><span class="ml">Security Review</span><span class="mv"><a class="obj-link" href="#" onclick="event.preventDefault();switchProjectSection('security')">Open Security Tab</a></span></div>
+          <div class="mrow"><span class="ml">Network Review</span><span class="mv"><a class="obj-link" href="#" onclick="event.preventDefault();switchProjectSection('networking')">Open Networking Tab</a></span></div>
+          <div class="mrow"><span class="ml">Storage Review</span><span class="mv"><a class="obj-link" href="#" onclick="event.preventDefault();switchProjectSection('storage')">Open Storage Tab</a></span></div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderProjectInstances(inv) {
   const items = projectFilterRows(inv.instances || [], ['name', 'status', 'compute_host', 'project_name'], projectInventoryState.filter);
+  const projectInstances = items.filter((item) => !isAmphoraInstance(item));
+  const amphoraInstances = items.filter((item) => isAmphoraInstance(item));
+  const cloneButton = projectDetailState.kind === 'instances' && projectDetailState.item?.id && !isAmphoraInstance(projectDetailState.item)
+    ? `<button class="btn primary" onclick="cloneProjectInstance('${escAttr(projectDetailState.item.id)}')">Clone VM</button>`
+    : `<button class="btn primary" onclick="onLog?.({ node: '-', message: 'Select a non-amphora instance first to start clone.', color: 'warn' })">Clone VM</button>`;
   return `
-    ${renderProjectToolbar('Instances', items.length, 'Filter instances…')}
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Status</th><th>Flavor</th><th>Host</th><th>Networks</th><th>Volumes</th><th>Action</th></tr></thead>
-      <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'instances' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('instances','${escAttr(item.id)}')">
-            <td><div style="font-weight:600">${esc(item.name || item.id)}</div><div class="uuid-short" title="${esc(item.id)}">${esc((item.id || '').slice(0, 12))}</div></td>
-            <td>${esc(item.status || 'UNKNOWN')}</td>
-            <td>${esc(item.flavor?.name || item.flavor?.id || '—')}</td>
-            <td>${esc(item.compute_host || '—')}</td>
-            <td>${esc((item.networks || []).map((net) => net.name).join(', ') || '—')}</td>
-            <td>${item.is_volume_backed ? 'Boot from volume' : 'Image / ephemeral'}</td>
-            <td><button class="btn" style="font-size:11px" onclick="event.stopPropagation();cloneProjectInstance('${escAttr(item.id)}')">Clone</button></td>
-          </tr>
-        `).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:20px">No instances match the current filter.</td></tr>'}
-      </tbody>
-    </table>
+    ${renderProjectToolbar('Instances', items.length, 'Filter instances…', cloneButton)}
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Project Instances</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Name</th><th>Status</th><th>Flavor</th><th>Host</th><th>Networks</th><th>Boot</th><th>Action</th></tr></thead>
+          <tbody>
+            ${renderProjectInstanceRows(projectInstances, true, 'No cloneable instances match the current filter.')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Amphora</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Name</th><th>Status</th><th>Flavor</th><th>Host</th><th>Networks</th><th>Boot</th><th>Action</th></tr></thead>
+          <tbody>
+            ${renderProjectInstanceRows(amphoraInstances, false, 'No amphora instances match the current filter.')}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
-function renderProjectNetworks(inv) {
-  const items = projectFilterRows(inv.networks || [], ['name', 'status', 'network_type'], projectInventoryState.filter);
+function renderProjectNetworking(inv) {
+  const networks = projectFilterRows(inv.networks || [], ['name', 'status', 'network_type'], projectInventoryState.filter);
+  const routers = projectFilterRows(inv.routers || [], ['name', 'status', 'external_network_name', 'admin_state'], projectInventoryState.filter);
+  const floatingIps = projectFilterRows(inv.floating_ips || [], ['floating_ip_address', 'fixed_ip_address', 'status', 'description'], projectInventoryState.filter);
+  const loadBalancers = projectFilterRows(inv.load_balancers || [], ['name', 'vip_address', 'floating_ip', 'operating_status'], projectInventoryState.filter);
   return `
-    ${renderProjectToolbar('Networks', items.length, 'Filter networks…')}
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Subnets</th><th>Router</th></tr></thead>
-      <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'networks' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('networks','${escAttr(item.id)}')">
-            <td>${esc(item.name || item.id)}</td>
-            <td>${esc(item.status || 'UNKNOWN')}</td>
-            <td>${esc(item.network_type || '—')}</td>
-            <td>${esc(String(item.subnet_count ?? 0))}</td>
-            <td>${item.router_id ? renderObjectLink(item.router_id, `navigateToRouterDetail('${escAttr(item.router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
-          </tr>
-        `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:20px">No networks match the current filter.</td></tr>'}
-      </tbody>
-    </table>
+    ${renderProjectToolbar('Networking', networks.length + routers.length + floatingIps.length + loadBalancers.length, 'Filter networking…')}
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Networks</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Subnets</th><th>Router</th></tr></thead>
+          <tbody>
+            ${networks.map((item) => `<tr class="${projectDetailState.kind === 'networks' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('networks','${escAttr(item.id)}')">
+              <td>${esc(item.name || item.id)}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.network_type || '—')}</td><td>${esc(String(item.subnet_count ?? 0))}</td><td>${item.router_id ? renderObjectLink(item.router_id, `navigateToRouterDetail('${escAttr(item.router_id)}')`) : '<span style="color:var(--dim)">—</span>'}</td>
+            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No networks match the current filter.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Routers</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Name</th><th>Status</th><th>Admin</th><th>External Network</th><th>Interfaces</th><th>Routes</th></tr></thead>
+          <tbody>
+            ${routers.map((item) => `<tr style="cursor:pointer" onclick="navigateToRouterDetail('${escAttr(item.id)}')">
+              <td>${renderObjectLink(item.name || item.id, `navigateToRouterDetail('${escAttr(item.id)}')`)}</td>
+              <td>${esc(item.status || 'UNKNOWN')}</td>
+              <td>${esc(item.admin_state || '—')}</td>
+              <td>${esc(item.external_network_name || item.external_network_id || '—')}</td>
+              <td>${esc(String(item.interface_count || 0))}</td>
+              <td>${esc(String(item.route_count || 0))}</td>
+            </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">No routers match the current filter.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Floating IPs</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Floating IP</th><th>Fixed IP</th><th>Status</th><th>Network</th><th>Port</th></tr></thead>
+          <tbody>
+            ${floatingIps.map((item) => `<tr class="${projectDetailState.kind === 'floatingips' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('floatingips','${escAttr(item.id)}')">
+              <td>${esc(item.floating_ip_address || '—')}</td><td>${esc(item.fixed_ip_address || '—')}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(item.floating_network_name || item.floating_network_id || '—')}</td><td><span class="uuid-short" title="${esc(item.port_id || '')}">${esc((item.port_id || '').slice(0, 12) || '—')}</span></td>
+            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No floating IPs match the current filter.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Load Balancers</div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table" style="border:none;margin-bottom:0">
+          <thead><tr><th>Name</th><th>VIP</th><th>Floating IP</th><th>Status</th><th>Pools</th></tr></thead>
+          <tbody>
+            ${loadBalancers.map((item) => `<tr class="${projectDetailState.kind === 'loadbalancers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('loadbalancers','${escAttr(item.id)}')">
+              <td>${esc(item.name || item.id)}</td><td>${esc(item.vip_address || '—')}</td><td>${esc(item.floating_ip || '—')}</td><td>${esc(item.operating_status || 'UNKNOWN')} / ${esc(item.provisioning_status || 'UNKNOWN')}</td><td>${esc(String(item.pool_count || 0))}</td>
+            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:16px">No load balancers match the current filter.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
-function renderProjectVolumes(inv) {
+function renderProjectStorage(inv) {
   const items = projectFilterRows(inv.volumes || [], ['name', 'status', 'volume_type', 'backend_name'], projectInventoryState.filter);
   return `
-    ${renderProjectToolbar('Volumes', items.length, 'Filter volumes…')}
+    ${renderProjectToolbar('Storage', items.length, 'Filter volumes…')}
     <table class="data-table">
       <thead><tr><th>Name</th><th>Status</th><th>Size</th><th>Type</th><th>Backend</th><th>Attached</th></tr></thead>
       <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'volumes' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('volumes','${escAttr(item.id)}')">
-            <td>${esc(item.name || item.id)}</td>
-            <td>${esc(item.status || 'UNKNOWN')}</td>
-            <td>${esc(String(item.size_gb || 0))} GB</td>
-            <td>${esc(item.volume_type || '—')}</td>
-            <td>${esc(item.backend_name || '—')}</td>
-            <td>${esc(String((item.attached_to || []).length || 0))}</td>
-          </tr>
-        `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:20px">No volumes match the current filter.</td></tr>'}
+        ${items.map((item) => `<tr class="${projectDetailState.kind === 'volumes' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('volumes','${escAttr(item.id)}')">
+          <td>${esc(item.name || item.id)}</td><td>${esc(item.status || 'UNKNOWN')}</td><td>${esc(String(item.size_gb || 0))} GB</td><td>${esc(item.volume_type || '—')}</td><td>${esc(item.backend_name || '—')}</td><td>${esc(String((item.attached_to || []).length || 0))}</td>
+        </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:20px">No volumes match the current filter.</td></tr>'}
       </tbody>
     </table>
   `;
 }
 
-function renderProjectSecurityGroups(inv) {
+function renderProjectSecurity(inv) {
   const items = projectFilterRows(inv.security_groups || [], ['name', 'project_name'], projectInventoryState.filter);
   return `
-    ${renderProjectToolbar('Security Groups', items.length, 'Filter security groups…')}
+    ${renderProjectToolbar('Security', items.length, 'Filter security groups…')}
     <table class="data-table">
       <thead><tr><th>Name</th><th>Severity</th><th>Rules</th><th>Attached Ports</th><th>Instances</th></tr></thead>
       <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'securitygroups' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('securitygroups','${escAttr(item.id)}')">
-            <td>${esc(item.name || item.id)}</td>
-            <td>${esc(item.audit?.severity || 'unknown')}</td>
-            <td>${esc(String(item.rule_count || 0))}</td>
-            <td>${esc(String(item.attachment_port_count || 0))}</td>
-            <td>${esc(String(item.attachment_instance_count || 0))}</td>
-          </tr>
-        `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:20px">No security groups match the current filter.</td></tr>'}
-      </tbody>
-    </table>
-  `;
-}
-
-function renderProjectFloatingIps(inv) {
-  const items = projectFilterRows(inv.floating_ips || [], ['floating_ip_address', 'fixed_ip_address', 'status', 'description'], projectInventoryState.filter);
-  return `
-    ${renderProjectToolbar('Floating IPs', items.length, 'Filter floating IPs…')}
-    <table class="data-table">
-      <thead><tr><th>Floating IP</th><th>Fixed IP</th><th>Status</th><th>Network</th><th>Port</th></tr></thead>
-      <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'floatingips' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('floatingips','${escAttr(item.id)}')">
-            <td>${esc(item.floating_ip_address || '—')}</td>
-            <td>${esc(item.fixed_ip_address || '—')}</td>
-            <td>${esc(item.status || 'UNKNOWN')}</td>
-            <td>${esc(item.floating_network_name || item.floating_network_id || '—')}</td>
-            <td><span class="uuid-short" title="${esc(item.port_id || '')}">${esc((item.port_id || '').slice(0, 12) || '—')}</span></td>
-          </tr>
-        `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:20px">No floating IPs match the current filter.</td></tr>'}
-      </tbody>
-    </table>
-  `;
-}
-
-function renderProjectLoadBalancers(inv) {
-  const items = projectFilterRows(inv.load_balancers || [], ['name', 'vip_address', 'floating_ip', 'operating_status'], projectInventoryState.filter);
-  return `
-    ${renderProjectToolbar('Load Balancers', items.length, 'Filter load balancers…')}
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>VIP</th><th>Floating IP</th><th>Status</th><th>Pools</th></tr></thead>
-      <tbody>
-        ${items.map((item) => `
-          <tr class="${projectDetailState.kind === 'loadbalancers' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('loadbalancers','${escAttr(item.id)}')">
-            <td>${esc(item.name || item.id)}</td>
-            <td>${esc(item.vip_address || '—')}</td>
-            <td>${esc(item.floating_ip || '—')}</td>
-            <td>${esc(item.operating_status || 'UNKNOWN')} / ${esc(item.provisioning_status || 'UNKNOWN')}</td>
-            <td>${esc(String(item.pool_count || 0))}</td>
-          </tr>
-        `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:20px">No load balancers match the current filter.</td></tr>'}
+        ${items.map((item) => `<tr class="${projectDetailState.kind === 'securitygroups' && projectDetailState.item?.id === item.id ? 'selected' : ''}" style="cursor:pointer" onclick="selectProjectDetailById('securitygroups','${escAttr(item.id)}')">
+          <td>${esc(item.name || item.id)}</td><td>${esc(item.audit?.severity || 'unknown')}</td><td>${esc(String(item.rule_count || 0))}</td><td>${esc(String(item.attachment_port_count || 0))}</td><td>${esc(String(item.attachment_instance_count || 0))}</td>
+        </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim);padding:20px">No security groups match the current filter.</td></tr>'}
       </tbody>
     </table>
   `;
@@ -415,14 +664,27 @@ function renderProjectLoadBalancers(inv) {
 
 function renderQuotaSection(title, entries) {
   const rows = Object.entries(entries || {});
+  const editable = Boolean(authInfo?.is_admin);
   return `
     <div class="card" style="margin-bottom:10px">
       <div class="card-title">${esc(title)}</div>
       <div class="card-body" style="padding:0">
         <table class="data-table" style="border:none;margin-bottom:0">
-          <thead><tr><th>Resource</th><th>Used</th><th>Limit</th></tr></thead>
+          <thead><tr><th>Resource</th><th>Used</th><th>Limit</th>${editable ? '<th>Action</th>' : ''}</tr></thead>
           <tbody>
-            ${rows.map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(String(value.used ?? '—'))}</td><td>${esc(String(value.limit ?? '—'))}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--dim);padding:16px">No quota data available.</td></tr>'}
+            ${rows.map(([key, value]) => {
+              const section = title === 'Compute Quotas' ? 'compute' : title === 'Network Quotas' ? 'network' : 'block_storage';
+              const editing = editable && projectQuotaEditState.section === section && projectQuotaEditState.resource === key;
+              const limitCell = editing
+                ? `<div class="project-quota-editor"><input class="project-quota-input" type="text" value="${escAttr(projectQuotaEditState.value || '')}" oninput="updateProjectQuotaEditorValue(this.value)" placeholder="Enter new limit">${projectQuotaEditState.error ? `<div class="project-quota-error">${esc(projectQuotaEditState.error)}</div>` : ''}</div>`
+                : esc(String(value.limit ?? '—'));
+              const actionCell = editable
+                ? editing
+                  ? `<div class="project-quota-actions"><button class="btn primary" ${projectQuotaEditState.saving ? 'disabled' : ''} onclick="saveProjectQuotaEdit()">${projectQuotaEditState.saving ? 'Saving…' : 'Save'}</button><button class="btn" ${projectQuotaEditState.saving ? 'disabled' : ''} onclick="resetProjectQuotaEditor();renderProjectsWorkspace()">Cancel</button></div>`
+                  : `<button class="btn" onclick="openProjectQuotaEditor('${escAttr(section)}','${escAttr(key)}','${escAttr(value.limit ?? '')}')">Modify</button>`
+                : '';
+              return `<tr><td>${esc(key)}</td><td>${esc(String(value.used ?? '—'))}</td><td>${limitCell}</td>${editable ? `<td>${actionCell}</td>` : ''}</tr>`;
+            }).join('') || `<tr><td colspan="${editable ? '4' : '3'}" style="text-align:center;color:var(--dim);padding:16px">No quota data available.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -431,27 +693,29 @@ function renderQuotaSection(title, entries) {
 }
 
 function renderProjectQuota(inv) {
-  const summary = { ...(projectSelectedRecord() || {}), ...(inv.summary || {}) };
-  const quotas = inv.quotas || {};
-  const placement = inv.placement || {};
+  const summary = projectSummary(inv.summary, inv);
+  const stats = projectOverviewStats(summary.project_id || selectedProjectId);
+  const quotas = inv.quotas || stats.quotas || {};
+  const placement = inv.placement || stats.placement || {};
   const hostPct = Number(placement.top_host_pct || summary.top_host_pct || 0);
   return `
     <div class="summary-grid" style="margin-bottom:10px">
-      <div class="card"><div class="card-title">Instance Footprint</div><div class="card-body">
-        <div class="mrow"><span class="ml">Instances</span><span class="mv">${esc(String(summary.instance_count || 0))}</span></div>
-        <div class="mrow"><span class="ml">vCPU</span><span class="mv">${esc(String(summary.vcpu_count || 0))}</span></div>
-        <div class="mrow"><span class="ml">RAM</span><span class="mv">${esc(String(Math.round((summary.ram_mb || 0) / 1024)))} GB</span></div>
-      </div></div>
-      <div class="card"><div class="card-title">Placement Spread</div><div class="card-body">
-        <div class="mrow"><span class="ml">Hosts</span><span class="mv">${esc(String(placement.host_count || summary.host_count || 0))}</span></div>
-        <div class="mrow"><span class="ml">Top Host</span><span class="mv">${esc(placement.top_host || summary.top_host || '—')}</span></div>
-        <div class="mrow"><span class="ml">Concentration</span><span class="mv">${hostPct ? esc(`${hostPct.toFixed(0)}%`) : '—'}</span></div>
-      </div></div>
-      <div class="card"><div class="card-title">Network Usage</div><div class="card-body">
-        <div class="mrow"><span class="ml">Networks</span><span class="mv">${esc(String(summary.network_count || 0))}</span></div>
-        <div class="mrow"><span class="ml">Floating IPs</span><span class="mv">${esc(String(summary.floating_ip_count || 0))}</span></div>
-        <div class="mrow"><span class="ml">Load Balancers</span><span class="mv">${esc(String(summary.load_balancer_count || 0))}</span></div>
-      </div></div>
+      ${renderOverviewCard('Instance Footprint', [
+        { label: 'Instances', value: projectValue(summary.instance_count || 0, stats.instancesLoaded) },
+        { label: 'vCPU', value: projectValue(summary.vcpu_count || 0, stats.instancesLoaded) },
+        { label: 'RAM', value: projectValue(Math.round((summary.ram_mb || 0) / 1024), stats.instancesLoaded, ' GB') },
+      ])}
+      ${renderOverviewCard('Placement Spread', [
+        { label: 'Hosts', value: projectValue(placement.host_count || summary.host_count || 0, stats.quotaLoaded) },
+        { label: 'Top Host', value: stats.quotaLoaded ? esc(placement.top_host || summary.top_host || '—') : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
+        { label: 'Concentration', value: stats.quotaLoaded ? (hostPct ? esc(`${hostPct.toFixed(0)}%`) : '—') : '<span class="mv dim"><span class="spinner">⟳</span> Loading…</span>' },
+      ])}
+      ${renderOverviewCard('Project Networking', [
+        { label: 'Networks', value: projectValue(summary.network_count || 0, stats.networkingLoaded) },
+        { label: 'Routers', value: projectValue(summary.router_count || 0, stats.networkingLoaded) },
+        { label: 'Floating IPs', value: projectValue(summary.floating_ip_count || 0, stats.networkingLoaded) },
+        { label: 'Load Balancers', value: projectValue(summary.load_balancer_count || 0, stats.networkingLoaded) },
+      ])}
     </div>
     ${renderQuotaSection('Compute Quotas', quotas.compute || {})}
     ${renderQuotaSection('Network Quotas', quotas.network || {})}
@@ -466,10 +730,11 @@ function renderProjectMainContent() {
     wrap.innerHTML = renderOpenStackUnavailablePanel('Projects', 'This view relies on OpenStack project-scoped inventory. Provide OpenStack credentials to enable it.');
     return;
   }
+
   const selected = projectSelectedRecord();
-  const inv = projectInventory();
-  const activeSection = activeProjectView === 'quota' ? 'quota' : activeProjectView;
-  if (projectsState.loading && !projectsState.data) {
+  const inv = projectInventoryForView(activeProjectView);
+  const activeSection = projectSectionKey(activeProjectView);
+  if (projectsState.loading && !(projectsState.data || []).length) {
     wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading projects…</div>`;
     return;
   }
@@ -477,28 +742,28 @@ function renderProjectMainContent() {
     wrap.innerHTML = `<div style="color:var(--dim);padding:20px">Select a project from the navigator.</div>`;
     return;
   }
-  if (projectInventoryState.loading && projectInventoryState.projectId === selected.project_id && projectInventoryState.activeSection === activeSection && !inv) {
-    wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading project inventory…</div>`;
+  if (isProjectSectionLoading(selected.project_id, activeSection) && !inv) {
+    wrap.innerHTML = `<div style="color:var(--dim);padding:20px"><span class="spinner">⟳</span> Loading project data…</div>`;
     return;
   }
   if (!inv) {
-    wrap.innerHTML = `<div style="color:var(--dim);padding:20px">Project inventory is unavailable.${projectInventoryState.projectId === selected.project_id ? ' Try refreshing once.' : ''}</div>`;
+    wrap.innerHTML = `<div style="color:var(--dim);padding:20px">Project data is unavailable. Try refreshing once.</div>`;
     return;
   }
-  const summary = inv.summary || selected;
-  const body = activeProjectView === 'instances'
-    ? renderProjectInstances(inv)
-    : activeProjectView === 'networks'
-      ? renderProjectNetworks(inv)
-      : activeProjectView === 'volumes'
-        ? renderProjectVolumes(inv)
-        : activeProjectView === 'securitygroups'
-          ? renderProjectSecurityGroups(inv)
-          : activeProjectView === 'floatingips'
-            ? renderProjectFloatingIps(inv)
-            : activeProjectView === 'loadbalancers'
-              ? renderProjectLoadBalancers(inv)
-              : renderProjectQuota(inv);
+
+  const summary = projectSummary(inv.summary, inv);
+  const detailsLoading = projectHasBackgroundLoading(selected.project_id, activeSection);
+  const body = activeProjectView === 'overview'
+    ? renderProjectOverview(inv)
+    : activeProjectView === 'instances'
+      ? renderProjectInstances(inv)
+      : activeProjectView === 'networking'
+        ? renderProjectNetworking(inv)
+        : activeProjectView === 'storage'
+          ? renderProjectStorage(inv)
+          : activeProjectView === 'security'
+            ? renderProjectSecurity(inv)
+            : renderProjectQuota(inv);
 
   wrap.innerHTML = `
     <div id="obj-header">
@@ -506,29 +771,21 @@ function renderProjectMainContent() {
       <div class="obj-meta">
         <h2>${esc(summary.project_name || summary.project_id)}</h2>
         <div class="obj-sub">${esc(summary.project_id || '')}</div>
-        <div class="obj-badges">
-          <span class="tree-badge">${esc(String(summary.instance_count || 0))} vm</span>
-          <span class="tree-badge">${esc(String(summary.network_count || 0))} net</span>
-          <span class="tree-badge">${esc(String(summary.volume_count || 0))} vol</span>
-          <span class="tree-badge">${esc(String(summary.security_group_count || 0))} sg</span>
-          <span class="tree-badge">${esc(String(summary.floating_ip_count || 0))} fip</span>
-          <span class="tree-badge">${esc(String(summary.load_balancer_count || 0))} lb</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        ${activeProjectView === 'instances' ? `<button class="btn primary" onclick="${projectDetailState.kind === 'instances' && projectDetailState.item?.id ? `cloneProjectInstance('${escAttr(projectDetailState.item.id)}')` : `onLog?.({ node: '-', message: 'Select an instance first to start clone.', color: 'warn' })`}">Clone VM</button>` : ''}
+        ${summary.description ? `<div class="obj-sub">${esc(summary.description)}</div>` : ''}
       </div>
     </div>
     <div id="tabs-bar">
+      <div class="tab ${activeProjectView === 'overview' ? 'active' : ''}" onclick="switchProjectSection('overview')">Overview</div>
       <div class="tab ${activeProjectView === 'instances' ? 'active' : ''}" onclick="switchProjectSection('instances')">Instances</div>
-      <div class="tab ${activeProjectView === 'networks' ? 'active' : ''}" onclick="switchProjectSection('networks')">Networks</div>
-      <div class="tab ${activeProjectView === 'volumes' ? 'active' : ''}" onclick="switchProjectSection('volumes')">Volumes</div>
-      <div class="tab ${activeProjectView === 'securitygroups' ? 'active' : ''}" onclick="switchProjectSection('securitygroups')">Security Groups</div>
-      <div class="tab ${activeProjectView === 'floatingips' ? 'active' : ''}" onclick="switchProjectSection('floatingips')">Floating IPs</div>
-      <div class="tab ${activeProjectView === 'loadbalancers' ? 'active' : ''}" onclick="switchProjectSection('loadbalancers')">Load Balancers</div>
+      <div class="tab ${activeProjectView === 'networking' ? 'active' : ''}" onclick="switchProjectSection('networking')">Networking</div>
+      <div class="tab ${activeProjectView === 'storage' ? 'active' : ''}" onclick="switchProjectSection('storage')">Storage</div>
+      <div class="tab ${activeProjectView === 'security' ? 'active' : ''}" onclick="switchProjectSection('security')">Security</div>
       <div class="tab ${activeProjectView === 'quota' ? 'active' : ''}" onclick="switchProjectSection('quota')">Quota + Capacity</div>
     </div>
-    <div class="project-body-pane">${body}</div>
+    <div class="project-body-shell">
+      <div class="project-body-pane">${body}</div>
+      ${detailsLoading ? '<div class="project-loading-overlay"><span class="spinner">⟳</span> Loading details…</div>' : ''}
+    </div>
   `;
 }
 
@@ -606,9 +863,9 @@ function renderProjectDetailDrawer() {
   wrap.innerHTML = `
     <div class="net-detail-inner">
       <div class="net-detail-head">
-        <strong style="font-size:13px">${esc(projectViewLabel(projectDetailState.kind))} Detail</strong>
+        <strong style="font-size:13px">${esc(projectDetailState.kind === 'securitygroups' ? 'Security Group' : projectDetailState.kind === 'floatingips' ? 'Floating IP' : projectDetailState.kind === 'loadbalancers' ? 'Load Balancer' : projectDetailState.kind === 'networks' ? 'Network' : projectDetailState.kind === 'volumes' ? 'Volume' : 'Instance')} Detail</strong>
         <div style="display:flex;gap:6px;align-items:center">
-          ${projectDetailState.kind === 'instances' ? `<button class="btn" style="padding:1px 7px;font-size:11px" onclick="cloneProjectInstance('${escAttr(detail.id || item.id || '')}')">Clone</button>` : ''}
+          ${projectDetailState.kind === 'instances' && !isAmphoraInstance(detail || item) ? `<button class="btn" style="padding:1px 7px;font-size:11px" onclick="cloneProjectInstance('${escAttr(detail.id || item.id || '')}')">Clone</button>` : ''}
           <button class="btn" style="padding:1px 7px;font-size:11px" onclick="projectDetailState.kind='';projectDetailState.item=null;projectDetailState.data=null;projectDetailState.error=null;renderProjectsWorkspace()">✕</button>
         </div>
       </div>
