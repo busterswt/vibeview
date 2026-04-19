@@ -483,9 +483,18 @@ function returnToLogin() {
 }
 
 function setAuthenticatedUI(info) {
+  const previousHasOpenStack = Boolean(authInfo?.has_openstack_auth);
+  const previousHasK8s = Boolean(authInfo?.has_k8s_auth);
   authReady = true;
   logoutInProgress = false;
   authInfo = info;
+  if (typeof resetGlobalSearchSessionState === 'function') {
+    const nextHasOpenStack = Boolean(info?.has_openstack_auth);
+    const nextHasK8s = Boolean(info?.has_k8s_auth);
+    if (previousHasOpenStack !== nextHasOpenStack || previousHasK8s !== nextHasK8s) {
+      resetGlobalSearchSessionState();
+    }
+  }
   hideSessionExpiredOverlay();
   document.getElementById('logout-btn').classList.add('visible');
   const label = !info?.has_openstack_auth

@@ -11,6 +11,7 @@ const globalSearchState = {
   remoteError: '',
   remoteSeq: 0,
   debounceTimer: null,
+  remoteCache: {},
 };
 
 const GLOBAL_SEARCH_LIMIT = 18;
@@ -18,6 +19,7 @@ const GLOBAL_SEARCH_HISTORY_KEY = 'vibeviewGlobalSearchHistory';
 const GLOBAL_SEARCH_HISTORY_LIMIT = 6;
 const GLOBAL_SEARCH_RESULT_HISTORY_KEY = 'vibeviewGlobalSearchResultHistory';
 const GLOBAL_SEARCH_RESULT_HISTORY_LIMIT = 24;
+const GLOBAL_SEARCH_REMOTE_CACHE_TTL_MS = 60000;
 
 function globalSearchInput() {
   return document.getElementById('global-search-input');
@@ -25,6 +27,37 @@ function globalSearchInput() {
 
 function globalSearchDropdown() {
   return document.getElementById('global-search-dropdown');
+}
+
+function globalSearchRemoteCacheKey(query) {
+  return `${hasOpenStackAuth() ? 'os1' : 'os0'}:${hasK8sAuth() ? 'k81' : 'k80'}:${String(query || '').trim().toLowerCase()}`;
+}
+
+function globalSearchRemoteCacheGet(query) {
+  const key = globalSearchRemoteCacheKey(query);
+  const entry = globalSearchState.remoteCache?.[key];
+  if (!entry) return null;
+  if ((Date.now() - Number(entry.at || 0)) > GLOBAL_SEARCH_REMOTE_CACHE_TTL_MS) {
+    delete globalSearchState.remoteCache[key];
+    return null;
+  }
+  return entry.results || null;
+}
+
+function globalSearchRemoteCacheSet(query, results) {
+  const key = globalSearchRemoteCacheKey(query);
+  globalSearchState.remoteCache = {
+    ...(globalSearchState.remoteCache || {}),
+    [key]: { at: Date.now(), results: results || [] },
+  };
+}
+
+function resetGlobalSearchSessionState() {
+  globalSearchState.remoteCache = {};
+  globalSearchState.remoteResults = [];
+  globalSearchState.remoteError = '';
+  globalSearchState.remoteLoading = false;
+  globalSearchState.remoteSeq = 0;
 }
 
 function loadGlobalSearchHistory() {
@@ -622,6 +655,15 @@ async function fetchRemoteGlobalSearch(query) {
     renderGlobalSearch();
     return;
   }
+  const cached = globalSearchRemoteCacheGet(query);
+  if (cached) {
+    globalSearchState.remoteLoading = false;
+    globalSearchState.remoteError = '';
+    globalSearchState.remoteResults = cached;
+    globalSearchState.results = mergeGlobalSearchResults(globalSearchState.localResults, globalSearchState.remoteResults);
+    renderGlobalSearch();
+    return;
+  }
   const seq = ++globalSearchState.remoteSeq;
   globalSearchState.remoteLoading = true;
   globalSearchState.remoteError = '';
@@ -638,6 +680,7 @@ async function fetchRemoteGlobalSearch(query) {
       key: `${item.kind}:${item.id || item.label}`,
       action: globalSearchActionForResult(item),
     }));
+    globalSearchRemoteCacheSet(query, globalSearchState.remoteResults);
     globalSearchState.remoteError = '';
   } catch (err) {
     if (seq !== globalSearchState.remoteSeq) return;
