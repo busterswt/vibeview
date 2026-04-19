@@ -14,6 +14,8 @@ const globalSearchState = {
 };
 
 const GLOBAL_SEARCH_LIMIT = 18;
+const GLOBAL_SEARCH_HISTORY_KEY = 'vibeviewGlobalSearchHistory';
+const GLOBAL_SEARCH_HISTORY_LIMIT = 6;
 
 function globalSearchInput() {
   return document.getElementById('global-search-input');
@@ -21,6 +23,32 @@ function globalSearchInput() {
 
 function globalSearchDropdown() {
   return document.getElementById('global-search-dropdown');
+}
+
+function loadGlobalSearchHistory() {
+  try {
+    const raw = localStorage.getItem(GLOBAL_SEARCH_HISTORY_KEY);
+    const items = raw ? JSON.parse(raw) : [];
+    return Array.isArray(items) ? items.filter((item) => typeof item === 'string' && item.trim()).slice(0, GLOBAL_SEARCH_HISTORY_LIMIT) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveGlobalSearchHistory(items) {
+  try {
+    localStorage.setItem(GLOBAL_SEARCH_HISTORY_KEY, JSON.stringify((items || []).slice(0, GLOBAL_SEARCH_HISTORY_LIMIT)));
+  } catch (_) {
+    // ignore storage failures
+  }
+}
+
+function rememberGlobalSearchQuery(query) {
+  const normalized = String(query || '').trim();
+  if (!normalized) return;
+  const history = loadGlobalSearchHistory().filter((item) => item.toLowerCase() !== normalized.toLowerCase());
+  history.unshift(normalized);
+  saveGlobalSearchHistory(history);
 }
 
 function globalSearchIcon(kind) {
@@ -129,6 +157,12 @@ function focusGlobalSearchInput(select = true) {
   if (!input) return;
   input.focus();
   if (select) input.select();
+}
+
+function setGlobalSearchQuery(query) {
+  const input = globalSearchInput();
+  if (input) input.value = query;
+  updateGlobalSearch(query);
 }
 
 function globalSearchNodeResults(query, results, seen) {
@@ -559,9 +593,29 @@ function renderGlobalSearch() {
   const dropdown = globalSearchDropdown();
   if (!dropdown) return;
   const query = String(globalSearchState.query || '').trim();
-  if (!globalSearchState.open || !query) {
+  if (!globalSearchState.open) {
     dropdown.style.display = 'none';
     dropdown.innerHTML = '';
+    return;
+  }
+  if (!query) {
+    const history = loadGlobalSearchHistory();
+    if (!history.length) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      return;
+    }
+    dropdown.innerHTML = `<div class="global-search-section">
+      <div class="global-search-section-title">Recent Searches</div>
+      ${history.map((item) => `<button class="global-search-item" onclick="setGlobalSearchQuery('${escAttr(item)}')">
+        <span class="global-search-item-icon">⏱️</span>
+        <span class="global-search-item-copy">
+          <div class="global-search-item-label">${esc(item)}</div>
+          <div class="global-search-item-subtext">Search again</div>
+        </span>
+      </button>`).join('')}
+    </div><div class="global-search-meta">Press <strong>Cmd/Ctrl+K</strong> to jump here anytime.</div>`;
+    dropdown.style.display = 'block';
     return;
   }
   const sections = {};
@@ -619,6 +673,7 @@ function updateGlobalSearch(query) {
 async function activateGlobalSearchResult(index) {
   const item = globalSearchState.results[index];
   if (!item) return;
+  rememberGlobalSearchQuery(globalSearchState.query);
   globalSearchState.activeIndex = index;
   renderGlobalSearch();
   await item.action();
@@ -631,10 +686,16 @@ function initGlobalSearch() {
 
   input.addEventListener('input', () => updateGlobalSearch(input.value));
   input.addEventListener('focus', () => {
+    globalSearchState.open = true;
     if (String(input.value || '').trim()) {
       globalSearchState.open = true;
       globalSearchState.results = computeGlobalSearchResults(input.value);
-      renderGlobalSearch();
+    }
+    renderGlobalSearch();
+  });
+  input.addEventListener('blur', () => {
+    if (!String(input.value || '').trim()) {
+      globalSearchState.query = '';
     }
   });
   input.addEventListener('keydown', async (event) => {
