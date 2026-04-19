@@ -49,9 +49,12 @@ class InventoryActionsMixin:
         etcd_states = [state for state in self.node_states.values() if state.is_etcd]
         for state in etcd_states:
             state.etcd_checking = True
+            state.etcd_error = None
             self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
         for state in etcd_states:
-            state.etcd_healthy = k8s_ops.check_etcd_service(state.k8s_name, state.hypervisor)
+            etcd_status = k8s_ops.get_etcd_service_status(state.k8s_name, state.hypervisor)
+            state.etcd_healthy = etcd_status.get("active")
+            state.etcd_error = etcd_status.get("error")
             state.etcd_checking = False
             self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
 
@@ -148,7 +151,9 @@ class InventoryActionsMixin:
         quorum_needed = (etcd_total // 2) + 1
 
         for state in etcd_states:
-            state.etcd_healthy = k8s_ops.check_etcd_service(state.k8s_name, state.hypervisor)
+            etcd_status = k8s_ops.get_etcd_service_status(state.k8s_name, state.hypervisor)
+            state.etcd_healthy = etcd_status.get("active")
+            state.etcd_error = etcd_status.get("error")
             self._push({"type": "state_update", "node": state.k8s_name, "data": _serialise(state)})
 
         healthy_count = sum(1 for state in etcd_states if state.etcd_healthy is True)

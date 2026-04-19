@@ -4,13 +4,24 @@ from __future__ import annotations
 from .. import node_agent_client
 
 
-def check_etcd_service(node_name: str, hostname: str | None = None) -> bool | None:
-    """Check whether the etcd systemd service is active via the node agent."""
+def get_etcd_service_status(node_name: str, hostname: str | None = None) -> dict:
+    """Return etcd service probe status and any validation error."""
     try:
         result = node_agent_client.get_etcd_status(node_name)
-        return result.get("active")
-    except Exception:
-        return None
+        return {
+            "active": result.get("active"),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "active": None,
+            "error": str(exc),
+        }
+
+
+def check_etcd_service(node_name: str, hostname: str | None = None) -> bool | None:
+    """Check whether the etcd systemd service is active via the node agent."""
+    return get_etcd_service_status(node_name, hostname).get("active")
 
 
 def get_node_host_signals(node_name: str, hostname: str | None = None) -> dict:

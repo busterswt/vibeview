@@ -18,6 +18,7 @@ from kubernetes.config.kube_config import KubeConfigLoader
 from .. import node_agent_client
 from .node_inventory_ops import (
     check_etcd_service,
+    get_etcd_service_status,
     get_node_hardware_info,
     get_node_host_signals,
     get_node_monitor_metrics,

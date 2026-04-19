@@ -24,6 +24,7 @@ def serialise_state(state: NodeState) -> dict:
         "hosts_mariadb": state.hosts_mariadb,
         "etcd_healthy": state.etcd_healthy,
         "etcd_checking": state.etcd_checking,
+        "etcd_error": state.etcd_error,
         "is_compute": state.is_compute,
         "compute_status": state.compute_status,
         "compute_missing_from_openstack": state.compute_missing_from_openstack,

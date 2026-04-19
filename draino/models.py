@@ -70,6 +70,7 @@ class NodeState:
     hosts_mariadb:  bool = False            # True if a MariaDB/Galera pod is scheduled here
     etcd_healthy:   Optional[bool] = None  # None=unchecked | True=active | False=down
     etcd_checking:  bool = False           # True while etcd health check is in flight
+    etcd_error:     Optional[str] = None   # Probe error when etcd status could not be validated
 
     # ── OpenStack summary (populated by background refresh) ──────────────
     # compute_status: None=loading | "up" | "disabled" | "down"

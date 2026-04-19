@@ -62,6 +62,17 @@ def _node_roles(state: NodeState) -> list[str]:
     return roles
 
 
+def _etcd_status_review_message(state: NodeState) -> str:
+    error = str(state.etcd_error or "").lower()
+    if not error:
+        return "etcd health requires review"
+    if any(token in error for token in ("permission", "forbidden", "unauthorized", "denied", "403")):
+        return "etcd service status could not be validated because node-agent permissions are insufficient"
+    if any(token in error for token in ("node-agent", "connection refused", "timed out", "timeout", "404", "502", "503", "504", "no route", "unreachable", "not found", "ssl")):
+        return "etcd service status could not be validated because the node-agent is inaccessible"
+    return "etcd service status could not be validated"
+
+
 def _node_blockers(state: NodeState) -> list[str]:
     blockers: list[str] = []
     if state.phase.name.lower() != "idle":
@@ -77,7 +88,7 @@ def _node_blockers(state: NodeState) -> list[str]:
     if state.hosts_mariadb:
         blockers.append("mariadb requires staggered reboots")
     if state.is_etcd and state.etcd_healthy is not True:
-        blockers.append("etcd health requires review")
+        blockers.append(_etcd_status_review_message(state))
     return blockers
 
 

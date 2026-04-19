@@ -205,7 +205,7 @@ const projectsState = { data: null, loading: false, filter: '' };
 let selectedProjectId = '';
 const projectInventoryState = { loading: false, projectId: '', sections: {}, filter: '', activeSection: '', pending: {}, prefetched: {} };
 const projectDetailState = { kind: '', item: null, loading: false, data: null, error: null };
-const projectQuotaEditState = { section: '', resource: '', value: '', saving: false, error: '' };
+const projectQuotaEditState = { section: '', resource: '', value: '', saving: false, error: '', successKey: '', successTimer: null };
 
 // Reports view state
 const reportState = {

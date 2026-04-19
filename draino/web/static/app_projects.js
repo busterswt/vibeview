@@ -32,6 +32,10 @@ function resetProjectQuotaEditor() {
   projectQuotaEditState.error = '';
 }
 
+function markProjectQuotaSaveSuccess(section, resource) {
+  projectQuotaEditState.successKey = `${section}:${resource}`;
+}
+
 function switchProjectSection(name) {
   const valid = ['overview', 'instances', 'networking', 'storage', 'security', 'quota'];
   if (!valid.includes(name)) return;
@@ -210,6 +214,7 @@ async function saveProjectQuotaEdit() {
       ...(projectInventoryState.sections[selectedProjectId] || {}),
       quota: json.inventory || null,
     };
+    markProjectQuotaSaveSuccess(section, resource);
     resetProjectQuotaEditor();
     renderProjectsWorkspace();
     loadProjectInventory(selectedProjectId, 'overview', true);
@@ -300,6 +305,9 @@ async function loadProjectInventory(projectId, section = projectSectionKey(activ
       ...(projectInventoryState.sections[projectId] || {}),
       [key]: json.inventory || null,
     };
+    if (key === 'quota' && projectQuotaEditState.successKey) {
+      projectQuotaEditState.successKey = '';
+    }
   } catch (err) {
     projectInventoryState.sections[projectId] = {
       ...(projectInventoryState.sections[projectId] || {}),
@@ -675,13 +683,14 @@ function renderQuotaSection(title, entries) {
             ${rows.map(([key, value]) => {
               const section = title === 'Compute Quotas' ? 'compute' : title === 'Network Quotas' ? 'network' : 'block_storage';
               const editing = editable && projectQuotaEditState.section === section && projectQuotaEditState.resource === key;
+              const wasUpdated = projectQuotaEditState.successKey === `${section}:${key}`;
               const limitCell = editing
                 ? `<div class="project-quota-editor"><input class="project-quota-input" type="text" value="${escAttr(projectQuotaEditState.value || '')}" oninput="updateProjectQuotaEditorValue(this.value)" placeholder="Enter new limit">${projectQuotaEditState.error ? `<div class="project-quota-error">${esc(projectQuotaEditState.error)}</div>` : ''}</div>`
-                : esc(String(value.limit ?? '—'));
+                : `<span class="${wasUpdated ? 'project-quota-value project-quota-value-updated' : 'project-quota-value'}">${esc(String(value.limit ?? '—'))}</span>`;
               const actionCell = editable
                 ? editing
                   ? `<div class="project-quota-actions"><button class="btn primary" ${projectQuotaEditState.saving ? 'disabled' : ''} onclick="saveProjectQuotaEdit()">${projectQuotaEditState.saving ? 'Saving…' : 'Save'}</button><button class="btn" ${projectQuotaEditState.saving ? 'disabled' : ''} onclick="resetProjectQuotaEditor();renderProjectsWorkspace()">Cancel</button></div>`
-                  : `<button class="btn" onclick="openProjectQuotaEditor('${escAttr(section)}','${escAttr(key)}','${escAttr(value.limit ?? '')}')">Modify</button>`
+                  : `<div class="project-quota-actions"><button class="btn" onclick="openProjectQuotaEditor('${escAttr(section)}','${escAttr(key)}','${escAttr(value.limit ?? '')}')">Modify</button>${wasUpdated ? '<span class="project-quota-saved">Saved</span>' : ''}</div>`
                 : '';
               return `<tr><td>${esc(key)}</td><td>${esc(String(value.used ?? '—'))}</td><td>${limitCell}</td>${editable ? `<td>${actionCell}</td>` : ''}</tr>`;
             }).join('') || `<tr><td colspan="${editable ? '4' : '3'}" style="text-align:center;color:var(--dim);padding:16px">No quota data available.</td></tr>`}

@@ -33,7 +33,15 @@ function renderSummaryTab(nd) {
     } else {
       const checked = peers.filter(n => n.etcd_healthy !== null && n.etcd_healthy !== undefined);
       if (!checked.length) {
-        h += `<div class="etcd-alert">⚠ etcd node — health unknown (checked before reboot)</div>`;
+        const error = String(nd.etcd_error || '').toLowerCase();
+        const detail = !error
+          ? 'health unknown (checked before reboot)'
+          : ['permission', 'forbidden', 'unauthorized', 'denied', '403'].some(token => error.includes(token))
+            ? 'service status could not be validated because node-agent permissions are insufficient'
+            : ['node-agent', 'connection refused', 'timed out', 'timeout', '404', '502', '503', '504', 'no route', 'unreachable', 'not found', 'ssl'].some(token => error.includes(token))
+              ? 'service status could not be validated because the node-agent is inaccessible'
+              : 'service status could not be validated';
+        h += `<div class="etcd-alert">⚠ etcd node — ${esc(detail)}</div>`;
       } else {
         const healthy = peers.filter(n => n.etcd_healthy === true).length;
         const remaining = healthy - (nd.etcd_healthy === true ? 1 : 0);
