@@ -199,6 +199,23 @@ def _lookup_network_name(conn, network_id: str, cache: dict[str, str]) -> str:
     return cache[network_id]
 
 
+def _lookup_server_brief(conn, server_id: str, cache: dict[str, dict[str, str]]) -> dict[str, str]:
+    if not server_id:
+        return {"name": "", "compute_host": ""}
+    if server_id in cache:
+        return cache[server_id]
+    try:
+        server = conn.compute.get_server(server_id)
+        server_data = server.to_dict() if hasattr(server, "to_dict") else {}
+        cache[server_id] = {
+            "name": getattr(server, "name", None) or server_data.get("name") or "",
+            "compute_host": openstack_ops._server_host(server) or "",
+        }
+    except Exception:
+        cache[server_id] = {"name": "", "compute_host": ""}
+    return cache[server_id]
+
+
 def _port_security_groups(port) -> list[str]:
     port_data = port.to_dict() if hasattr(port, "to_dict") else {}
     raw_groups = (
@@ -226,6 +243,8 @@ def _security_group_attachment_map(conn) -> dict[str, dict]:
         "ports": [],
         "instance_ids": set(),
     })
+    network_name_cache: dict[str, str] = {}
+    server_cache: dict[str, dict[str, str]] = {}
     try:
         for port in conn.network.ports():
             port_data = port.to_dict() if hasattr(port, "to_dict") else {}
@@ -238,11 +257,17 @@ def _security_group_attachment_map(conn) -> dict[str, dict]:
             device_id = getattr(port, "device_id", None) or port_data.get("device_id") or ""
             project_id = getattr(port, "project_id", None) or port_data.get("project_id") or ""
             fixed_ips = list(getattr(port, "fixed_ips", None) or port_data.get("fixed_ips") or [])
+            server_brief = {"name": "", "compute_host": ""}
+            if device_owner.startswith("compute:") and device_id:
+                server_brief = _lookup_server_brief(conn, device_id, server_cache)
             attachment = {
                 "port_id": port_id,
                 "network_id": network_id,
+                "network_name": _lookup_network_name(conn, network_id, network_name_cache),
                 "device_owner": device_owner,
                 "device_id": device_id,
+                "instance_name": server_brief.get("name", ""),
+                "compute_host": server_brief.get("compute_host", ""),
                 "project_id": project_id,
                 "fixed_ips": fixed_ips,
             }

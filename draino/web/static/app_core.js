@@ -183,6 +183,10 @@ const sgState = {
   filter: '',
   auditOnly: true,
   project: '',
+  quickFilter: '',
+  sort: 'severity',
+  projectScopeFilter: '',
+  projectScopeExpanded: false,
 };
 let selectedSecurityGroup = null;
 const sgDetailState = { loading: false, data: null };

@@ -27,6 +27,17 @@ function sgSummaryPill(cls, label, count, hint) {
   return `<span class="badge ${cls}" title="${escAttr(hint)}" style="cursor:help">${esc(String(count))} ${esc(label)}</span>`;
 }
 
+function sgChip(active, label, hint, onclick) {
+  return `<button class="btn ${active ? 'warning' : ''}" title="${escAttr(hint)}" onclick="${escAttr(onclick)}" style="padding:3px 9px;font-size:11px">${esc(label)}</button>`;
+}
+
+function sgObjectLink(label, onclickJs, title = '') {
+  const text = String(label || '').trim();
+  if (!text) return '<span style="color:var(--dim)">—</span>';
+  const attr = title ? ` title="${escAttr(title)}"` : '';
+  return `<a href="#" class="obj-link"${attr} onclick="event.stopPropagation();${onclickJs};return false">${esc(text)}</a>`;
+}
+
 function sgRuleRemoteCell(rule) {
   const remoteGroupId = String(rule.remote_group_id || '').trim();
   if (remoteGroupId) {
@@ -46,6 +57,147 @@ function sgProjectOptions(items) {
   }
   opts.sort((a, b) => a.localeCompare(b));
   return opts;
+}
+
+function sgProjectSummaries(items) {
+  const map = new Map();
+  for (const item of items || []) {
+    const key = String(item.project_name || item.project_id || 'unknown');
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        total: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        clean: 0,
+        flagged: 0,
+        attachments: 0,
+      });
+    }
+    const entry = map.get(key);
+    entry.total += 1;
+    if ((item.flagged_rule_count || 0) > 0) entry.flagged += 1;
+    entry.attachments += Number(item.attachment_instance_count || 0);
+    const severity = String(item.audit?.severity || 'clean');
+    if (severity === 'critical') entry.critical += 1;
+    else if (severity === 'high') entry.high += 1;
+    else if (severity === 'medium') entry.medium += 1;
+    else entry.clean += 1;
+  }
+  return [...map.values()].sort((a, b) =>
+    (b.critical - a.critical)
+    || (b.high - a.high)
+    || (b.flagged - a.flagged)
+    || a.key.localeCompare(b.key)
+  );
+}
+
+function sgProjectScopeState() {
+  return {
+    filter: String(sgState.projectScopeFilter || '').trim().toLowerCase(),
+    expanded: Boolean(sgState.projectScopeExpanded),
+    limit: 10,
+  };
+}
+
+function sgHighestSeverity(summary) {
+  if (summary.critical > 0) return 'critical';
+  if (summary.high > 0) return 'high';
+  if (summary.medium > 0) return 'medium';
+  return 'clean';
+}
+
+function sgProjectScopeVisibleSummaries(items) {
+  const summaries = sgProjectSummaries(items);
+  const scopeState = sgProjectScopeState();
+  const filtered = scopeState.filter
+    ? summaries.filter(summary => summary.key.toLowerCase().includes(scopeState.filter))
+    : summaries;
+  if (scopeState.expanded || scopeState.filter) {
+    return {
+      filtered,
+      visible: filtered,
+      hiddenCount: 0,
+      filteredCount: filtered.length,
+      totalCount: summaries.length,
+      searchActive: Boolean(scopeState.filter),
+      expanded: scopeState.expanded,
+    };
+  }
+  return {
+    filtered,
+    visible: filtered.slice(0, scopeState.limit),
+    hiddenCount: Math.max(0, filtered.length - scopeState.limit),
+    filteredCount: filtered.length,
+    totalCount: summaries.length,
+    searchActive: false,
+    expanded: false,
+  };
+}
+
+function sgProjectScopeRow(summary, activeProject) {
+  const severity = sgHighestSeverity(summary);
+  const selected = activeProject === summary.key;
+  const badgeCls = severity === 'critical' ? 'red' : severity === 'high' ? 'yellow' : severity === 'medium' ? 'gray' : 'green';
+  return `<div class="mrow" style="padding:8px 10px;cursor:pointer;background:${selected ? 'var(--sel)' : 'transparent'}" onclick="sgState.project='${escAttr(summary.key)}';sgState.page=1;renderSecurityGroupsView()">
+    <span class="ml" style="color:var(--text)">
+      <strong>${esc(summary.key)}</strong>
+      <span style="display:block;font-size:11px;color:var(--dim)">${esc(String(summary.flagged))} flagged · ${esc(String(summary.attachments))} attached instances</span>
+    </span>
+    <span class="mv">${sgSummaryPill(badgeCls, severity, summary.total, `${summary.total} groups in this project. Highest current severity is ${severity}.`)}</span>
+  </div>`;
+}
+
+function sgAuditBanner(items, counts) {
+  const openWorld = items.filter(item => item.audit?.has_open_world_ingress).length;
+  return `<div class="card" style="margin-bottom:10px;border-color:#ffe082;background:#fffdfa">
+    <div class="card-body" style="display:flex;align-items:flex-start;gap:10px">
+      <div style="width:22px;height:22px;border-radius:50%;background:#e65100;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">!</div>
+      <div style="flex:1;font-size:12px;line-height:1.45;color:#6d4c41">
+        <strong style="color:#bf360c">Audit summary:</strong>
+        ${openWorld} group${openWorld === 1 ? '' : 's'} have open-world ingress.
+        ${counts.critical} are critical, ${counts.high} are high, and ${counts.medium} are cleanup-oriented medium findings.
+        Use the quick chips below to isolate <code>any:any</code>, open-world, unused, or default groups.
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderSecurityGroupProjectScope(items) {
+  const activeProject = sgState.project || '';
+  const scope = sgProjectScopeVisibleSummaries(items);
+  const allProjectsCopy = scope.searchActive
+    ? `${scope.filteredCount} matching projects`
+    : `${scope.totalCount} visible projects`;
+  const expander = scope.hiddenCount > 0
+    ? `<button class="btn" style="font-size:11px;padding:3px 8px" onclick="sgState.projectScopeExpanded=true;renderSecurityGroupsView()">Show ${esc(String(scope.hiddenCount))} more</button>`
+    : (scope.expanded && scope.totalCount > 10 && !scope.searchActive
+      ? `<button class="btn" style="font-size:11px;padding:3px 8px" onclick="sgState.projectScopeExpanded=false;renderSecurityGroupsView()">Show top risk only</button>`
+      : '');
+  return `<div class="card" style="margin-bottom:12px">
+    <div class="card-title">Project Scope</div>
+    <div class="card-body" style="padding:10px 10px 0">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="sg-project-filter" class="search sg-project-filter" style="flex:1" type="text" placeholder="Filter projects…" value="${esc(sgState.projectScopeFilter || '')}" oninput="sgState.projectScopeFilter=this.value;sgState.projectScopeExpanded=Boolean(this.value.trim());renderSecurityGroupsView()">
+        ${expander}
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:10px">
+        ${scope.searchActive ? `Showing ${esc(String(scope.filteredCount))} matching projects.` : `Showing the highest-risk ${esc(String(scope.visible.length))} projects first.`}
+      </div>
+    </div>
+    <div class="card-body" style="padding:0;max-height:260px;overflow:auto">
+      <div class="mrow" style="padding:8px 10px;cursor:pointer;background:${activeProject ? 'transparent' : 'var(--sel)'}" onclick="sgState.project='';sgState.page=1;renderSecurityGroupsView()">
+        <span class="ml" style="color:var(--text);font-weight:600">
+          All projects
+          <span style="display:block;font-size:11px;color:var(--dim)">${esc(allProjectsCopy)}</span>
+        </span>
+        <span class="mv">${esc(String(items.length))} groups</span>
+      </div>
+      ${scope.visible.map(summary => sgProjectScopeRow(summary, activeProject)).join('')}
+      ${scope.visible.length ? '' : '<div style="padding:14px 10px;color:var(--dim);font-size:12px">No projects match the current scope filter.</div>'}
+    </div>
+  </div>`;
 }
 
 function updateSecurityGroupNavBadge() {
@@ -108,14 +260,50 @@ function filteredSecurityGroups() {
   return base.filter(item => {
     if (sgState.auditOnly && !(item.flagged_rule_count > 0 || item.audit?.has_unused)) return false;
     if (sgState.project && String(item.project_name || item.project_id || '') !== sgState.project) return false;
+    if (sgState.quickFilter === 'open-world' && !item.audit?.has_open_world_ingress) return false;
+    if (sgState.quickFilter === 'any-any' && !item.audit?.has_any_any_open_world) return false;
+    if (sgState.quickFilter === 'unused' && !item.audit?.has_unused) return false;
+    if (sgState.quickFilter === 'default' && String(item.name || '').toLowerCase() !== 'default') return false;
     return true;
   });
+}
+
+function sortedSecurityGroups(items) {
+  const rows = [...items];
+  const mode = String(sgState.sort || 'severity');
+  rows.sort((a, b) => {
+    if (mode === 'project') {
+      return String(a.project_name || '').localeCompare(String(b.project_name || '')) || String(a.name || '').localeCompare(String(b.name || ''));
+    }
+    if (mode === 'attachments') {
+      return Number(b.attachment_instance_count || 0) - Number(a.attachment_instance_count || 0)
+        || Number(b.attachment_port_count || 0) - Number(a.attachment_port_count || 0)
+        || String(a.name || '').localeCompare(String(b.name || ''));
+    }
+    if (mode === 'flagged') {
+      return Number(b.flagged_rule_count || 0) - Number(a.flagged_rule_count || 0)
+        || Number(b.rule_count || 0) - Number(a.rule_count || 0)
+        || String(a.name || '').localeCompare(String(b.name || ''));
+    }
+    return ({ critical: 0, high: 1, medium: 2, clean: 3 }[String(a.audit?.severity || 'clean')] ?? 9)
+      - ({ critical: 0, high: 1, medium: 2, clean: 3 }[String(b.audit?.severity || 'clean')] ?? 9)
+      || Number(b.audit?.score || 0) - Number(a.audit?.score || 0)
+      || String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  return rows;
 }
 
 function renderSecurityGroupsView() {
   const wrap = document.getElementById('sg-wrap');
   if (!wrap) return;
-  const focusedInput = captureFocusedInput(wrap, '.dv-filter');
+  const active = document.activeElement;
+  const focusedInput = wrap.contains(active) && active?.id
+    ? {
+      id: active.id,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+    }
+    : null;
   if (sgState.loading) {
     wrap.innerHTML = `<div class="data-view-toolbar"><h2>Security Groups <span class="hint">Neutron / Project Scoped</span></h2></div><div style="color:var(--dim);padding:20px 0"><span class="spinner">⟳</span> Loading security groups…</div>`;
     return;
@@ -125,7 +313,7 @@ function renderSecurityGroupsView() {
     return;
   }
   updateSecurityGroupNavBadge();
-  const filtered = filteredSecurityGroups();
+  const filtered = sortedSecurityGroups(filteredSecurityGroups());
   const paged = paginate(filtered, sgState.page, sgState.pageSize);
   const projectOptions = sgProjectOptions(sgState.data);
   const criticalCount = sgState.data.filter(item => item.audit?.severity === 'critical').length;
@@ -133,7 +321,10 @@ function renderSecurityGroupsView() {
   const mediumCount = sgState.data.filter(item => item.audit?.severity === 'medium').length;
   const lowCount = sgState.data.filter(item => item.audit?.severity === 'clean').length;
   const unusedCount = sgState.data.filter(item => item.audit?.has_unused).length;
+  const counts = { critical: criticalCount, high: highCount, medium: mediumCount, clean: lowCount, unused: unusedCount };
   wrap.innerHTML = `
+    ${sgAuditBanner(sgState.data, counts)}
+    ${renderSecurityGroupProjectScope(sgState.data)}
     <div class="data-view-toolbar">
       <h2>Security Groups <span class="hint">Neutron / Project Scoped</span></h2>
       <input class="dv-filter" type="text" placeholder="Filter groups…"
@@ -143,6 +334,12 @@ function renderSecurityGroupsView() {
         ${projectOptions.map(name => `<option value="${escAttr(name)}" ${sgState.project === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}
       </select>
       <button class="btn ${sgState.auditOnly ? 'warning' : ''}" onclick="sgState.auditOnly=!sgState.auditOnly;sgState.page=1;renderSecurityGroupsView()">${sgState.auditOnly ? '⚑ Audit Only' : 'All Groups'}</button>
+      <select class="pager-size" onchange="sgState.sort=this.value;sgState.page=1;renderSecurityGroupsView()">
+        <option value="severity" ${sgState.sort === 'severity' ? 'selected' : ''}>Sort: severity</option>
+        <option value="project" ${sgState.sort === 'project' ? 'selected' : ''}>Sort: project</option>
+        <option value="attachments" ${sgState.sort === 'attachments' ? 'selected' : ''}>Sort: attachments</option>
+        <option value="flagged" ${sgState.sort === 'flagged' ? 'selected' : ''}>Sort: flagged rules</option>
+      </select>
       <span style="font-size:11px;color:var(--dim)">${filtered.length} of ${sgState.data.length} groups</span>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -151,6 +348,13 @@ function renderSecurityGroupsView() {
       ${sgSummaryPill('gray', 'medium', mediumCount, 'Criteria: currently used for cleanup-oriented findings. In the current model this means the group has zero attachments.')}
       ${sgSummaryPill('green', 'clean', lowCount, 'Criteria: no current audit findings under the present ruleset. This matches the backend severity label of clean.')}
       ${sgSummaryPill('gray', 'unused', unusedCount, 'Criteria: the group has zero current Neutron port attachments. This is a specialized cleanup signal and also maps to medium severity in the current model.')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      ${sgChip(!sgState.quickFilter, 'All findings', 'Show all groups currently in scope.', "sgState.quickFilter='';sgState.page=1;renderSecurityGroupsView()")}
+      ${sgChip(sgState.quickFilter === 'open-world', 'Open World', 'Only groups with open-world ingress from 0.0.0.0/0 or ::/0.', "sgState.quickFilter='open-world';sgState.page=1;renderSecurityGroupsView()")}
+      ${sgChip(sgState.quickFilter === 'any-any', 'Any:Any', 'Only groups with fully open any:any ingress.', "sgState.quickFilter='any-any';sgState.page=1;renderSecurityGroupsView()")}
+      ${sgChip(sgState.quickFilter === 'unused', 'Unused', 'Only groups with zero current Neutron port attachments.', "sgState.quickFilter='unused';sgState.page=1;renderSecurityGroupsView()")}
+      ${sgChip(sgState.quickFilter === 'default', 'Default', 'Only groups named default.', "sgState.quickFilter='default';sgState.page=1;renderSecurityGroupsView()")}
     </div>
     <table class="data-table">
       <thead><tr>
@@ -186,7 +390,15 @@ function renderSecurityGroupsView() {
       }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:20px">No security groups match the current filters.</td></tr>'}</tbody>
     </table>
     ${buildPager(sgState, filtered.length, 'sgState', 'renderSecurityGroupsView')}`;
-  restoreFocusedInput(wrap, focusedInput);
+  if (focusedInput?.id) {
+    const input = document.getElementById(focusedInput.id);
+    if (input && wrap.contains(input)) {
+      input.focus();
+      if (typeof focusedInput.start === 'number' && typeof focusedInput.end === 'number') {
+        try { input.setSelectionRange(focusedInput.start, focusedInput.end); } catch (_) {}
+      }
+    }
+  }
 }
 
 async function selectSecurityGroup(id) {
@@ -307,10 +519,16 @@ function renderSecurityGroupAttachments(attachments) {
       : `<table class="data-table" style="font-size:11px;margin-bottom:0;border:none">
         <thead><tr><th>Port</th><th>Owner</th><th>Device</th><th>Network</th><th>IPs</th></tr></thead>
         <tbody>${attachments.map(item => `<tr>
-          <td class="uuid-short" title="${esc(item.port_id || '')}">${esc((item.port_id || '').slice(0, 10) || '—')}</td>
+          <td class="uuid-short">${item.port_id && item.network_id
+            ? sgObjectLink((item.port_id || '').slice(0, 10), `navigateToNetworkPortDetail('${escAttr(item.network_id)}','${escAttr(item.port_id)}')`, item.port_id || '')
+            : esc((item.port_id || '').slice(0, 10) || '—')}</td>
           <td>${esc(item.device_owner || '—')}</td>
-          <td class="uuid-short" title="${esc(item.device_id || '')}">${esc(item.device_id || '—')}</td>
-          <td class="uuid-short" title="${esc(item.network_id || '')}">${esc((item.network_id || '').slice(0, 10) || '—')}</td>
+          <td class="uuid-short">${item.device_id && item.compute_host && String(item.device_owner || '').startsWith('compute:')
+            ? sgObjectLink(item.instance_name || item.device_id, `navigateToInstanceDetail('${escAttr(item.device_id)}','${escAttr(item.compute_host)}')`, item.device_id || '')
+            : `<span title="${escAttr(item.device_id || '')}">${esc(item.instance_name || item.device_id || '—')}</span>`}</td>
+          <td class="uuid-short">${item.network_id
+            ? sgObjectLink(item.network_name || (item.network_id || '').slice(0, 10), `navigateToNetworkDetail('${escAttr(item.network_id)}')`, item.network_id || '')
+            : '—'}</td>
           <td style="font-family:monospace;font-size:10px">${esc((item.fixed_ips || []).map(ip => ip.ip_address).filter(Boolean).join(', ') || '—')}</td>
         </tr>`).join('')}</tbody></table>`}
     </div>

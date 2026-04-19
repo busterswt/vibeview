@@ -321,6 +321,17 @@ async function navigateToNetworkDetail(networkId) {
   await selectNetwork(networkId);
 }
 
+async function navigateToNetworkPortDetail(networkId, portId) {
+  if (!networkId) return;
+  await navigateToNetworkDetail(networkId);
+  if (portId && typeof loadNetworkOvn === 'function') {
+    await loadNetworkOvn(networkId);
+  }
+  if (portId && typeof selectOvnPort === 'function') {
+    await selectOvnPort(portId);
+  }
+}
+
 async function navigateToRouterDetail(routerId) {
   if (!routerId) return;
   switchNetworkingSection('routers');

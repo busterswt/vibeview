@@ -946,6 +946,14 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
         def projects():
             return [FakeProject()]
 
+    class FakeServer:
+        id = "server-1"
+        name = "api-01"
+        compute_host = "compute-a.example"
+
+        def to_dict(self):
+            return {}
+
     class FakeNetworkAPI:
         @staticmethod
         def get_security_group(group_id):
@@ -960,11 +968,24 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
         def ports():
             return [FakePort()]
 
+        @staticmethod
+        def get_network(network_id):
+            assert network_id == "net-1"
+            return SimpleNamespace(name="tenant-net")
+
+    class FakeComputeAPI:
+        @staticmethod
+        def get_server(server_id):
+            assert server_id == "server-1"
+            return FakeServer()
+
     class FakeConn:
         identity = FakeIdentityAPI()
         network = FakeNetworkAPI()
+        compute = FakeComputeAPI()
 
     monkeypatch.setattr(web_server.openstack_ops, "_conn", lambda auth=None: FakeConn())
+    monkeypatch.setattr(web_server.openstack_ops, "_server_host", lambda server: getattr(server, "compute_host", ""))
 
     item = web_server._get_security_group_detail("sg-1", auth=None)
 
@@ -972,6 +993,9 @@ def test_get_security_group_detail_includes_rules_and_attachments(monkeypatch):
     assert item["flagged_rule_count"] == 1
     assert item["attachments"][0]["port_id"] == "port-1"
     assert item["attachments"][0]["device_id"] == "server-1"
+    assert item["attachments"][0]["network_name"] == "tenant-net"
+    assert item["attachments"][0]["instance_name"] == "api-01"
+    assert item["attachments"][0]["compute_host"] == "compute-a.example"
     assert item["rules"][0]["audit"]["flagged"] is True
     assert item["rules"][0]["audit"]["summary"] == "tcp:22 0.0.0.0/0"
     assert item["rules"][1]["audit"]["flagged"] is False
